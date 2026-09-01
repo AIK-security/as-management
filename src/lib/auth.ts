@@ -37,6 +37,8 @@ export type SessionProfile = {
   id: string;
   role: Role;
   display_name: string | null;
+  /** 退職・異動で止めた人は false。行は消さない（監査ログの追跡のため）。 */
+  is_active: boolean;
 };
 
 /**
@@ -56,7 +58,7 @@ export async function getSessionProfile(): Promise<{
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, role, display_name")
+    .select("id, role, display_name, is_active")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -76,6 +78,9 @@ export async function requireStaff() {
   const { user, profile } = await getSessionProfile();
   if (!user) redirect("/login");
   if (!profile) redirect("/no-access");
+  // 🔴 無効化された人はここで止める。DB 側でも current_app_role() が null を返すため
+  //    RLS で行も引けないが、**理由を出すため**にアプリ側でも見る。
+  if (!profile.is_active) redirect("/no-access?reason=inactive");
   return { user, profile };
 }
 

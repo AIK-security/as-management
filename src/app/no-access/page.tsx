@@ -11,10 +11,11 @@ export const metadata = { title: "権限がありません | AS 管制" };
 export default async function NoAccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ need?: string }>;
+  searchParams: Promise<{ need?: string; reason?: string }>;
 }) {
-  const { need } = await searchParams;
+  const { need, reason } = await searchParams;
   const { profile } = await getSessionProfile();
+  const isInactive = reason === "inactive" || (profile !== null && !profile.is_active);
 
   const needLabels = (need ?? "")
     .split(",")
@@ -26,16 +27,20 @@ export default async function NoAccessPage({
     <div className="flex min-h-screen items-center justify-center px-6">
       <main className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h1 className="text-base font-semibold tracking-tight text-slate-900">
-          この画面を開く権限がありません
+          {isInactive
+            ? "このアカウントは現在ご利用いただけません"
+            : "この画面を開く権限がありません"}
         </h1>
 
         <dl className="mt-3 flex flex-col gap-1 text-sm text-slate-700">
           <div className="flex gap-2">
             <dt className="t-meta w-24 shrink-0 pt-0.5 text-slate-500">現在の権限</dt>
             <dd>
-              {profile
-                ? roleLabel[profile.role]
-                : "未割当（管理者がまだ権限を設定していません）"}
+              {isInactive
+                ? "停止中"
+                : profile
+                  ? roleLabel[profile.role]
+                  : "未割当（管理者がまだ権限を設定していません）"}
             </dd>
           </div>
           {needLabels && (

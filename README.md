@@ -26,6 +26,8 @@
 ### 認証・ロール（2026-09-01）
 
 - Supabase Auth（招待制・自由サインアップ無し）／ロール `admin` `control` `office`
+  - 🔴 **ロール名は所属ではなく権限の束。** `control` ＝「配置を編集できる人」<br>（管制メンバー全員＋事務の確認担当）
+  - 退職・異動は**削除せず `profiles.is_active=false`**（削除すると監査ログを辿れない）
 - **認可は3枚重ね**：RLS（最後の砦）／`requireRole()`（関門）／`proxy.ts`（導線）
 - ✅ 実 DB へ適用済。ログイン〜`/board` 到達まで動作確認済
 - 🟠 **未検証**：`office`（事務）ロールで編集ボタンが消えること
@@ -150,6 +152,16 @@ npm install
 それ以外は CHECK 制約で弾かれる。
 
 🔴 **2 を忘れると `profiles` が作られず、ログインは通るのに `/no-access` で止まる。**
+
+### 退職・異動でアカウントを止める
+
+```sql
+update public.profiles set is_active = false
+where id = (select id from auth.users where email = 'user@example.com');
+```
+
+🔴 **ユーザーを削除しない。** `profiles.id` は `auth.users` へ `on delete cascade` のため、
+削除すると監査ログから「誰がやったか」が辿れなくなる。
 
 ### 6. 確認
 
