@@ -226,7 +226,7 @@
 | # | 要件 | 状態 |
 |---|---|---|
 | **S-1** | **セキュリティヘッダーの設定** | ✅ **実装済**（`next.config.ts`）<br>CSP／X-Frame-Options: DENY／nosniff／Referrer-Policy／Permissions-Policy<br>🔴 **`script-src` に `'unsafe-inline'` を入れない**（レガシーが無いため最初から締める） |
-| **S-2** | 🔴 **Supabase の RLS を全テーブルで有効化** | 🟢 **土台を実装（2026-09-01）。**<br>`supabase/migrations/20260901000000_auth_roles.sql`：`profiles` ＋ RLS ＋ 招待トリガー<br>RLS ヘルパー `is_admin()` / `can_edit()` / `is_staff()`（SECURITY DEFINER・`search_path` 固定）<br>🔴 **以後テーブルを足すたびに `supabase/checks/rls-audit.sql` を実行する**（0行でなければ違反）<br>🟠 **Supabase プロジェクト未作成のため、実 DB での適用は未実施** |
+| **S-2** | 🔴 **Supabase の RLS を全テーブルで有効化** | 🟢 **土台を実装（2026-09-01）。**<br>`supabase/migrations/20260901000000_auth_roles.sql`：`profiles` ＋ RLS ＋ 招待トリガー<br>RLS ヘルパー `is_admin()` / `can_edit()` / `is_staff()`（SECURITY DEFINER・`search_path` 固定）<br>🔴 **以後テーブルを足すたびに `supabase/checks/rls-audit.sql` を実行する**（0行でなければ違反）<br>✅ **2026-09-01 実 DB へ適用済**。`supabase/checks/verify-setup.sql` で確認、管理者アカウントで<br>ログイン〜`/board` 到達まで動作確認済 |
 | **S-3** | **秘密情報をコード・公開ファイルに混入させない** | ✅ `.env.example` はキー名のみ。`.gitignore` 対応済 |
 | **S-4** | 🔴 **ShiftMax の平文共有アカウントを新システムに持ち込まない** | ✅ **設計で保証。** 新システムは ShiftMax と**通信しない**<br>（べんり君のコピー経由。認証情報を保持しない） |
 | **S-5** | **本番データを開発環境・リポジトリに持ち込まない** | ✅ ダミーデータのみ（`src/lib/fixtures/`）。氏名・現場名は架空 |
