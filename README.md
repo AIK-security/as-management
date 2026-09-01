@@ -121,10 +121,14 @@ npm install
 招待トリガーが `profiles` を自動生成する。
 🔴 **`role` を入れ忘れると profile が作られず、ログインできても `/no-access` に止まる。**
 
-### 6. RLS の確認
+### 6. 確認
 
-テーブルを追加したら `supabase/checks/rls-audit.sql` を SQL Editor で実行する。
-**0行でなければ要件違反**（`docs/requirements.md` §6 S-2）。
+| 目的 | 実行するもの |
+|---|---|
+| 土台が正しく入ったか（新環境を作った直後） | `supabase/checks/verify-setup.sql` → **全行 ✅** になること |
+| RLS の付け忘れが無いか（**テーブルを追加するたび**） | `supabase/checks/rls-audit.sql` → **0行**であること |
+
+RLS が1つでも抜けていれば要件違反（`docs/requirements.md` §6 S-2）。
 
 ## Markdown の閲覧方法
 
