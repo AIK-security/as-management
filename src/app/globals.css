@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/* ── タイポグラフィと配色の方針 ─────────────────────────────
+   ワークスペース共通ルールは「高密度・本文13px」だが、本画面は**意図的に外している**。
+   理由：
+     1. 管制が **1日中見続ける業務画面**であること
+     2. ホワイトボードの代替であり、将来 `S-06`（大型モニタ表示）に展開すること
+     3. 実機の画面解像度が未確認（gap-analysis.md A-1 ⑭）
+   → 本文 14px を基準にし、**情報の役割ごとに大きさと太さの差をはっきりつける**。
+      詰め込みよりも「一目でどこを見ればよいか分かる」ことを優先する。
+   ───────────────────────────────────────────────────────── */
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+    "Noto Sans JP", Meiryo, sans-serif;
+}
+
+html,
+body {
+  background-color: var(--color-slate-100);
+  color: var(--color-slate-900);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-400) transparent;
+}
+
+/* 文字の階層。クラス名で役割が分かるようにしておく（3か月後の自分のため） */
+.t-site {          /* 現場名：行の主役 */
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.t-customer {      /* 得意先：現場名に従属 */
+  font-size: 13px;
+  font-weight: 500;
+}
+.t-time {          /* 時間：数字は等幅で揃える */
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.t-count {         /* 必要/配置：不足に気づけることが最優先 */
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.t-plate {         /* プレートの氏名 */
+  font-size: 14px;
+  font-weight: 600;
+}
+.t-meta {          /* 補足 */
+  font-size: 12px;
+  font-weight: 500;
+}
+.t-badge {
+  font-size: 12px;
+  font-weight: 600;
+}
