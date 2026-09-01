@@ -6,7 +6,12 @@
 // 🔴 段1 では D&D も確定操作も入れない。**まず人に見せて方向性を確かめる**のが目的
 //    （screen-design.md §9 段1／schedule-plan.md §5 定着施策0）。
 //    AIK assign は完成させてから不一致に気づいた。同じ轍を踏まない。
+//
+// 🔴 段2 の前に認証・ロールを通してある（requirements.md §3 決定 #1）。
+//    事務ロールは**閲覧のみ**。編集系のボタンは出さない（同 決定 #2）。
 
+import { requireStaff, canEdit, roleLabel } from "@/lib/auth";
+import { logout } from "@/app/login/actions";
 import { ShiftRowCard } from "@/components/board/ShiftRowCard";
 import { PoolPlate } from "@/components/board/Plate";
 import { COMPANIES } from "@/lib/fixtures/board";
@@ -58,6 +63,10 @@ export default async function BoardPage({
 }: {
   searchParams: Promise<{ group?: string }>;
 }) {
+  // 🔴 ここが実際の関門。proxy.ts は導線であって認可ではない。
+  const { profile } = await requireStaff();
+  const editable = canEdit(profile);
+
   const { group } = await searchParams;
   const shiftGroup: BoardShiftGroup = group === "night" ? "night" : "day";
   const board = getBoardData(shiftGroup);
@@ -118,24 +127,47 @@ export default async function BoardPage({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
-          >
-            一括確定
-          </button>
-          <button
-            type="button"
-            className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
-          >
-            連絡作成
-          </button>
-          <button
-            type="button"
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700"
-          >
-            べんり君へ引き渡し
-          </button>
+          {/* 編集系は管制・管理者のみ。事務には出さない（requirements.md §3 決定 #2）。
+              ⚠️ 出し分けは見た目の話。実際の防御は RLS と Server Action 側で行う。 */}
+          {editable && (
+            <>
+              <button
+                type="button"
+                className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
+              >
+                一括確定
+              </button>
+              <button
+                type="button"
+                className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
+              >
+                連絡作成
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700"
+              >
+                べんり君へ引き渡し
+              </button>
+            </>
+          )}
+
+          <div className="ml-1 flex items-center gap-2 border-l-2 border-slate-200 pl-3">
+            <div className="flex flex-col items-end leading-tight">
+              <span className="text-[14px] font-semibold text-slate-800">
+                {profile.display_name ?? "（氏名未設定）"}
+              </span>
+              <span className="t-meta text-slate-500">{roleLabel[profile.role]}</span>
+            </div>
+            <form action={logout}>
+              <button
+                type="submit"
+                className="rounded-md border-2 border-slate-300 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
+              >
+                ログアウト
+              </button>
+            </form>
+          </div>
         </div>
       </header>
 
@@ -156,12 +188,14 @@ export default async function BoardPage({
             ))}
           </div>
 
-          <button
-            type="button"
-            className="mt-2.5 w-full rounded-lg border-2 border-dashed border-slate-300 py-3 text-[14px] font-semibold text-slate-400 transition-all duration-150 ease-in-out hover:border-slate-400 hover:bg-white hover:text-slate-600"
-          >
-            ＋ 現場を追加
-          </button>
+          {editable && (
+            <button
+              type="button"
+              className="mt-2.5 w-full rounded-lg border-2 border-dashed border-slate-300 py-3 text-[14px] font-semibold text-slate-400 transition-all duration-150 ease-in-out hover:border-slate-400 hover:bg-white hover:text-slate-600"
+            >
+              ＋ 現場を追加
+            </button>
+          )}
         </main>
 
         {/* ── 右：隊員プール ── */}

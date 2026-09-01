@@ -206,6 +206,14 @@
 ## このプロジェクト固有の運用
 
 - **開発サーバ**：`npm run dev`（http://localhost:3000 → `/board`）。ビルドは `npm run build`
+- 🔴 **認証は Supabase。`.env.local` が無いと起動時に日本語で落ちる**（`src/lib/supabase/env.ts`）。
+  セットアップ手順は `README.md`「セットアップ」。**マイグレーションは `supabase/migrations/` を古い順に SQL Editor で流す**
+  （Docker 未導入のためローカルスタックは使わない）
+- 🔴 **Next.js 16 では `middleware.ts` は非推奨で `proxy.ts` にリネームされた**（Node ランタイム既定・`runtime` 指定は不可）。
+  **警備番頭からの流用時はここだけ形が違う**（あちらは旧規約のまま）。根拠は
+  `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`
+- 🔴 **認可は3枚重ね**：① DB の RLS（最後の砦）② 各ページの `requireRole()`（関門）③ `proxy.ts`（導線であって認可ではない）。
+  **テーブルを追加したら `supabase/checks/rls-audit.sql` を実行する**（0行でなければ要件 S-2 違反）
 - 🔴 **段1 のデータはすべてダミー**（`src/lib/fixtures/board.ts`）。氏名・現場名は架空。
   **規模だけ実測に寄せてある**（現場40件超・プレート100枚超）。密度が違うと画面設計の検証にならないため
 - **セッションログ**：`logs/YYYY-MM-DD.md`（同日は追記）

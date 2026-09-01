@@ -78,7 +78,53 @@ npm run lint
 
 ## セットアップ
 
-構築方式の決定後に記載する。現時点では検討ドキュメントのみのため不要。
+### 1. 依存のインストール
+
+```bash
+npm install
+```
+
+### 2. Supabase プロジェクトを作る
+
+[app.supabase.com](https://app.supabase.com) で新規プロジェクトを作成する（リージョンは `Northeast Asia (Tokyo)`）。
+
+### 3. 環境変数
+
+`.env.example` をコピーして `.env.local` を作り、
+**Supabase ダッシュボード > Project Settings > API** の値を入れる。
+
+| キー | 取得場所 |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | service_role key（**サーバ側専用**。ブラウザに出さない） |
+
+> 🔴 `.env.local` は `.gitignore` 対象。**実値をコミットしない**（`docs/requirements.md` §6 S-3）。
+> 🔴 べんり君（ShiftMax）の共有アカウントは**ここにも書かない**。新システムは ShiftMax と通信しない。
+
+### 4. マイグレーションの適用
+
+`supabase/migrations/` の SQL を、**古い順に** Supabase ダッシュボード > SQL Editor に貼って実行する。
+
+> Docker が入っていないため `supabase start`（ローカルスタック）は使わない。
+> CLI で流す場合は `npx supabase link --project-ref <ref>` のあと `npx supabase db push`。
+
+### 5. 初期ユーザーを作る
+
+**Authentication > Users > Add user** で作成し、**User Metadata** に次を入れる。
+
+```json
+{ "role": "admin", "display_name": "柴山" }
+```
+
+`role` は `admin`（管理者）／`control`（管制）／`office`（事務）のいずれか。
+招待トリガーが `profiles` を自動生成する。
+🔴 **`role` を入れ忘れると profile が作られず、ログインできても `/no-access` に止まる。**
+
+### 6. RLS の確認
+
+テーブルを追加したら `supabase/checks/rls-audit.sql` を SQL Editor で実行する。
+**0行でなければ要件違反**（`docs/requirements.md` §6 S-2）。
 
 ## Markdown の閲覧方法
 
