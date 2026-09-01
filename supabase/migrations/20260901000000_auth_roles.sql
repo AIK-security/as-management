@@ -175,10 +175,15 @@ create trigger on_auth_user_created
 -- =============================================================
 -- 初期管理者の作り方（このファイルには書かない）
 --
--- Supabase ダッシュボード > Authentication > Users > Add user で
---   Email / Password を入れ、User Metadata に次を入れる：
---     { "role": "admin", "display_name": "柴山" }
---   → 上のトリガーが profiles を自動生成する。
+-- 🔴 **ダッシュボードからの作成では、上のトリガーは発火しない。**
+--   Supabase ダッシュボードの「Create new user」には User Metadata の
+--   入力欄が無く（Email / Password / Auto confirm のみ）、
+--   raw_user_meta_data に role が入らないため。
+--   → 実運用は「ダッシュボードで作る → supabase/scripts/assign-role.sql で
+--      ロールを付ける」の2手になる（README.md「セットアップ」5）。
+--
+--   上のトリガーを残してあるのは、Admin API / 招待フロー経由で作る場合に
+--   効くのと、CHECK 制約で不正なロールを弾けるため。
 --
 -- 🔴 実アカウント・パスワードをこのリポジトリに書かない（S-3）。
 -- =============================================================

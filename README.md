@@ -109,17 +109,22 @@ npm install
 > Docker が入っていないため `supabase start`（ローカルスタック）は使わない。
 > CLI で流す場合は `npx supabase link --project-ref <ref>` のあと `npx supabase db push`。
 
-### 5. 初期ユーザーを作る
+### 5. 初期ユーザーを作る（2手）
 
-**Authentication > Users > Add user** で作成し、**User Metadata** に次を入れる。
+🔴 **ダッシュボードの「Create new user」には User Metadata の入力欄が無い**
+（Email / Password / Auto confirm のみ）。メタデータを渡せるのは Admin API 経由だけなので、
+招待トリガーには頼らず、**作成してからロールを付ける**。
 
-```json
-{ "role": "admin", "display_name": "柴山" }
-```
+1. **Authentication > Users > Add user > Create new user**
+   - Email / Password を入れる
+   - **「Auto confirm user?」に ✅**（確認メールを挟まない）
+2. **SQL Editor** で `supabase/scripts/assign-role.sql` を開き、
+   先頭の【ここを書き換える】をメール・ロール・氏名に直して実行する
 
 `role` は `admin`（管理者）／`control`（管制）／`office`（事務）のいずれか。
-招待トリガーが `profiles` を自動生成する。
-🔴 **`role` を入れ忘れると profile が作られず、ログインできても `/no-access` に止まる。**
+それ以外は CHECK 制約で弾かれる。
+
+🔴 **2 を忘れると `profiles` が作られず、ログインは通るのに `/no-access` で止まる。**
 
 ### 6. 確認
 
