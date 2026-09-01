@@ -206,6 +206,9 @@
 ## このプロジェクト固有の運用
 
 - **開発サーバ**：`npm run dev`（http://localhost:3000 → `/board`）。ビルドは `npm run build`
+  - 🔴 `dev` は `node --max-http-header-size=32768` 経由で起動している。**外さないこと。**
+    `localhost` は他プロジェクトと Cookie を共有し（ポートでは分離されない）、
+    Supabase 認証 Cookie が積み上がると Node 既定の 16KB を超えて **HTTP 431** になる
 - 🔴 **認証は Supabase。`.env.local` が無いと起動時に日本語で落ちる**（`src/lib/supabase/env.ts`）。
   セットアップ手順は `README.md`「セットアップ」。**マイグレーションは `supabase/migrations/` を古い順に SQL Editor で流す**
   （Docker 未導入のためローカルスタックは使わない）

@@ -41,6 +41,24 @@ npm run build      # 本番ビルド
 npm run lint
 ```
 
+### 🔴 ログイン後に `HTTP ERROR 431` が出たら
+
+**Request Header Fields Too Large。** 認証の失敗ではなく **Cookie の量**の問題。
+
+**Cookie はポートで分離されない。** `localhost` は警備番頭など他プロジェクトと共有されるため、
+Supabase の認証 Cookie（1プロジェクト 6〜7KB・JWT がチャンク分割される）が積み上がり、
+Node の既定上限 16KB を超える。
+
+| 対処 | 内容 |
+|---|---|
+| 恒久 | `npm run dev` を `node --max-http-header-size=32768` 経由で起動する（**対応済**） |
+| 都度 | ブラウザで `localhost` の Cookie を消す（DevTools > Application > Cookies > localhost） |
+
+> ⚠️ これは **localhost だけの現象**。本番は独自ドメインで動くため他プロジェクトと Cookie を共有しない。
+> 逆に、**このアプリ単体の Cookie が 16KB に近づいたらそれは本物の不具合**（本番でも壊れる）。
+
+---
+
 > 🔴 **段1 のデータはすべてダミー**（`src/lib/fixtures/board.ts`）。
 > 氏名・現場名・得意先名は架空。**本番データは持ち込まない**（CLAUDE.md）。
 > 規模だけは実測に寄せてある（現場40件超・プレート100枚超）。密度が違うと画面設計の検証にならないため。
