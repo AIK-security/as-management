@@ -1,25 +1,30 @@
-// S-01 配置ボード（段1：表示のみ）
+// S-01 配置ボード（段2：Supabase から読む）
 //
 // 設計は docs/screen-design.md §2。
 // **1画面 = 1日 × 1管轄 × 日勤/夜勤。** ShiftMax（べんり君）の入力単位と揃えてある。
 //
-// 🔴 段1 では D&D も確定操作も入れない。**まず人に見せて方向性を確かめる**のが目的
-//    （screen-design.md §9 段1／schedule-plan.md §5 定着施策0）。
-//    AIK assign は完成させてから不一致に気づいた。同じ轍を踏まない。
+// 🔴 段1（表示のみ・ダミー定数）から、データ元を Supabase に移した（2026-09-02）。
+//    段1 で「getBoardData の戻り値の形は載せ替えても変えない」と決めておいたため、
+//    画面の構造は変わっていない。
 //
-// 🔴 段2 の前に認証・ロールを通してある（requirements.md §3 決定 #1）。
-//    事務ロールは**閲覧のみ**。編集系のボタンは出さない（同 決定 #2）。
+// 🔴 日付・管轄の切り替えをここで生かした。段1 では飾りのボタンだった。
+//    1画面が1日×1管轄である以上、切り替えが無いと他の日のデータに到達できない。
+//
+// 🔴 認可は3枚重ね。requireStaff() は関門で、最後の砦は DB の RLS。
+//    事務ロールは**閲覧のみ**なので編集系のボタンを出さない（requirements.md §3 決定 #2）。
 
+import Link from "next/link";
 import { requireStaff, canEdit, roleLabel } from "@/lib/auth";
 import { logout } from "@/app/login/actions";
 import { ShiftRowCard } from "@/components/board/ShiftRowCard";
 import { PoolPlate } from "@/components/board/Plate";
-import { COMPANIES } from "@/lib/fixtures/board";
-import { formatBoardDate, getBoardData, type BoardShiftGroup } from "@/lib/board";
-
-const partnerCompanyIds = new Set(
-  COMPANIES.filter((c) => c.kind === "partner").map((c) => c.id),
-);
+import {
+  addDays,
+  formatBoardDate,
+  getBoardData,
+  todayInJst,
+  type BoardShiftGroup,
+} from "@/lib/board";
 
 /** ヘッダの件数表示。数字を大きく、ラベルを小さくして役割の差をつける */
 function CountChip({
@@ -61,62 +66,104 @@ function PaneHeading({ title, sub }: { title: string; sub: string }) {
 export default async function BoardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ group?: string }>;
+  searchParams: Promise<{ group?: string; date?: string; j?: string }>;
 }) {
   // 🔴 ここが実際の関門。proxy.ts は導線であって認可ではない。
   const { profile } = await requireStaff();
   const editable = canEdit(profile);
 
-  const { group } = await searchParams;
-  const shiftGroup: BoardShiftGroup = group === "night" ? "night" : "day";
-  const board = getBoardData(shiftGroup);
+  const sp = await searchParams;
+  const group: BoardShiftGroup = sp.group === "night" ? "night" : "day";
+  // 🔴 日付は JST で決める。Vercel は UTC で動くため、ここを素の Date に任せると
+  //    ローカルでは合うのに本番で1日ずれる。
+  const workDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : todayInJst();
+
+  const board = await getBoardData({
+    workDate,
+    jurisdictionCode: sp.j,
+    group,
+  });
 
   const offTotal = board.offGroups.reduce((n, g) => n + g.guards.length, 0);
   const lentTotal = board.lentGroups.reduce((n, g) => n + g.guards.length, 0);
+  const placed = board.rows.reduce((n, r) => n + r.plates.length, 0);
+
+  /** 現在の絞り込みを保ったまま、一部だけ差し替えた URL を作る */
+  const hrefWith = (patch: { date?: string; group?: string; j?: string }) => {
+    const q = new URLSearchParams();
+    q.set("date", patch.date ?? workDate);
+    q.set("group", patch.group ?? group);
+    const j = patch.j ?? board.jurisdiction.code;
+    if (j) q.set("j", j);
+    return `/board?${q.toString()}`;
+  };
+
+  const navBtn =
+    "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
 
   return (
     <div className="flex h-screen flex-col bg-slate-100">
       {/* ══ ヘッダ ═══════════════════════════════════════════ */}
       <header className="flex shrink-0 items-center gap-3 border-b-2 border-slate-300 bg-white px-4 py-2.5 shadow-sm">
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800"
-            aria-label="前日"
-          >
+          <Link href={hrefWith({ date: addDays(workDate, -1) })} className={navBtn} aria-label="前日">
             ◀
-          </button>
+          </Link>
           <span className="px-1 text-[20px] font-bold tracking-tight text-slate-900 tabular-nums">
             {formatBoardDate(board.date)}
           </span>
-          <button
-            type="button"
-            className="rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800"
-            aria-label="翌日"
-          >
+          <Link href={hrefWith({ date: addDays(workDate, 1) })} className={navBtn} aria-label="翌日">
             ▶
-          </button>
+          </Link>
+          {workDate !== todayInJst() && (
+            <Link
+              href={hrefWith({ date: todayInJst() })}
+              className="ml-1 rounded-md border border-slate-300 px-2 py-1 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
+            >
+              今日
+            </Link>
+          )}
         </div>
 
-        <span className="rounded-md border-2 border-slate-300 bg-slate-50 px-2.5 py-1 text-[15px] font-semibold text-slate-800">
-          {board.jurisdictionName}
-        </span>
+        {/* 管轄。1画面 = 1管轄 なので切り替えが要る */}
+        {board.jurisdictions.length > 1 ? (
+          <div className="flex overflow-hidden rounded-md border-2 border-slate-300">
+            {board.jurisdictions.map((j) => (
+              <Link
+                key={j.id}
+                href={hrefWith({ j: j.code })}
+                className={[
+                  "px-3 py-1 text-[15px] font-semibold transition-all duration-150 ease-in-out",
+                  j.id === board.jurisdiction.id
+                    ? "bg-slate-700 text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-100",
+                ].join(" ")}
+              >
+                {j.name}
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <span className="rounded-md border-2 border-slate-300 bg-slate-50 px-2.5 py-1 text-[15px] font-semibold text-slate-800">
+            {board.jurisdiction.name}
+          </span>
+        )}
 
         {/* 日勤 / 夜勤 */}
         <div className="flex overflow-hidden rounded-md border-2 border-slate-300">
           {(["day", "night"] as const).map((g) => (
-            <a
+            <Link
               key={g}
-              href={`/board?group=${g}`}
+              href={hrefWith({ group: g })}
               className={[
                 "px-4 py-1 text-[15px] font-semibold transition-all duration-150 ease-in-out",
-                shiftGroup === g
+                group === g
                   ? "bg-indigo-600 text-white"
                   : "bg-white text-slate-600 hover:bg-slate-100",
               ].join(" ")}
             >
               {g === "day" ? "日勤" : "夜勤"}
-            </a>
+            </Link>
           ))}
         </div>
 
@@ -178,17 +225,38 @@ export default async function BoardPage({
           <div className="mb-2 flex items-baseline gap-2 px-1">
             <h1 className="text-[15px] font-semibold tracking-tight text-slate-700">配置</h1>
             <span className="t-meta text-slate-500">
-              現場 {board.rows.length} 件 ／ 配置 {board.rows.reduce((n, r) => n + r.plates.length, 0)} 名
+              現場 {board.rows.length} 件 ／ 配置 {placed} 名
             </span>
           </div>
 
-          <div className="space-y-2.5">
-            {board.rows.map((row) => (
-              <ShiftRowCard key={row.shift.id} row={row} />
-            ))}
-          </div>
+          {/* 🔴 空のときに何も出さない画面にしない。
+              「壊れているのか、その日が本当に空なのか」が利用者に区別できない。 */}
+          {board.rows.length === 0 ? (
+            <div className="rounded-lg border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+              <p className="text-[15px] font-semibold text-slate-700">
+                この日の{group === "day" ? "日勤" : "夜勤"}の枠はありません
+              </p>
+              <p className="t-meta mt-1 text-slate-500">
+                {formatBoardDate(board.date)} ／ {board.jurisdiction.name}
+              </p>
+              {board.nearestDateWithShifts && (
+                <Link
+                  href={hrefWith({ date: board.nearestDateWithShifts })}
+                  className="mt-3 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white transition-all duration-150 ease-in-out hover:bg-indigo-700"
+                >
+                  枠がある直近の日（{formatBoardDate(board.nearestDateWithShifts)}）へ
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {board.rows.map((row) => (
+                <ShiftRowCard key={row.shift.id} row={row} />
+              ))}
+            </div>
+          )}
 
-          {editable && (
+          {editable && board.rows.length > 0 && (
             <button
               type="button"
               className="mt-2.5 w-full rounded-lg border-2 border-dashed border-slate-300 py-3 text-[14px] font-semibold text-slate-400 transition-all duration-150 ease-in-out hover:border-slate-400 hover:bg-white hover:text-slate-600"
@@ -222,12 +290,8 @@ export default async function BoardPage({
           </div>
 
           <div className="flex flex-wrap gap-2 px-3 pb-3">
-            {board.pool.map((guard) => (
-              <PoolPlate
-                key={guard.id}
-                guard={guard}
-                isPartner={partnerCompanyIds.has(guard.companyId)}
-              />
+            {board.pool.map((view) => (
+              <PoolPlate key={view.guard.id} view={view} />
             ))}
           </div>
 

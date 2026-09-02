@@ -1,28 +1,29 @@
 // 配置ボードが表示するデータの組み立て。
 //
-// 段1 ではダミーデータから組むが、**この関数の戻り値の形は Supabase に載せ替えても変えない**。
-// 画面側がデータ取得元を知らずに済むようにしておく（差し替えを1か所に閉じる）。
-
-import {
-  ASSIGNMENTS,
-  COMPANIES,
-  CUSTOMERS,
-  GUARDS,
-  JURISDICTIONS,
-  NG_ENTRIES,
-  QUALIFICATIONS,
-  SHIFTS,
-  SITES,
-  SITE_EXPERIENCE,
-} from "@/lib/fixtures/board";
+// 🔴 段2 でデータ元を fixtures → Supabase に移した（2026-09-02）。
+//   段1 の時点で「戻り値の形は載せ替えても変えない」と決めておいたため、
+//   画面側（page.tsx / ShiftRowCard / Plate）の構造は変えずに済んでいる。
+//
+// 🔴 RLS が最後の砦。ここは anon キーのクライアント経由で読むため、
+//   ログインしていない・profile が無い・is_active=false のいずれでも 0 件になる。
+//   「見えない」は壊れているのではなく、そう設計してある。
+import "server-only";
+import { createClient } from "@/lib/supabase/server";
 import type {
   Assignment,
   BoardWarning,
+  Company,
+  Customer,
   Guard,
+  GuardView,
+  Jurisdiction,
+  NgEntry,
   OffKind,
   PlateView,
   Qualification,
+  Shift,
   ShiftRow,
+  Site,
   WorkKind,
 } from "@/lib/types";
 
@@ -49,107 +50,236 @@ export const WORK_KIND_LABEL: Record<WorkKind, string> = {
 
 export type BoardShiftGroup = "day" | "night";
 
+/** 日勤／夜勤の切り替えが拾う勤務区分。「現中」も元の時間帯側に含める */
+const GROUP_WORK_KINDS: Record<BoardShiftGroup, WorkKind[]> = {
+  day: ["day", "dayCancel"],
+  night: ["nightA", "nightB", "nightCancel"],
+};
+
 export type BoardData = {
   date: string;
-  jurisdictionName: string;
+  jurisdiction: Jurisdiction;
+  /** ヘッダの管轄切り替え用 */
+  jurisdictions: Jurisdiction[];
   group: BoardShiftGroup;
   rows: ShiftRow[];
   /** 未配置の隊員（プール） */
-  pool: Guard[];
+  pool: GuardView[];
   /** 非現場ステータス（有給・研修 など） */
   offGroups: { label: string; guards: Guard[] }[];
   /** 協力会社への貸出 */
   lentGroups: { companyName: string; siteName: string; guards: Guard[] }[];
   warnings: BoardWarning[];
   counts: { draft: number; confirmed: number; shortage: number };
+  /** 🔴 その日に枠が1件も無いとき、データがある直近の日付を出す（空画面で詰まらせない） */
+  nearestDateWithShifts: string | null;
 };
 
-const qualById = new Map(QUALIFICATIONS.map((q) => [q.id, q]));
-const guardById = new Map(GUARDS.map((g) => [g.id, g]));
-const siteById = new Map(SITES.map((s) => [s.id, s]));
-const customerById = new Map(CUSTOMERS.map((c) => [c.id, c]));
-const companyById = new Map(COMPANIES.map((c) => [c.id, c]));
+// ─────────────────────────────────────────────────────────
+// 取得
+// ─────────────────────────────────────────────────────────
 
-function isNightShift(kind: WorkKind): boolean {
-  return kind === "nightA" || kind === "nightB" || kind === "nightCancel";
-}
+/** supabase-js の埋め込み select が返す形。DB 行＋関連 */
+type ShiftRowRaw = Shift & {
+  site:
+    | (Site & {
+        customer: Customer | null;
+        site_required_qualifications: { qualification_id: string }[];
+      })
+    | null;
+};
 
-/** その枠にその隊員を入れたときに成立する NG を集める */
-function ngReasonsFor(
-  guardId: string,
-  siteId: string,
-  coAssignedGuardIds: string[],
-): string[] {
-  const reasons: string[] = [];
-  for (const ng of NG_ENTRIES) {
-    if (ng.guardId === guardId && ng.siteId === siteId) {
-      reasons.push(ng.reason);
-    }
-    // 人 × 人 の NG は双方向に効く
-    const pairHit =
-      (ng.guardId === guardId && ng.counterpartGuardId && coAssignedGuardIds.includes(ng.counterpartGuardId)) ||
-      (ng.counterpartGuardId === guardId && coAssignedGuardIds.includes(ng.guardId));
-    if (pairHit) {
-      const other = ng.guardId === guardId ? ng.counterpartGuardId! : ng.guardId;
-      reasons.push(`${ng.reason}（${guardById.get(other)?.shortName ?? other}）`);
+export type BoardParams = {
+  /** YYYY-MM-DD。省略時は JST の今日 */
+  workDate?: string;
+  /** 管轄コード（"10" など）。省略時は最小のコード */
+  jurisdictionCode?: string;
+  group?: BoardShiftGroup;
+};
+
+export async function getBoardData(params: BoardParams = {}): Promise<BoardData> {
+  const supabase = await createClient();
+  const group = params.group ?? "day";
+  const workDate = params.workDate ?? todayInJst();
+
+  // ── 管轄 ────────────────────────────────────────────
+  const { data: jurisdictionRows, error: jError } = await supabase
+    .from("jurisdictions")
+    .select("id, code, name, allow_cross_staff, allow_cross_site")
+    .order("code");
+  if (jError) throw jError;
+
+  const jurisdictions = (jurisdictionRows ?? []) as Jurisdiction[];
+  if (jurisdictions.length === 0) {
+    // マイグレーションは通ったがダミー投入がまだ、という状態。
+    // ここで落とすと原因が分かりにくいので、空のボードとして返す。
+    return emptyBoard(workDate, group);
+  }
+  const jurisdiction =
+    jurisdictions.find((j) => j.code === params.jurisdictionCode) ?? jurisdictions[0];
+
+  // ── 枠（現場・得意先・必要資格を同時に引く）────────────
+  const { data: shiftRaw, error: sError } = await supabase
+    .from("shifts")
+    .select(
+      `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
+       start_h, start_m, end_h, end_m, break_min,
+       band_name, plan_comment, billing_note, status, changed_after_confirm,
+       site:sites!inner (
+         id, site_code, guard_target_no, name, short_name, customer_id, jurisdiction_id,
+         customer:customers ( id, staff_code, name ),
+         site_required_qualifications ( qualification_id )
+       )`,
+    )
+    .eq("work_date", workDate)
+    .eq("jurisdiction_id", jurisdiction.id)
+    .in("work_kind", GROUP_WORK_KINDS[group])
+    // 🔴 並び順は「時間 → id」。id は seed で連番から作っているため安定する。
+    //    A表の並びが業務的にどうあるべきかは未確認（gap-analysis A-1 に積む）。
+    .order("start_h")
+    .order("start_m")
+    .order("id");
+  if (sError) throw sError;
+
+  const shifts = (shiftRaw ?? []) as unknown as ShiftRowRaw[];
+  const shiftIds = shifts.map((s) => s.id);
+
+  // ── その日の稼働（配置・非現場・貸出をまとめて1回で引く）──
+  // 🔴 data-model.md §4-2 が1テーブルに統合した意図がここで効く。
+  //    「応援中と気づかず自社案件に配置する」を防ぐには、
+  //    その日の稼働が**1回のクエリで全部見える**必要がある。
+  const { data: assignRaw, error: aError } = await supabase
+    .from("assignments")
+    .select(
+      `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
+       off_kind, lent_to_company_id, external_site_name, status`,
+    )
+    .eq("work_date", workDate)
+    .eq("status", "planned")
+    .order("position");
+  if (aError) throw aError;
+  const allAssignments = (assignRaw ?? []) as Assignment[];
+
+  // ── マスタ（隊員・会社・資格・NG）────────────────────
+  const [guardsRes, companiesRes, qualsRes, guardQualsRes, ngRes] = await Promise.all([
+    supabase
+      .from("guards")
+      .select("id, staff_code, name, short_name, company_id, jurisdiction_id")
+      .eq("status", "active")
+      .order("staff_code", { nullsFirst: false }),
+    supabase.from("companies").select("id, kind, name"),
+    supabase.from("qualifications").select("id, code, name, short_label"),
+    supabase.from("guard_qualifications").select("guard_id, qualification_id"),
+    supabase
+      .from("ng_entries")
+      .select("id, kind, guard_id, site_id, counterpart_guard_id, reason, severity"),
+  ]);
+  for (const r of [guardsRes, companiesRes, qualsRes, guardQualsRes, ngRes]) {
+    if (r.error) throw r.error;
+  }
+
+  const guards = (guardsRes.data ?? []) as Guard[];
+  const companies = (companiesRes.data ?? []) as Company[];
+  const qualifications = (qualsRes.data ?? []) as Qualification[];
+  const guardQuals = (guardQualsRes.data ?? []) as {
+    guard_id: string;
+    qualification_id: string;
+  }[];
+  const ngEntries = (ngRes.data ?? []) as NgEntry[];
+
+  const guardById = new Map(guards.map((g) => [g.id, g]));
+  const companyById = new Map(companies.map((c) => [c.id, c]));
+  const qualById = new Map(qualifications.map((q) => [q.id, q]));
+
+  const qualIdsByGuard = new Map<string, string[]>();
+  for (const gq of guardQuals) {
+    const list = qualIdsByGuard.get(gq.guard_id) ?? [];
+    list.push(gq.qualification_id);
+    qualIdsByGuard.set(gq.guard_id, list);
+  }
+
+  // ── 経験（★）── 専用テーブルは作らず assignments の履歴から引く
+  //
+  // 🔴 期間を切る。切らないと年々重くなり、いずれ画面が開かなくなる。
+  //   1年より前の経験を「行ったことがある」と言ってよいかは業務判断だが、
+  //   誰にも確認していないので、まず1年で置く（gap-analysis A-1 に積む）。
+  const experienced = new Set<string>();
+  if (shiftIds.length > 0) {
+    const { data: pastRaw, error: pError } = await supabase
+      .from("assignments")
+      .select("guard_id, shift:shifts!inner ( site_id )")
+      .eq("kind", "site")
+      .lt("work_date", workDate)
+      .gte("work_date", addDays(workDate, -365));
+    if (pError) throw pError;
+    for (const row of (pastRaw ?? []) as unknown as {
+      guard_id: string;
+      shift: { site_id: string } | null;
+    }[]) {
+      if (row.shift) experienced.add(`${row.guard_id}:${row.shift.site_id}`);
     }
   }
-  return reasons;
-}
 
-function toPlate(
-  assignment: Assignment,
-  guard: Guard,
-  siteId: string,
-  coAssignedGuardIds: string[],
-): PlateView {
-  const company = companyById.get(guard.companyId);
-  return {
-    assignmentId: assignment.id,
-    guard,
-    role: assignment.role,
-    experienced: SITE_EXPERIENCE.has(`${guard.id}:${siteId}`),
-    ngReasons: ngReasonsFor(guard.id, siteId, coAssignedGuardIds),
-    isPartner: company?.kind === "partner",
-    isOtherJurisdiction: guard.jurisdictionId !== "j-10",
-  };
-}
-
-export function getBoardData(group: BoardShiftGroup = "day"): BoardData {
-  const jurisdictionId = "j-10";
-  const jurisdiction = JURISDICTIONS.find((j) => j.id === jurisdictionId)!;
-
-  const shifts = SHIFTS.filter(
-    (s) =>
-      s.jurisdictionId === jurisdictionId &&
-      (group === "night" ? isNightShift(s.workKind) : !isNightShift(s.workKind)),
+  // ─────────────────────────────────────────────────────
+  // 組み立て
+  // ─────────────────────────────────────────────────────
+  const shiftIdSet = new Set(shiftIds);
+  const siteAssignments = allAssignments.filter(
+    (a) => a.kind === "site" && a.shift_id && shiftIdSet.has(a.shift_id),
   );
+  const offAssignments = allAssignments.filter((a) => a.kind === "off");
+  const lentAssignments = allAssignments.filter((a) => a.kind === "lent_out");
 
-  const assignedGuardIds = new Set<string>();
+  const byShift = new Map<string, Assignment[]>();
+  for (const a of siteAssignments) {
+    const list = byShift.get(a.shift_id!) ?? [];
+    list.push(a);
+    byShift.set(a.shift_id!, list);
+  }
+
   const rows: ShiftRow[] = [];
   const warnings: BoardWarning[] = [];
+  const assignedGuardIds = new Set<string>();
   let shortage = 0;
 
-  for (const shift of shifts) {
-    const site = siteById.get(shift.siteId)!;
-    const customer = customerById.get(site.customerId)!;
-    const rowAssignments = ASSIGNMENTS.filter(
-      (a) => a.kind === "site" && a.shiftId === shift.id && a.status === "planned",
-    ).sort((a, b) => a.position - b.position);
+  for (const raw of shifts) {
+    const site = raw.site;
+    if (!site) continue; // !inner を付けているので通常は起きない
+    const rowAssignments = (byShift.get(raw.id) ?? []).sort((a, b) => a.position - b.position);
+    const coAssignedGuardIds = rowAssignments.map((a) => a.guard_id);
 
-    const coAssignedGuardIds = rowAssignments.map((a) => a.guardId);
-    const plates = rowAssignments.map((a) => {
-      const guard = guardById.get(a.guardId)!;
+    const plates: PlateView[] = [];
+    for (const a of rowAssignments) {
+      const guard = guardById.get(a.guard_id);
+      if (!guard) continue; // 退職して status=inactive になった隊員の過去行など
       assignedGuardIds.add(guard.id);
-      return toPlate(a, guard, site.id, coAssignedGuardIds);
-    });
+      const company = companyById.get(guard.company_id);
+      const qualIds = qualIdsByGuard.get(guard.id) ?? [];
+      plates.push({
+        assignmentId: a.id,
+        guard,
+        qualLabels: qualIds
+          .map((id) => qualById.get(id)?.short_label)
+          .filter((v): v is string => Boolean(v)),
+        role: a.role,
+        experienced: experienced.has(`${guard.id}:${site.id}`),
+        ngReasons: ngReasonsFor(ngEntries, guardById, guard.id, site.id, coAssignedGuardIds),
+        isPartner: company?.kind === "partner",
+        isOtherJurisdiction: guard.jurisdiction_id !== jurisdiction.id,
+      });
+    }
 
     // 現場が求める資格のうち、その枠に誰も持っていないもの
-    const held = new Set(plates.flatMap((p) => p.guard.qualificationIds));
-    const missingQualifications = site.requiredQualificationIds
-      .filter((q) => !held.has(q))
-      .map((q) => qualById.get(q))
+    const held = new Set(
+      rowAssignments.flatMap((a) => qualIdsByGuard.get(a.guard_id) ?? []),
+    );
+    const missingQualifications = site.site_required_qualifications
+      .map((r) => r.qualification_id)
+      .filter((id) => !held.has(id))
+      .map((id) => qualById.get(id))
       .filter((q): q is Qualification => Boolean(q));
+
+    const shift = toShift(raw);
 
     if (plates.length < shift.headcount) {
       shortage++;
@@ -168,57 +298,196 @@ export function getBoardData(group: BoardShiftGroup = "day"): BoardData {
       for (const reason of plate.ngReasons) {
         warnings.push({
           kind: "ng",
-          message: `${site.name}：${plate.guard.shortName} は ${reason}`,
+          message: `${site.name}：${plate.guard.short_name} は ${reason}`,
         });
       }
     }
 
-    rows.push({ shift, site, customer, plates, missingQualifications });
+    rows.push({ shift, site, customer: site.customer, plates, missingQualifications });
   }
 
   // 非現場・貸出は「その日そう扱われている隊員」なのでプールから除く
-  const offAssignments = ASSIGNMENTS.filter((a) => a.kind === "off");
-  const lentAssignments = ASSIGNMENTS.filter((a) => a.kind === "lent_out");
   const busy = new Set([
     ...assignedGuardIds,
-    ...offAssignments.map((a) => a.guardId),
-    ...lentAssignments.map((a) => a.guardId),
+    ...offAssignments.map((a) => a.guard_id),
+    ...lentAssignments.map((a) => a.guard_id),
   ]);
 
   const offMap = new Map<string, Guard[]>();
   for (const a of offAssignments) {
-    const label = OFF_KIND_LABEL[a.offKind!];
+    const guard = guardById.get(a.guard_id);
+    if (!guard || !a.off_kind) continue;
+    const label = OFF_KIND_LABEL[a.off_kind];
     const list = offMap.get(label) ?? [];
-    list.push(guardById.get(a.guardId)!);
+    list.push(guard);
     offMap.set(label, list);
   }
 
   const lentMap = new Map<string, { companyName: string; siteName: string; guards: Guard[] }>();
   for (const a of lentAssignments) {
-    const company = companyById.get(a.lentToCompanyId!)!;
-    const key = `${company.id}:${a.externalSiteName}`;
+    const guard = guardById.get(a.guard_id);
+    const company = a.lent_to_company_id ? companyById.get(a.lent_to_company_id) : undefined;
+    if (!guard || !company) continue;
+    const key = `${company.id}:${a.external_site_name}`;
     const entry =
       lentMap.get(key) ??
-      { companyName: company.name, siteName: a.externalSiteName ?? "", guards: [] };
-    entry.guards.push(guardById.get(a.guardId)!);
+      { companyName: company.name, siteName: a.external_site_name ?? "", guards: [] };
+    entry.guards.push(guard);
     lentMap.set(key, entry);
   }
 
+  const pool: GuardView[] = guards
+    .filter((g) => !busy.has(g.id))
+    .map((g) => ({
+      guard: g,
+      qualLabels: (qualIdsByGuard.get(g.id) ?? [])
+        .map((id) => qualById.get(id)?.short_label)
+        .filter((v): v is string => Boolean(v)),
+      isPartner: companyById.get(g.company_id)?.kind === "partner",
+    }));
+
   return {
-    date: shifts[0]?.workDate ?? "",
-    jurisdictionName: jurisdiction.name,
+    date: workDate,
+    jurisdiction,
+    jurisdictions,
     group,
     rows,
-    pool: GUARDS.filter((g) => !busy.has(g.id)),
+    pool,
     offGroups: [...offMap.entries()].map(([label, guards]) => ({ label, guards })),
     lentGroups: [...lentMap.values()],
     warnings,
     counts: {
-      draft: shifts.filter((s) => s.status === "draft").length,
-      confirmed: shifts.filter((s) => s.status === "confirmed").length,
+      draft: rows.filter((r) => r.shift.status === "draft").length,
+      confirmed: rows.filter((r) => r.shift.status === "confirmed").length,
       shortage,
     },
+    nearestDateWithShifts:
+      rows.length > 0 ? null : await findNearestDateWithShifts(supabase, workDate, jurisdiction.id),
   };
+}
+
+// ─────────────────────────────────────────────────────────
+// 補助
+// ─────────────────────────────────────────────────────────
+
+/** 埋め込み select の戻りから、枠の列だけを取り出す */
+function toShift(raw: ShiftRowRaw): Shift {
+  const { site: _site, ...shift } = raw;
+  void _site;
+  return shift as Shift;
+}
+
+/**
+ * その枠にその隊員を入れたときに成立する NG を集める。
+ * 🔴 「人 × 人」は対称。保存は1行なので、検索時に両方向を見る（data-model.md §5-1）。
+ */
+function ngReasonsFor(
+  ngEntries: NgEntry[],
+  guardById: Map<string, Guard>,
+  guardId: string,
+  siteId: string,
+  coAssignedGuardIds: string[],
+): string[] {
+  const reasons: string[] = [];
+  for (const ng of ngEntries) {
+    if (ng.kind === "site_guard" && ng.guard_id === guardId && ng.site_id === siteId) {
+      reasons.push(ng.reason);
+      continue;
+    }
+    if (ng.kind !== "guard_guard" || !ng.counterpart_guard_id) continue;
+    const hitForward =
+      ng.guard_id === guardId && coAssignedGuardIds.includes(ng.counterpart_guard_id);
+    const hitBackward =
+      ng.counterpart_guard_id === guardId && coAssignedGuardIds.includes(ng.guard_id);
+    if (hitForward || hitBackward) {
+      const other = hitForward ? ng.counterpart_guard_id : ng.guard_id;
+      reasons.push(`${ng.reason}（${guardById.get(other)?.short_name ?? other}）`);
+    }
+  }
+  return reasons;
+}
+
+/**
+ * 🔴 その日に枠が無いときの逃げ道。
+ *   空のボードだけ出すと「壊れているのか、その日が本当に空なのか」が区別できない。
+ *   前後で最も近い、枠が存在する日付を返す。
+ */
+async function findNearestDateWithShifts(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workDate: string,
+  jurisdictionId: string,
+): Promise<string | null> {
+  const [ahead, behind] = await Promise.all([
+    supabase
+      .from("shifts")
+      .select("work_date")
+      .eq("jurisdiction_id", jurisdictionId)
+      .gt("work_date", workDate)
+      .order("work_date")
+      .limit(1),
+    supabase
+      .from("shifts")
+      .select("work_date")
+      .eq("jurisdiction_id", jurisdictionId)
+      .lt("work_date", workDate)
+      .order("work_date", { ascending: false })
+      .limit(1),
+  ]);
+
+  const next = ahead.data?.[0]?.work_date as string | undefined;
+  const prev = behind.data?.[0]?.work_date as string | undefined;
+  if (!next) return prev ?? null;
+  if (!prev) return next;
+  // 近いほうを返す
+  return daysBetween(workDate, next) <= daysBetween(prev, workDate) ? next : prev;
+}
+
+function emptyBoard(workDate: string, group: BoardShiftGroup): BoardData {
+  const placeholder: Jurisdiction = {
+    id: "",
+    code: "",
+    name: "（管轄マスタが空）",
+    allow_cross_staff: false,
+    allow_cross_site: false,
+  };
+  return {
+    date: workDate,
+    jurisdiction: placeholder,
+    jurisdictions: [],
+    group,
+    rows: [],
+    pool: [],
+    offGroups: [],
+    lentGroups: [],
+    warnings: [],
+    counts: { draft: 0, confirmed: 0, shortage: 0 },
+    nearestDateWithShifts: null,
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// 日付・時刻（JST 固定）
+//
+// 🔴 サーバの地域設定に依存させない。Vercel は UTC で動くため、
+//   ローカル（JST）では合うのに本番で1日ずれる、が起きる。
+// ─────────────────────────────────────────────────────────
+
+export function todayInJst(): string {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
+
+export function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return t.toISOString().slice(0, 10);
+}
+
+function daysBetween(from: string, to: string): number {
+  const [y1, m1, d1] = from.split("-").map(Number);
+  const [y2, m2, d2] = to.split("-").map(Number);
+  return Math.abs(Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000;
 }
 
 /** 09:00 のような表示にする */
@@ -238,8 +507,4 @@ export function formatBoardDate(iso: string): string {
   const date = new Date(Date.UTC(y, m - 1, d));
   const week = "日月火水木金土"[date.getUTCDay()];
   return `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")} (${week})`;
-}
-
-export function qualificationLabels(ids: string[]): string[] {
-  return ids.map((id) => qualById.get(id)?.shortLabel).filter((v): v is string => Boolean(v));
 }

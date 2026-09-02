@@ -10,8 +10,9 @@
 //   所属は「枠線の色」で区別する（自社=灰／協力会社=橙／NG=赤）。
 //   色だけに頼らず文字（協・他・⚠）も併記する。
 
-import type { Guard, PlateView } from "@/lib/types";
-import { qualificationLabels } from "@/lib/board";
+// 🔴 資格ラベルは board.ts で畳んである（qualLabels）。
+//   プレートを描くたびにマスタを引かせない（1日 約150枚 描く画面のため）。
+import type { GuardView, PlateView } from "@/lib/types";
 
 const ROLE_LABEL = { leader: "L", sub: "S", member: "" } as const;
 
@@ -26,7 +27,7 @@ function QualBadge({ label }: { label: string }) {
 
 export function Plate({ plate }: { plate: PlateView }) {
   const hasNg = plate.ngReasons.length > 0;
-  const quals = qualificationLabels(plate.guard.qualificationIds);
+  const quals = plate.qualLabels;
 
   return (
     <div
@@ -42,7 +43,7 @@ export function Plate({ plate }: { plate: PlateView }) {
       ].join(" ")}
     >
       <div className="flex items-center gap-1">
-        <span className="t-plate truncate text-slate-900">{plate.guard.shortName}</span>
+        <span className="t-plate truncate text-slate-900">{plate.guard.short_name}</span>
         {ROLE_LABEL[plate.role] && (
           <span className="t-badge ml-auto shrink-0 rounded bg-indigo-600 px-1.5 leading-5 text-white">
             {ROLE_LABEL[plate.role]}
@@ -86,8 +87,8 @@ export function Plate({ plate }: { plate: PlateView }) {
 }
 
 /** プール（未配置）に並べる版 */
-export function PoolPlate({ guard, isPartner }: { guard: Guard; isPartner: boolean }) {
-  const quals = qualificationLabels(guard.qualificationIds);
+export function PoolPlate({ view }: { view: GuardView }) {
+  const { guard, isPartner, qualLabels: quals } = view;
   return (
     <div
       className={[
@@ -96,7 +97,7 @@ export function PoolPlate({ guard, isPartner }: { guard: Guard; isPartner: boole
         isPartner ? "border-amber-400 bg-amber-50" : "border-slate-300 bg-white",
       ].join(" ")}
     >
-      <div className="t-plate truncate text-slate-900">{guard.shortName}</div>
+      <div className="t-plate truncate text-slate-900">{guard.short_name}</div>
       <div className="mt-1 flex min-h-[20px] items-center gap-1 overflow-hidden">
         {quals.map((q) => (
           <QualBadge key={q} label={q} />

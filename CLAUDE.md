@@ -223,8 +223,14 @@
   `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`
 - 🔴 **認可は3枚重ね**：① DB の RLS（最後の砦）② 各ページの `requireRole()`（関門）③ `proxy.ts`（導線であって認可ではない）。
   **テーブルを追加したら `supabase/checks/rls-audit.sql` を実行する**（0行でなければ要件 S-2 違反）
-- 🔴 **段1 のデータはすべてダミー**（`src/lib/fixtures/board.ts`）。氏名・現場名は架空。
-  **規模だけ実測に寄せてある**（現場40件超・プレート100枚超）。密度が違うと画面設計の検証にならないため
+- 🔴 **データはすべてダミー**。氏名・現場名は架空。
+  **規模だけ実測に寄せてある**（現場42件・隊員104名・プレート約130枚）。密度が違うと画面設計の検証にならないため
+  - 🔴 **2026-09-02 に配置ボードのデータ元を Supabase へ移した**（段2-②）。
+    アプリは fixtures を読まない。**投入するのは `supabase/seed/20260902_dummy_board.sql`**（README §4-2）
+  - ダミーの定義は `scripts/dummy-data.mts`、SQL 生成は `scripts/gen-seed.mts`。
+    **どちらも開発ツールであってシステムではない**ため `src/` の外に置き、`tsconfig.json` の型検査からも外してある
+- 🔴 **型の命名で出どころを分ける**（`src/lib/types.ts`）。
+  `snake_case`＝DB の列と一対一（変換層を作らない）／`camelCase`＝画面のために組み立てた形
 - **セッションログ**：`logs/YYYY-MM-DD.md`（同日は追記）
 - **AIK assign の本番システムには一切触れない。** 外販稼働中であり、保守会社の切り替え作業中でもある
 - **本番データを開発環境・本リポジトリに持ち込まない**（個人情報保護）。

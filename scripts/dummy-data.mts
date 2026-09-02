@@ -1,4 +1,10 @@
-// 段1（表示のみ）用のダミーデータ。
+// ダミーデータの定義。**seed SQL を作るためだけに使う**（アプリからは読まない）。
+//
+// 🔴 なぜ src/ ではなく scripts/ に置くのか（2026-09-02 移動）
+//   段2 でアプリのデータ元を Supabase に移したため、src/ に置くと
+//   **アプリが読まないコードを型検査し続ける**ことになる。
+//   ここは開発ツールであって、システムの一部ではない。
+//   → 使い方は scripts/gen-seed.mts のコメントを見る。
 //
 // 🔴 **本番データは持ち込まない**（CLAUDE.md）。氏名・現場名・得意先名はすべて架空。
 //    苗字に連番を付けてあるのは、実在の人物と取り違えないようにするため。
@@ -6,18 +12,48 @@
 // 規模は実測に合わせる（as-genjo-kansei.md §5 / shiftmax-api-analysis.md §10-2）：
 //   日勤の稼働 約68名 ／ 現場 40件超 ／ プレート 平日 約150枚
 // **密度が現実と違うと画面設計の検証にならない**ため、件数だけは実物に寄せる。
+//
+// 🔴 型はこのファイル内で完結させる（src/lib/types.ts を参照しない）。
+//   あちらは **DB の列と一対一（snake_case）** に揃えてあり、
+//   ここは「生成しやすい形」でよい。DB の列名への対応付けは gen-seed.mts が持つ。
+//   道具がシステムの型に引きずられると、システム側を直すたびに道具が壊れる。
 
-import type {
-  Assignment,
-  Company,
-  Customer,
-  Guard,
-  Jurisdiction,
-  NgEntry,
-  Qualification,
-  Shift,
-  Site,
-} from "@/lib/types";
+type Jurisdiction = {
+  id: string; code: string; name: string;
+  allowCrossStaff: boolean; allowCrossSite: boolean;
+};
+type Company = { id: string; kind: "own" | "partner"; name: string };
+type Qualification = { id: string; shortLabel: string; name: string };
+type Customer = { id: string; name: string };
+type Site = {
+  id: string; guardPostNo: string; name: string; shortName: string;
+  customerId: string; jurisdictionId: string; requiredQualificationIds: string[];
+};
+type Guard = {
+  id: string; personCode: string | null; name: string; shortName: string;
+  companyId: string; jurisdictionId: string; qualificationIds: string[];
+};
+type Shift = {
+  id: string; siteId: string; workDate: string; jurisdictionId: string;
+  workKind: "day" | "nightA" | "nightB" | "dayCancel" | "nightCancel";
+  headcount: number; startH: number; startM: number; endH: number; endM: number;
+  breakMin: number; bandName: string; planComment: string; billingNote: string;
+  status: "draft" | "confirmed"; changedAfterConfirm: boolean;
+};
+type Assignment = {
+  id: string; guardId: string; workDate: string;
+  kind: "site" | "lent_out" | "off";
+  shiftId: string | null;
+  role: "leader" | "sub" | "member";
+  isLongDistance: boolean; position: number;
+  offKind: string | null;
+  lentToCompanyId: string | null; externalSiteName: string | null;
+  status: "planned" | "canceled";
+};
+type NgEntry = {
+  id: string; guardId: string; siteId: string | null;
+  counterpartGuardId: string | null; reason: string;
+};
 
 /** 決定的な擬似乱数。実行のたびに画面が変わると比較できないため seed 固定 */
 function makeRng(seed: number) {

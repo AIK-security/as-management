@@ -24,5 +24,8 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // scripts/ は Node が --experimental-strip-types で直接実行する開発ツール。
+  // アプリのビルド対象ではないため、ここでは型検査しない
+  // （.mts を相対 import する書き方が Next のモジュール解決と合わないだけで、Node 側では正しい）。
+  "exclude": ["node_modules", "scripts"]
 }

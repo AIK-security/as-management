@@ -1,4 +1,4 @@
-// ダミーデータ（src/lib/fixtures/board.ts）から seed SQL を生成する。
+// ダミーデータ（scripts/dummy-data.mts）から seed SQL を生成する。
 //
 // 🔴 なぜ生成するのか
 //   段2 で配置ボードのデータ元を fixtures → Supabase に移す。
@@ -22,7 +22,7 @@ import {
   SHIFTS,
   SITES,
   SITE_EXPERIENCE,
-} from "../src/lib/fixtures/board.ts";
+} from "./dummy-data.mts";
 import { writeFileSync, mkdirSync } from "node:fs";
 
 // ── UUID を決定的に作る ────────────────────────────────
@@ -159,7 +159,7 @@ w("-- =============================================================");
 w("-- 配置ボードのダミーデータ（自動生成・2026-09-02）");
 w("--");
 w("-- 🔴 このファイルは手で編集しない。");
-w("--    生成元：src/lib/fixtures/board.ts");
+w("--    生成元：scripts/dummy-data.mts");
 w("--    再生成：node --experimental-strip-types scripts/gen-seed.mts");
 w("--");
 w("-- 🔴 氏名・現場名・得意先名はすべて架空。本番データは持ち込まない（CLAUDE.md）。");

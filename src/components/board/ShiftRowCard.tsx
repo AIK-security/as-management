@@ -33,20 +33,20 @@ export function ShiftRowCard({ row }: { row: ShiftRow }) {
         ].join(" ")}
       >
         <span className="t-site truncate text-slate-900">{site.name}</span>
-        <span className="t-customer truncate text-slate-500">{customer.name}</span>
+        <span className="t-customer truncate text-slate-500">{customer?.name ?? ""}</span>
 
         <span className="t-meta shrink-0 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-600">
-          {shift.bandName}
+          {shift.band_name}
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <span className="t-time text-slate-800">
-            {formatTime(shift.startH, shift.startM)}–{formatTime(shift.endH, shift.endM)}
+            {formatTime(shift.start_h, shift.start_m)}–{formatTime(shift.end_h, shift.end_m)}
           </span>
           <span className="t-badge rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-700">
-            {WORK_KIND_LABEL[shift.workKind]}
+            {WORK_KIND_LABEL[shift.work_kind]}
           </span>
-          <span className="t-meta text-slate-500">休 {shift.breakMin}分</span>
+          <span className="t-meta text-slate-500">休 {shift.break_min}分</span>
 
           <span className="mx-1 h-5 w-px bg-slate-300" />
 
@@ -78,9 +78,9 @@ export function ShiftRowCard({ row }: { row: ShiftRow }) {
       </header>
 
       {/* ── 注意帯（必要なときだけ出す。常時出すと見なくなる） ── */}
-      {(shift.changedAfterConfirm || missingQualifications.length > 0 || shift.planComment) && (
+      {(shift.changed_after_confirm || missingQualifications.length > 0 || shift.plan_comment) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5">
-          {shift.changedAfterConfirm && (
+          {shift.changed_after_confirm && (
             <span
               className="t-badge rounded border border-indigo-400 bg-indigo-50 px-2 py-0.5 text-indigo-800"
               title="確定後に変更あり。べんり君へ再度引き渡す必要があります"
@@ -90,11 +90,11 @@ export function ShiftRowCard({ row }: { row: ShiftRow }) {
           )}
           {missingQualifications.length > 0 && (
             <span className="t-badge rounded border border-amber-400 bg-amber-50 px-2 py-0.5 text-amber-800">
-              資格不足：{missingQualifications.map((q) => q.shortLabel).join("・")}
+              資格不足：{missingQualifications.map((q) => q.short_label).join("・")}
             </span>
           )}
-          {shift.planComment && (
-            <span className="t-meta truncate text-slate-500">📝 {shift.planComment}</span>
+          {shift.plan_comment && (
+            <span className="t-meta truncate text-slate-500">📝 {shift.plan_comment}</span>
           )}
         </div>
       )}

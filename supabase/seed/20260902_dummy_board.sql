@@ -2,7 +2,7 @@
 -- 配置ボードのダミーデータ（自動生成・2026-09-02）
 --
 -- 🔴 このファイルは手で編集しない。
---    生成元：src/lib/fixtures/board.ts
+--    生成元：scripts/dummy-data.mts
 --    再生成：node --experimental-strip-types scripts/gen-seed.mts
 --
 -- 🔴 氏名・現場名・得意先名はすべて架空。本番データは持ち込まない（CLAUDE.md）。
