@@ -136,6 +136,28 @@ npm install
 > Docker が入っていないため `supabase start`（ローカルスタック）は使わない。
 > CLI で流す場合は `npx supabase link --project-ref <ref>` のあと `npx supabase db push`。
 
+| 順 | ファイル | 中身 |
+|---|---|---|
+| 1 | `20260901000000_auth_roles.sql` | `profiles`・4ロール・RLS ヘルパー・招待トリガー |
+| 2 | `20260901120000_profiles_is_active.sql` | 退職・異動を「削除しない」で止めるための `is_active` |
+| 3 | `20260902000000_board_core.sql` | 🔴 **配置ボードの中核**（マスタ＋`shifts`＋`assignments`＋NG＋RLS） |
+
+### 4-2. ダミーデータの投入（開発環境のみ）
+
+`supabase/seed/20260902_dummy_board.sql` を SQL Editor に貼って実行する。
+**何度流しても同じ状態になる**（先頭で `truncate` する）。
+
+🔴 **氏名・現場名・得意先名はすべて架空。** 本番データは持ち込まない。
+規模だけ実測に寄せてある（現場42件／隊員104名／プレート約130枚）。
+密度が現実と違うと画面設計の検証にならないため。
+
+このファイルは**手で編集しない**。生成元は `src/lib/fixtures/board.ts` で、
+作り直すときは次を実行する：
+
+```bash
+node --experimental-strip-types scripts/gen-seed.mts
+```
+
 ### 5. 初期ユーザーを作る（2手）
 
 🔴 **ダッシュボードの「Create new user」には User Metadata の入力欄が無い**
