@@ -241,10 +241,20 @@ export default async function BoardPage({
               )}
             </div>
           ) : (
-            <div className="space-y-2.5">
-              {board.rows.map((row) => (
-                <ShiftRowCard key={row.shift.id} row={row} />
-              ))}
+            /* 🔴 箱組み（2026-09-02）。横幅いっぱいの帯から変更した。
+               日勤は平均 1.7名/現場で1名の枠が多く、帯だと右側がほぼ空白だった。
+
+               ・列幅は最低 272px。プレート（112px）が2枚入る最小幅
+               ・人数の多い枠は 2〜3 列ぶん使う（幅は ShiftRowCard が決める）
+               ・grid-auto-flow: dense は**使わない**。
+                 隙間は埋まるが表示順が入れ替わる。時間順に並べている画面で
+                 順番が変わると、A表と突き合わせられなくなる */
+            <div className="@container">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(272px,1fr))] items-stretch gap-2.5">
+                {board.rows.map((row) => (
+                  <ShiftRowCard key={row.shift.id} row={row} />
+                ))}
+              </div>
             </div>
           )}
 
@@ -258,7 +268,7 @@ export default async function BoardPage({
           )}
         </main>
 
-        {/* ── 右：隊員プール（仕舞える） ── */}
+        {/* ── 右：隊員プール（閉じられる） ── */}
         <PoolPane poolCount={board.pool.length}>
           <div className="px-3 py-2">
             <input
@@ -320,7 +330,7 @@ export default async function BoardPage({
         </PoolPane>
       </div>
 
-      {/* ══ 要確認（仕舞える） ══════════════════════════════ */}
+      {/* ══ 要確認（閉じられる） ══════════════════════════════ */}
       <WarningsPane count={board.warnings.length}>
         <ul className="mt-1.5 grid grid-cols-2 gap-x-6 gap-y-0.5">
           {board.warnings.map((w, i) => (

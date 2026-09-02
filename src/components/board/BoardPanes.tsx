@@ -1,4 +1,4 @@
-// 配置ボードの「仕舞える」ペイン（隊員プール／要確認）。
+// 配置ボードの「閉じられる」ペイン（隊員プール／要確認）。
 //
 // 🔴 なぜクライアント状態なのか（2026-09-02）
 //   日付・管轄・日勤/夜勤の切り替えは URL パラメータにしてある（サーバで解決）。
@@ -10,10 +10,10 @@
 //   落ちないようにする。読めなければ「開いた状態」で普通に使える。
 //
 // 🔴 開いた状態と閉じた状態は**別の markup を出す**（幅を変えるだけにしない）。
-//   仕舞ったときに 420px の中身を残したまま隠すと、
+//   閉じたときに 420px の中身を残したまま隠すと、
 //   スクロール位置や検索欄の入力が生き続けて分かりにくい。
 //
-// 🔴 何のために仕舞うのか
+// 🔴 何のために閉じるのか
 //   配置エリアを広げるため。管制の画面は1日 約150枚のプレートを並べる。
 //   縦横どちらも足りない（PC の解像度は未確認・requirements.md §8-7 ③）。
 "use client";
@@ -72,9 +72,12 @@ function useCollapsed(key: string) {
   return { collapsed, toggle };
 }
 
+// 🔴 記号1文字にしない。当たり判定が小さく、何のボタンかも分からない。
+//   業務画面では「押せる場所」と「押すと何が起きるか」を文字で出す。
 const TOGGLE_BTN =
-  "shrink-0 rounded border border-slate-300 bg-white px-1.5 text-[13px] leading-5 text-slate-500 " +
-  "transition-all duration-150 ease-in-out hover:bg-slate-200 hover:text-slate-800";
+  "shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-2 py-0.5 " +
+  "text-[13px] font-medium leading-5 text-slate-600 " +
+  "transition-all duration-150 ease-in-out hover:bg-slate-200 hover:text-slate-900";
 
 // ─────────────────────────────────────────────────────────
 // 隊員プール（右）
@@ -89,27 +92,26 @@ export function PoolPane({
   const { collapsed, toggle } = useCollapsed("board.pool.collapsed");
 
   if (collapsed) {
+    // 🔴 帯**全体**を1つのボタンにする。細い帯の中の小さなアイコンを狙わせない。
     return (
-      <aside className="flex w-11 shrink-0 flex-col items-center gap-2 border-l-2 border-slate-300 bg-white py-2">
+      <aside className="w-14 shrink-0 border-l-2 border-slate-300 bg-white">
         <button
           type="button"
           onClick={toggle}
-          className={TOGGLE_BTN}
           title="隊員プールを開く"
           aria-label="隊員プールを開く"
+          aria-expanded={false}
+          className="flex h-full w-full cursor-pointer flex-col items-center gap-2 py-3 transition-all duration-150 ease-in-out hover:bg-slate-100"
         >
-          ‹
-        </button>
-        {/* 仕舞っていても「何人余っているか」だけは見えるようにする。
-            未配置の人数は配置作業中いちばん見たい数字のため */}
-        <button
-          type="button"
-          onClick={toggle}
-          className="[writing-mode:vertical-rl] cursor-pointer text-[13px] font-semibold tracking-tight text-slate-600 transition-all duration-150 ease-in-out hover:text-slate-900"
-          title="隊員プールを開く"
-        >
-          隊員プール
-          <span className="ml-2 tabular-nums text-slate-900">未配置 {poolCount}</span>
+          <span className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[13px] leading-5 text-slate-600">
+            ‹
+          </span>
+          {/* 仕舞っていても「何人余っているか」は残す。
+              未配置の人数は配置作業中いちばん見たい数字で、隠すと結局開き直すことになる */}
+          <span className="text-[18px] font-bold tabular-nums text-slate-900">{poolCount}</span>
+          <span className="[writing-mode:vertical-rl] text-[13px] font-semibold tracking-tight text-slate-600">
+            隊員プール（未配置）
+          </span>
         </button>
       </aside>
     );
@@ -117,7 +119,7 @@ export function PoolPane({
 
   return (
     <aside className="thin-scroll flex w-[420px] shrink-0 flex-col overflow-y-auto border-l-2 border-slate-300 bg-white">
-      {/* 見出しは貼り付けておく。中を下までスクロールしても仕舞えるように */}
+      {/* 見出しは貼り付けておく。中を下までスクロールしても閉じられるように */}
       <div className="sticky top-0 z-10">
         <PaneHeading
           title="隊員プール"
@@ -127,10 +129,11 @@ export function PoolPane({
               type="button"
               onClick={toggle}
               className={TOGGLE_BTN}
-              title="隊員プールを仕舞う"
-              aria-label="隊員プールを仕舞う"
+              title="隊員プールを閉じる"
+              aria-label="隊員プールを閉じる"
+              aria-expanded
             >
-              ›
+              閉じる ›
             </button>
           }
         />
@@ -174,14 +177,14 @@ export function WarningsPane({
           type="button"
           onClick={toggle}
           className={`${TOGGLE_BTN} ml-auto`}
-          title={collapsed ? "要確認を開く" : "要確認を仕舞う"}
-          aria-label={collapsed ? "要確認を開く" : "要確認を仕舞う"}
+          title={collapsed ? "要確認を開く" : "要確認を閉じる"}
+          aria-label={collapsed ? "要確認を開く" : "要確認を閉じる"}
           aria-expanded={!collapsed}
         >
-          {collapsed ? "▲" : "▼"}
+          {collapsed ? "▲ 開く" : "▼ 閉じる"}
         </button>
       </div>
-      {/* 🔴 仕舞っても件数は必ず出す。
+      {/* 🔴 閉じても件数は必ず出す。
           「0件だから閉じている」と「閉じているから見えない」を取り違えると、
           未充足を見落としたまま当日を迎える */}
       {!collapsed && children}

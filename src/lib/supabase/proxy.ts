@@ -20,8 +20,24 @@ function isPublicPath(path: string) {
   return path === "/login" || path.startsWith("/auth");
 }
 
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+/**
+ * @param requestHeaders src/proxy.ts が nonce と CSP を載せたリクエストヘッダ。
+ *   🔴 Next.js はここから nonce を読んで script タグに付ける。
+ *      素の request のまま NextResponse.next() すると nonce が伝わらず、
+ *      hydration が動かなくなる（src/lib/security-headers.ts の経緯を参照）。
+ */
+export async function updateSession(request: NextRequest, requestHeaders: Headers) {
+  // Cookie は Supabase が request.cookies を書き換えて反映させる方式のため、
+  // レスポンスを作り直すたびに**その時点の**Cookie ヘッダを取り込み直す必要がある。
+  // 一方 nonce と CSP は毎回同じ値なので、上書きで載せ直す。
+  const headersWithNonce = () => {
+    const h = new Headers(request.headers);
+    h.set("x-nonce", requestHeaders.get("x-nonce") ?? "");
+    h.set("Content-Security-Policy", requestHeaders.get("Content-Security-Policy") ?? "");
+    return h;
+  };
+
+  let supabaseResponse = NextResponse.next({ request: { headers: headersWithNonce() } });
 
   const { url: supabaseUrl, anonKey } = supabaseEnv();
   const supabase = createServerClient(
@@ -36,7 +52,7 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next({ request: { headers: headersWithNonce() } });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );

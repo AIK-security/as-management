@@ -16,6 +16,13 @@ import type { GuardView, PlateView } from "@/lib/types";
 
 const ROLE_LABEL = { leader: "L", sub: "S", member: "" } as const;
 
+// 🔴 プレート幅 112px の根拠（2026-09-02）
+//   配置カードを箱組みにしたため、いちばん狭い箱（272px）の中に
+//   **2枚並ぶ**ことが条件になった。
+//   272 −（内側の余白20 ＋ 枠線10）= 242 ≧ 112×2 ＋ 隙間6 = 230。
+//   これより広げると1名現場の箱でプレートが1枚しか入らず、縦に伸びる。
+const PLATE_BOX = "w-[112px] shrink-0 rounded-lg border-2 px-1.5 py-1";
+
 /** 資格バッジ。緑・細字ではなく、はっきり読める大きさにする */
 function QualBadge({ label }: { label: string }) {
   return (
@@ -33,7 +40,7 @@ export function Plate({ plate }: { plate: PlateView }) {
     <div
       title={hasNg ? plate.ngReasons.join(" / ") : undefined}
       className={[
-        "w-[126px] shrink-0 rounded-lg border-2 px-2 py-1.5",
+        PLATE_BOX,
         "cursor-grab select-none transition-all duration-150 ease-in-out hover:shadow-md",
         hasNg
           ? "border-rose-400 bg-rose-50"
@@ -92,7 +99,7 @@ export function PoolPlate({ view }: { view: GuardView }) {
   return (
     <div
       className={[
-        "w-[126px] shrink-0 rounded-lg border-2 px-2 py-1.5",
+        PLATE_BOX,
         "cursor-grab select-none transition-all duration-150 ease-in-out hover:shadow-md",
         isPartner ? "border-amber-400 bg-amber-50" : "border-slate-300 bg-white",
       ].join(" ")}
@@ -115,7 +122,7 @@ export function PoolPlate({ view }: { view: GuardView }) {
 /** 未充足の空き枠。**赤で欠員だと分かるようにする**（見落とすと当日に事故る） */
 export function EmptySlot() {
   return (
-    <div className="flex h-[54px] w-[126px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed border-rose-300 bg-rose-50/50 text-rose-500">
+    <div className="flex h-[52px] w-[112px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed border-rose-300 bg-rose-50/50 text-rose-500">
       <span className="t-meta">空き ＋</span>
     </div>
   );
