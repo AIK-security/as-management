@@ -21,11 +21,10 @@ import type { GuardView, PlateView } from "@/lib/types";
 // 🔴 隊長だけバッジを出す。「それ以外」は何も出さない（2026-09-02）。
 //   全員に何かを出すと、出ていること自体が情報でなくなる。
 //
-// 🔴 「L」ではなく漢字1文字にした。記号は意味を覚えないと読めない
-//   （実際に「L と S は何だったか」で止まった）。
-//   「隊長」の2文字にすると 84px のプレートで資格バッジと同居できないため、
-//   協・他・経 と同じ**1文字**に揃える。読みはツールチップと記号一覧で補う。
-const ROLE_LABEL = { leader: "長", member: "" } as const;
+// 🔴 表記は「L」。漢字1文字（長）も試したが、**濃い地に白抜きの L のほうが
+//   遠目に拾いやすい**という判断（2026-09-02・柴山）。
+//   意味はツールチップと記号一覧（screen-design.md §2-4b）で補う。
+const ROLE_LABEL = { leader: "L", member: "" } as const;
 
 // 🔴 プレート幅 84px の根拠（2026-09-02・112px から変更）
 //   日勤は毎日40現場ほどある。2枚並びだと5名の枠で3段になり、
@@ -109,11 +108,10 @@ export function Plate({ plate }: { plate: PlateView }) {
             協
           </span>
         )}
-        {plate.isOtherJurisdiction && (
-          <span className={NEUTRAL_BADGE} title="他管轄からの応援">
-            他
-          </span>
-        )}
+        {/* 🔴 「他管轄からの応援」バッジは出さない（2026-09-02・柴山判断）。
+            バッジを増やすほど1枚あたりの読み取り量が減る。
+            判定自体（PlateView.isOtherJurisdiction）は残してあるので、
+            必要になれば1行戻すだけで出せる。プールの絞り込みでも使う。 */}
       </div>
     </div>
   );
