@@ -55,6 +55,8 @@ export type Customer = {
   /** 担当コード。ShiftMax では顧客名ではなくこれが実質のキー */
   staff_code: string;
   name: string;
+  /** 五十音順に並べるためのフリガナ。無ければ name で代用する */
+  name_kana: string | null;
 };
 
 export type Site = {
@@ -189,4 +191,20 @@ export type ShiftRow = {
 export type BoardWarning = {
   kind: "shortage" | "qualification" | "overlap" | "ng";
   message: string;
+};
+
+/**
+ * 得意先ごとのまとまり。
+ * 🔴 並び順の決定は 2026-09-02：
+ *   ・グループ＝**得意先名順（固定）**。毎日同じ場所に出るので探す位置を覚えられる。
+ *     当日変更で配置が動いても、現場カードの位置がずれない
+ *   ・グループの中＝**開始時刻順**
+ */
+export type BoardGroup = {
+  customer: Customer | null;
+  rows: ShiftRow[];
+  /** 見出しに出す集計 */
+  siteCount: number;
+  placed: number;
+  headcount: number;
 };

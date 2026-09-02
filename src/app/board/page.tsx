@@ -55,6 +55,42 @@ function CountChip({
   );
 }
 
+/**
+ * 得意先の見出し。
+ * 🔴 AIK assign（自社の外販システム）より**薄くする**。
+ *   1得意先1現場の日が多いと、見出しばかりで縦に伸びる。
+ *   1行（約22px）に収め、罫線で区切りだけ作る。
+ * 🔴 不足がある会社は見出しの時点で分かるようにする。
+ *   カードまで目を落とさないと気づけないと、40現場を見落とさず追えない。
+ */
+function GroupHeading({
+  name,
+  siteCount,
+  placed,
+  headcount,
+}: {
+  name: string;
+  siteCount: number;
+  placed: number;
+  headcount: number;
+}) {
+  const shortage = Math.max(0, headcount - placed);
+  return (
+    <div className="flex items-baseline gap-2 pt-1">
+      <h2 className="shrink-0 text-[14px] font-semibold tracking-tight text-slate-700">{name}</h2>
+      <span className="t-meta shrink-0 text-slate-500">
+        {siteCount}件 / {placed}名
+      </span>
+      {shortage > 0 && (
+        <span className="t-badge shrink-0 rounded bg-rose-100 px-1.5 leading-5 text-rose-700">
+          不足 {shortage}
+        </span>
+      )}
+      <span className="h-px min-w-4 flex-1 bg-slate-300" />
+    </div>
+  );
+}
+
 export default async function BoardPage({
   searchParams,
 }: {
@@ -244,17 +280,36 @@ export default async function BoardPage({
             /* 🔴 箱組み（2026-09-02）。横幅いっぱいの帯から変更した。
                日勤は平均 1.7名/現場で1名の枠が多く、帯だと右側がほぼ空白だった。
 
-               ・列幅は最低 272px。プレート（112px）が2枚入る最小幅
-               ・人数の多い枠は 2〜3 列ぶん使う（幅は ShiftRowCard が決める）
+               ・🔴 **箱の大きさは統一する。** 人数で幅を変える案は大小が混ざって
+                 読みにくく、一覧として成立しなかった
+               ・列幅は最低 280px。プレート（112px）が2枚入る最小幅
+               ・高さは同じ行の中で揃う（グリッドの既定）。
+                 プレート置き場を下端に寄せてあるので、行内で高さの基準線が合う
                ・grid-auto-flow: dense は**使わない**。
-                 隙間は埋まるが表示順が入れ替わる。時間順に並べている画面で
-                 順番が変わると、A表と突き合わせられなくなる */
-            <div className="@container">
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(272px,1fr))] items-stretch gap-2.5">
-                {board.rows.map((row) => (
-                  <ShiftRowCard key={row.shift.id} row={row} />
-                ))}
-              </div>
+                 隙間は埋まるが表示順が入れ替わる。順番が変わると
+                 A表と突き合わせられなくなる
+
+               🔴 並び順（2026-09-02 決定）
+               ・得意先ごとにまとめ、**得意先名順で固定**する。
+                 毎日同じ場所に出るので探す位置を覚えられ、当日変更で
+                 枠が増減しても他社のカード位置がずれない
+               ・**まとまりの中は開始時刻順**（board.ts のクエリ側で付けている） */
+            <div className="space-y-3">
+              {board.groups.map((g) => (
+                <section key={g.customer?.id ?? "__none__"}>
+                  <GroupHeading
+                    name={g.customer?.name ?? "（得意先が未設定）"}
+                    siteCount={g.siteCount}
+                    placed={g.placed}
+                    headcount={g.headcount}
+                  />
+                  <div className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-stretch gap-2.5">
+                    {g.rows.map((row) => (
+                      <ShiftRowCard key={row.shift.id} row={row} />
+                    ))}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
 

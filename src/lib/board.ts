@@ -11,6 +11,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Assignment,
+  BoardGroup,
   BoardWarning,
   Company,
   Customer,
@@ -63,6 +64,8 @@ export type BoardData = {
   jurisdictions: Jurisdiction[];
   group: BoardShiftGroup;
   rows: ShiftRow[];
+  /** rows を得意先でまとめたもの。画面はこちらを描く（並び順は BoardGroup を参照） */
+  groups: BoardGroup[];
   /** 未配置の隊員（プール） */
   pool: GuardView[];
   /** 非現場ステータス（有給・研修 など） */
@@ -127,15 +130,17 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
        band_name, plan_comment, billing_note, status, changed_after_confirm,
        site:sites!inner (
          id, site_code, guard_target_no, name, short_name, customer_id, jurisdiction_id,
-         customer:customers ( id, staff_code, name ),
+         customer:customers ( id, staff_code, name, name_kana ),
          site_required_qualifications ( qualification_id )
        )`,
     )
     .eq("work_date", workDate)
     .eq("jurisdiction_id", jurisdiction.id)
     .in("work_kind", GROUP_WORK_KINDS[group])
-    // 🔴 並び順は「時間 → id」。id は seed で連番から作っているため安定する。
-    //    A表の並びが業務的にどうあるべきかは未確認（gap-analysis A-1 に積む）。
+    // 🔴 ここで付ける順序は**グループの中の順序**になる（2026-09-02 決定）。
+    //    得意先でまとめたあと、そのまとまりの中は開始時刻順。
+    //    id を最後に入れるのは同時刻の並びを毎回同じにするため
+    //    （seed の id は連番由来なので安定する）。
     .order("start_h")
     .order("start_m")
     .order("id");
@@ -352,6 +357,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     jurisdictions,
     group,
     rows,
+    groups: groupByCustomer(rows),
     pool,
     offGroups: [...offMap.entries()].map(([label, guards]) => ({ label, guards })),
     lentGroups: [...lentMap.values()],
@@ -369,6 +375,47 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
 // ─────────────────────────────────────────────────────────
 // 補助
 // ─────────────────────────────────────────────────────────
+
+/**
+ * 得意先ごとにまとめる。
+ *
+ * 🔴 グループの並びは**得意先名（フリガナ優先）順で固定**する（2026-09-02 決定）。
+ *   「その日いちばん早い枠の時刻順」も検討したが、**日によって会社の並びが変わる**。
+ *   40現場を毎日見る作業では、探す場所が固定であることのほうが効く。
+ *   当日変更で枠が増減しても、他社のカード位置がずれない利点もある。
+ *
+ * 🔴 rows は既に開始時刻順で渡ってくる。JS の sort は安定なので、
+ *   ここで並べ替えてもグループ内の時刻順は崩れない。
+ */
+function groupByCustomer(rows: ShiftRow[]): BoardGroup[] {
+  const map = new Map<string, BoardGroup>();
+
+  for (const row of rows) {
+    const key = row.customer?.id ?? "";
+    const group = map.get(key) ?? {
+      customer: row.customer,
+      rows: [],
+      siteCount: 0,
+      placed: 0,
+      headcount: 0,
+    };
+    group.rows.push(row);
+    group.siteCount += 1;
+    group.placed += row.plates.length;
+    group.headcount += row.shift.headcount;
+    map.set(key, group);
+  }
+
+  // 日本語の並びはコードポイント順では合わない（ひらがな・カタカナ・漢字）。
+  const collator = new Intl.Collator("ja");
+  const sortKey = (g: BoardGroup) => g.customer?.name_kana || g.customer?.name || "";
+
+  return [...map.values()].sort((a, b) => {
+    // 得意先が紐づいていない現場は最後にまとめる（データ不備が埋もれないように）
+    if (!a.customer !== !b.customer) return a.customer ? -1 : 1;
+    return collator.compare(sortKey(a), sortKey(b));
+  });
+}
 
 /** 埋め込み select の戻りから、枠の列だけを取り出す */
 function toShift(raw: ShiftRowRaw): Shift {
@@ -456,6 +503,7 @@ function emptyBoard(workDate: string, group: BoardShiftGroup): BoardData {
     jurisdictions: [],
     group,
     rows: [],
+    groups: [],
     pool: [],
     offGroups: [],
     lentGroups: [],

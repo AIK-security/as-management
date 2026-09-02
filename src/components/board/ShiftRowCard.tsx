@@ -7,10 +7,11 @@
 //   日勤は 40現場超・68名＝**平均 1.7名/現場**。1名の現場が相当数ある。
 //   帯だと1名の枠が横幅を丸ごと使い、右側がほぼ空白になっていた。
 //
-//   ただし AIK assign（自社の外販システム）のような**固定幅の箱にはしない**。
-//   固定幅に収めるために情報を削ることになるため。
-//   → **人数に応じて箱が横に伸びる**（幅を決めるのはプレートの枚数）。
-//     並べるのは page.tsx 側のグリッド。
+//   🔴 箱の大きさは**全枠で統一する**（2026-09-02 判断）。
+//   人数に応じて幅を伸ばす案は試したが、大小が混ざると視線が引っかかり
+//   一覧として読みにくかった。**幅を揃えたうえで、情報は削らない**。
+//   狭い箱に収めるために情報を落とさず、横並びだった項目を縦に積んで解く。
+//   並べるのは page.tsx 側のグリッド。
 //
 // 見た目の方針：
 //   ・**左端の色帯**で仮組み/確定を一目で分ける（バッジだけだと流し見で拾えない）
@@ -22,34 +23,10 @@ import { EmptySlot, Plate } from "@/components/board/Plate";
 import { WORK_KIND_LABEL, formatTime } from "@/lib/board";
 import type { ShiftRow } from "@/lib/types";
 
-/**
- * 箱の幅は「プレートが何枚入るか」で決める。
- * 🔴 必要人数ではなく **max(必要人数, 配置済み)** を見る。
- *   確定後に増員されて headcount を超えている枠があり、
- *   必要人数だけで測るとプレートがはみ出して折り返す。
- */
-function widthSpan(headcount: number, placed: number): 1 | 2 | 3 {
-  const slots = Math.max(headcount, placed);
-  if (slots <= 2) return 1;
-  if (slots <= 6) return 2;
-  return 3;
-}
-
 export function ShiftRowCard({ row }: { row: ShiftRow }) {
   const { shift, site, customer, plates, missingQualifications } = row;
   const isDraft = shift.status === "draft";
   const shortage = Math.max(0, shift.headcount - plates.length);
-  const span = widthSpan(shift.headcount, plates.length);
-
-  // 🔴 コンテナクエリで測る。ビューポートではなく**配置エリアの幅**が基準。
-  //   隊員プールを開いているかどうかで使える幅が 420px 変わるため。
-  //   狭いときは伸ばさない（伸ばすと1列に1枚しか置けなくなる）。
-  const spanClass =
-    span === 1
-      ? ""
-      : span === 2
-        ? "@[600px]:col-span-2"
-        : "@[600px]:col-span-2 @[900px]:col-span-3";
 
   return (
     <section
@@ -59,7 +36,6 @@ export function ShiftRowCard({ row }: { row: ShiftRow }) {
         isDraft
           ? "border-slate-300 border-l-[6px] border-l-amber-400"
           : "border-slate-300 border-l-[6px] border-l-emerald-500",
-        spanClass,
       ].join(" ")}
     >
       {/* ── 見出し ── */}
