@@ -38,9 +38,11 @@ function CountChip({
   value: number;
   tone: "draft" | "confirmed" | "shortage";
 }) {
+  // 🔴 確定は色を持たせない（1色1意味・2026-09-02）。
+  //   amber＝まだ終わっていない ／ rose＝足りない ／ slate＝それ以外。
   const toneClass = {
     draft: "border-amber-400 bg-amber-50 text-amber-800",
-    confirmed: "border-emerald-400 bg-emerald-50 text-emerald-800",
+    confirmed: "border-slate-300 bg-white text-slate-700",
     shortage:
       value > 0
         ? "border-rose-400 bg-rose-50 text-rose-700"
@@ -283,8 +285,8 @@ export default async function BoardPage({
       {/* ══ 本体 ═════════════════════════════════════════════ */}
       <div className="flex min-h-0 flex-1">
         {/* ── 左：配置（現場 × 枠） ── */}
-        <main className="thin-scroll min-w-0 flex-1 overflow-y-auto p-3">
-          <div className="mb-2 flex items-baseline gap-2 px-1">
+        <main className="thin-scroll min-w-0 flex-1 overflow-y-auto p-4">
+          <div className="mb-2.5 flex items-baseline gap-2 px-0.5">
             <h1 className="text-[15px] font-semibold tracking-tight text-slate-700">配置</h1>
             <span className="t-meta text-slate-500">
               現場 {visibleSiteCount} 件 ／ 配置 {visiblePlaced} 名
@@ -301,7 +303,7 @@ export default async function BoardPage({
                  その日の全体を出し続ける。絞り込みで警告が隠れると、
                  見えていない現場の不足に気づけないまま当日を迎える */}
           {board.groups.length > 1 && (
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <div className="mb-3.5 flex flex-wrap items-center gap-2">
               <CustomerTab
                 href={hrefWith({ c: "" })}
                 label="すべて"
@@ -347,7 +349,8 @@ export default async function BoardPage({
 
                ・🔴 **箱の大きさは統一する。** 人数で幅を変える案は大小が混ざって
                  読みにくく、一覧として成立しなかった
-               ・列幅は最低 280px。プレート（112px）が2枚入る最小幅
+               ・列幅は最低 296px。プレート（112px）が2枚入り、
+                 内側の余白（左右12px）を取っても窮屈にならない幅
                ・高さは同じ行の中で揃う（グリッドの既定）。
                  プレート置き場を下端に寄せてあるので、行内で高さの基準線が合う
                ・grid-auto-flow: dense は**使わない**。
@@ -361,7 +364,7 @@ export default async function BoardPage({
                ・🔴 見出しで区切らず**1本のグリッドに詰める**。
                  会社ごとに区切ると1件の会社でも1行を占有して右が空く。
                  まとまりはカード内の得意先名と並び順で示す */
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-stretch gap-2.5">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(296px,1fr))] items-stretch gap-3">
               {visibleRows.map((row) => (
                 <ShiftRowCard
                   key={row.shift.id}

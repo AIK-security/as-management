@@ -19,8 +19,17 @@
 //   ・得意先タブで1社に絞っているとき … **出さない**。
 //     全カードに同じ会社名が並んでも1件も見分けがつかず、1行ぶん無駄になる
 //
+// 🔴 色の役割（2026-09-02・1色1意味に統一）
+//   amber   … まだ終わっていない（仮組み・要 再引き渡し）
+//   rose    … 足りない／入れてはいけない（人数不足・資格不足・NG）
+//   emerald … 資格あり（プレート側だけ）
+//   slate   … それ以外すべて。**確定は色を持たせない**
+//   確定に色を付けないのは、色は「やること」に使うべきで、
+//   確定＝済んでいる＝注意不要だから。以前は確定を緑にしていたが、
+//   資格バッジの緑と意味が二重になっていた。
+//
 // 見た目の方針：
-//   ・**左端の色帯**で仮組み/確定を一目で分ける（バッジだけだと流し見で拾えない）
+//   ・**左端の色帯**で仮組みを拾う（バッジだけだと流し見で拾えない）
 //   ・見出し（現場名）→ 数値（時間・区分・班・休憩・人数）の2段。
 //     狭い箱でも**縦に積めば情報は落ちない**
 //   ・注意帯は必要なときだけ出す（常時出すと見なくなる）
@@ -44,18 +53,18 @@ export function ShiftRowCard({
     <section
       className={[
         "flex h-full flex-col overflow-hidden rounded-lg border-2 bg-white shadow-sm",
-        // 左端の色帯：確定＝緑／仮組み＝橙
+        // 左端の色帯：仮組み＝橙／確定＝色なし（済んだものは注意を引かない）
         isDraft
           ? "border-slate-300 border-l-[6px] border-l-amber-400"
-          : "border-slate-300 border-l-[6px] border-l-emerald-500",
+          : "border-slate-300 border-l-[6px] border-l-slate-300",
       ].join(" ")}
     >
       {/* ── 見出し ── */}
       <header
-        className={[
-          "border-b border-slate-200 px-2.5 py-1.5",
-          isDraft ? "bg-amber-50/60" : "bg-slate-50",
-        ].join(" ")}
+        // 🔴 仮組みの地色（bg-amber-50）をやめた。カード1枚ぶんの面積が
+        //    色で塗られると、画面全体では最も目立つ要素になってしまう。
+        //    状態は左の色帯とバッジで足りる。
+        className="border-b border-slate-200 bg-slate-50 px-3 py-2"
       >
         {/* 得意先は現場名の**上**に小さく置く。
             会社 → 現場 の順で読め、主役（現場名）の大きさを譲らずに済む */}
@@ -69,7 +78,7 @@ export function ShiftRowCard({
           {/* 現場名は主役。狭い箱では2行まで折り返す（省略すると別現場と見分けがつかない） */}
           <span className="t-site line-clamp-2 min-w-0 flex-1 text-slate-900">{site.name}</span>
           {shift.status === "confirmed" ? (
-            <span className="t-badge shrink-0 rounded border border-emerald-400 bg-emerald-50 px-1.5 py-0.5 text-emerald-800">
+            <span className="t-badge shrink-0 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-600">
               確定
             </span>
           ) : (
@@ -87,7 +96,7 @@ export function ShiftRowCard({
         </div>
 
         {/* 🔴 狭い箱では折り返しを許す。切り捨てると休憩や人数が消えるため */}
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="t-time shrink-0 text-slate-800">
             {formatTime(shift.start_h, shift.start_m)}–{formatTime(shift.end_h, shift.end_m)}
           </span>
@@ -116,17 +125,17 @@ export function ShiftRowCard({
 
       {/* ── 注意帯（必要なときだけ出す。常時出すと見なくなる） ── */}
       {(shift.changed_after_confirm || missingQualifications.length > 0 || shift.plan_comment) && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-2.5 py-1">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-3 py-1.5">
           {shift.changed_after_confirm && (
             <span
-              className="t-badge rounded border border-indigo-400 bg-indigo-50 px-1.5 text-indigo-800"
+              className="t-badge rounded border border-amber-400 bg-amber-50 px-1.5 text-amber-800"
               title="確定後に変更あり。べんり君へ再度引き渡す必要があります"
             >
               要 再引き渡し
             </span>
           )}
           {missingQualifications.length > 0 && (
-            <span className="t-badge rounded border border-amber-400 bg-amber-50 px-1.5 text-amber-800">
+            <span className="t-badge rounded border border-rose-300 bg-rose-50 px-1.5 text-rose-700">
               資格不足：{missingQualifications.map((q) => q.short_label).join("・")}
             </span>
           )}
@@ -141,7 +150,7 @@ export function ShiftRowCard({
       {/* ── プレート置き場 ──
           🔴 mt-auto で下端に寄せる。同じ行の箱は高さが揃うため、
              プレートの位置が箱ごとにばらつくと目で追えなくなる */}
-      <div className="mt-auto flex flex-wrap content-end gap-1.5 bg-slate-50/70 px-2.5 py-2">
+      <div className="mt-auto flex flex-wrap content-end gap-2 bg-slate-50/70 px-3 py-2.5">
         {plates.map((plate) => (
           <Plate key={plate.assignmentId} plate={plate} />
         ))}

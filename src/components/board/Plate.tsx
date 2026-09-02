@@ -6,9 +6,13 @@
 //    3. ⚠NG   … 監督NG・不仲。**入れられない制約**
 //    距離・交通費は載せない（判断基準として挙がらなかった。常時表示はノイズになる）。
 //
-// 見た目：**氏名を最も大きく**し、バッジは1段下げる。
-//   所属は「枠線の色」で区別する（自社=灰／協力会社=橙／NG=赤）。
-//   色だけに頼らず文字（協・他・⚠）も併記する。
+// 🔴 色の役割は1色1意味に統一する（2026-09-02）。
+//   emerald＝資格あり ／ rose＝入れてはいけない（NG）／ slate＝それ以外。
+//   以前は 協力会社=橙・他管轄=空色・役割=藍 と色を配っていたが、
+//   **1枚のプレートに4色**乗って画面全体がやかましくなっていた。
+//   所属や役割は**文字（協・他・L・S）で読める**ので色を足す必要が無い。
+//   色を残すのは「資格」だけ ─ 現場からの直接の要望であり、
+//   数ある中から探す対象だから。
 
 // 🔴 資格ラベルは board.ts で畳んである（qualLabels）。
 //   プレートを描くたびにマスタを引かせない（1日 約150枚 描く画面のため）。
@@ -21,12 +25,16 @@ const ROLE_LABEL = { leader: "L", sub: "S", member: "" } as const;
 //   **2枚並ぶ**ことが条件になった。
 //   272 −（内側の余白20 ＋ 枠線10）= 242 ≧ 112×2 ＋ 隙間6 = 230。
 //   これより広げると1名現場の箱でプレートが1枚しか入らず、縦に伸びる。
-const PLATE_BOX = "w-[112px] shrink-0 rounded-lg border-2 px-1.5 py-1";
+const PLATE_BOX = "w-[112px] shrink-0 rounded-lg border-2 px-2 py-1.5";
+
+/** 所属・役割のバッジ。色を持たせず、枠線と文字で読ませる */
+const NEUTRAL_BADGE =
+  "t-badge shrink-0 rounded border border-slate-300 bg-white px-1 leading-5 text-slate-600";
 
 /** 資格バッジ。緑・細字ではなく、はっきり読める大きさにする */
 function QualBadge({ label }: { label: string }) {
   return (
-    <span className="t-badge shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1.5 leading-5 text-emerald-800">
+    <span className="t-badge shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1.5 leading-5 text-emerald-700">
       {label}
     </span>
   );
@@ -45,14 +53,15 @@ export function Plate({ plate }: { plate: PlateView }) {
         hasNg
           ? "border-rose-400 bg-rose-50"
           : plate.isPartner
-            ? "border-amber-400 bg-amber-50"
+            ? // 協力会社は色ではなく**地の濃さ**で分ける（給与対象外・請求が別のため区別は要る）
+              "border-slate-300 bg-slate-100"
             : "border-slate-300 bg-white",
       ].join(" ")}
     >
       <div className="flex items-center gap-1">
         <span className="t-plate truncate text-slate-900">{plate.guard.short_name}</span>
         {ROLE_LABEL[plate.role] && (
-          <span className="t-badge ml-auto shrink-0 rounded bg-indigo-600 px-1.5 leading-5 text-white">
+          <span className="t-badge ml-auto shrink-0 rounded bg-slate-700 px-1.5 leading-5 text-white">
             {ROLE_LABEL[plate.role]}
           </span>
         )}
@@ -63,23 +72,17 @@ export function Plate({ plate }: { plate: PlateView }) {
           <QualBadge key={q} label={q} />
         ))}
         {plate.experienced && (
-          <span className="t-badge shrink-0 leading-5 text-amber-500" title="この現場の経験あり">
+          <span className="t-badge shrink-0 leading-5 text-slate-500" title="この現場の経験あり">
             ★
           </span>
         )}
         {plate.isPartner && (
-          <span
-            className="t-badge shrink-0 rounded border border-amber-400 px-1 leading-5 text-amber-800"
-            title="協力会社の隊員"
-          >
+          <span className={NEUTRAL_BADGE} title="協力会社の隊員">
             協
           </span>
         )}
         {plate.isOtherJurisdiction && (
-          <span
-            className="t-badge shrink-0 rounded border border-sky-400 px-1 leading-5 text-sky-700"
-            title="他管轄からの応援"
-          >
+          <span className={NEUTRAL_BADGE} title="他管轄からの応援">
             他
           </span>
         )}
@@ -101,7 +104,7 @@ export function PoolPlate({ view }: { view: GuardView }) {
       className={[
         PLATE_BOX,
         "cursor-grab select-none transition-all duration-150 ease-in-out hover:shadow-md",
-        isPartner ? "border-amber-400 bg-amber-50" : "border-slate-300 bg-white",
+        isPartner ? "border-slate-300 bg-slate-100" : "border-slate-300 bg-white",
       ].join(" ")}
     >
       <div className="t-plate truncate text-slate-900">{guard.short_name}</div>
@@ -110,7 +113,7 @@ export function PoolPlate({ view }: { view: GuardView }) {
           <QualBadge key={q} label={q} />
         ))}
         {isPartner && (
-          <span className="t-badge shrink-0 rounded border border-amber-400 px-1 leading-5 text-amber-800">
+          <span className={NEUTRAL_BADGE} title="協力会社の隊員">
             協
           </span>
         )}
