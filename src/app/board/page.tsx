@@ -18,6 +18,8 @@ import { requireStaff, canEdit, roleLabel } from "@/lib/auth";
 import { logout } from "@/app/login/actions";
 import { ShiftRowCard } from "@/components/board/ShiftRowCard";
 import { PoolPlate } from "@/components/board/Plate";
+import { PaneHeading } from "@/components/board/PaneHeading";
+import { PoolPane, WarningsPane } from "@/components/board/BoardPanes";
 import {
   addDays,
   formatBoardDate,
@@ -49,16 +51,6 @@ function CountChip({
     <div className={`flex items-baseline gap-1.5 rounded-md border px-2.5 py-1 ${toneClass}`}>
       <span className="t-meta">{label}</span>
       <span className="text-[18px] font-bold tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-/** 右ペインのセクション見出し。帯にして区切りをはっきりさせる */
-function PaneHeading({ title, sub }: { title: string; sub: string }) {
-  return (
-    <div className="flex items-baseline justify-between border-b-2 border-slate-300 bg-slate-100 px-3 py-1.5">
-      <h2 className="text-[15px] font-semibold tracking-tight text-slate-800">{title}</h2>
-      <span className="t-meta text-slate-600">{sub}</span>
     </div>
   );
 }
@@ -266,10 +258,8 @@ export default async function BoardPage({
           )}
         </main>
 
-        {/* ── 右：隊員プール ── */}
-        <aside className="thin-scroll flex w-[420px] shrink-0 flex-col overflow-y-auto border-l-2 border-slate-300 bg-white">
-          <PaneHeading title="隊員プール" sub={`未配置 ${board.pool.length} 名`} />
-
+        {/* ── 右：隊員プール（仕舞える） ── */}
+        <PoolPane poolCount={board.pool.length}>
           <div className="px-3 py-2">
             <input
               type="search"
@@ -327,19 +317,11 @@ export default async function BoardPage({
               </div>
             ))}
           </div>
-        </aside>
+        </PoolPane>
       </div>
 
-      {/* ══ 警告 ═════════════════════════════════════════════ */}
-      <footer className="thin-scroll max-h-[140px] shrink-0 overflow-y-auto border-t-2 border-slate-300 bg-white px-4 py-2">
-        <div className="flex items-baseline gap-3">
-          <span className="text-[15px] font-bold text-slate-800">
-            ⚠ 要確認 <span className="tabular-nums text-rose-600">{board.warnings.length}</span> 件
-          </span>
-          <span className="t-meta text-slate-500">
-            止めるのは時間帯の重複だけ。NG・資格不足は警告のみで配置できます
-          </span>
-        </div>
+      {/* ══ 要確認（仕舞える） ══════════════════════════════ */}
+      <WarningsPane count={board.warnings.length}>
         <ul className="mt-1.5 grid grid-cols-2 gap-x-6 gap-y-0.5">
           {board.warnings.map((w, i) => (
             <li key={i} className="flex items-baseline gap-1.5 text-[13px]">
@@ -359,7 +341,7 @@ export default async function BoardPage({
             </li>
           ))}
         </ul>
-      </footer>
+      </WarningsPane>
     </div>
   );
 }
