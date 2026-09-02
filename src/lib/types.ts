@@ -102,7 +102,14 @@ export type Shift = {
 /** 隊員の稼働。自社現場・協力会社への貸出・非現場を1テーブルに統合（data-model.md §4-2） */
 export type AssignmentKind = "site" | "lent_out" | "off";
 
-export type AssignmentRole = "leader" | "sub" | "member";
+/**
+ * 配置上の役割。
+ * 🔴 「隊長かそれ以外」の2値（2026-09-02 決定）。
+ *   8/27 ヒアリングでは「隊長・リーダー・サブ」と3つ挙がっていたが、
+ *   隊長とリーダーが別物かを確認できていないため、一旦分けない。
+ *   🟠 リーダーが実在するかは未決（requirements.md §8-7）。
+ */
+export type AssignmentRole = "leader" | "member";
 
 export type OffKind =
   | "paid_leave"

@@ -44,7 +44,7 @@ type Assignment = {
   id: string; guardId: string; workDate: string;
   kind: "site" | "lent_out" | "off";
   shiftId: string | null;
-  role: "leader" | "sub" | "member";
+  role: "leader" | "member";
   isLongDistance: boolean; position: number;
   offKind: string | null;
   lentToCompanyId: string | null; externalSiteName: string | null;
@@ -207,7 +207,7 @@ export const ASSIGNMENTS: Assignment[] = (() => {
         workDate: WORK_DATE,
         kind: "site",
         shiftId: shift.id,
-        role: n === 0 ? "leader" : n === 1 ? "sub" : "member",
+        role: n === 0 ? "leader" : "member",
         isLongDistance: false,
         position: n,
         offKind: null,

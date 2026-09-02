@@ -18,7 +18,14 @@
 //   プレートを描くたびにマスタを引かせない（1日 約150枚 描く画面のため）。
 import type { GuardView, PlateView } from "@/lib/types";
 
-const ROLE_LABEL = { leader: "L", sub: "S", member: "" } as const;
+// 🔴 隊長だけバッジを出す。「それ以外」は何も出さない（2026-09-02）。
+//   全員に何かを出すと、出ていること自体が情報でなくなる。
+//
+// 🔴 「L」ではなく漢字1文字にした。記号は意味を覚えないと読めない
+//   （実際に「L と S は何だったか」で止まった）。
+//   「隊長」の2文字にすると 84px のプレートで資格バッジと同居できないため、
+//   協・他・経 と同じ**1文字**に揃える。読みはツールチップと記号一覧で補う。
+const ROLE_LABEL = { leader: "長", member: "" } as const;
 
 // 🔴 プレート幅 84px の根拠（2026-09-02・112px から変更）
 //   日勤は毎日40現場ほどある。2枚並びだと5名の枠で3段になり、
@@ -80,7 +87,10 @@ export function Plate({ plate }: { plate: PlateView }) {
           </span>
         )}
         {ROLE_LABEL[plate.role] && (
-          <span className="t-badge shrink-0 rounded bg-slate-700 px-1 leading-4 text-white">
+          <span
+            className="t-badge shrink-0 rounded bg-slate-700 px-1 leading-4 text-white"
+            title="隊長"
+          >
             {ROLE_LABEL[plate.role]}
           </span>
         )}
@@ -88,8 +98,10 @@ export function Plate({ plate }: { plate: PlateView }) {
           <QualBadge key={q} label={q} />
         ))}
         {plate.experienced && (
-          <span className="t-badge shrink-0 leading-4 text-slate-500" title="この現場の経験あり">
-            ★
+          // 🔴 ★ から「経」へ（2026-09-02）。記号は意味を覚えないと読めない。
+          //   協・他と同じく**文字で読ませる**（色だけに頼らない方針と同じ理由）。
+          <span className={NEUTRAL_BADGE} title="この現場に入った経験あり">
+            経
           </span>
         )}
         {plate.isPartner && (
