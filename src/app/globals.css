@@ -49,8 +49,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .t-plate {         /* プレートの氏名 */
-  font-size: 14px;
+  /* 🔴 14px → 13px（2026-09-02）。プレートを3枚並びにして幅を 84px に
+     詰めたため。氏名は削らない方針なので、字のほうを1段落とす。 */
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.3;
 }
 .t-meta {          /* 補足 */
   font-size: 12px;

@@ -349,8 +349,10 @@ export default async function BoardPage({
 
                ・🔴 **箱の大きさは統一する。** 人数で幅を変える案は大小が混ざって
                  読みにくく、一覧として成立しなかった
-               ・列幅は最低 296px。プレート（112px）が2枚入り、
-                 内側の余白（左右12px）を取っても窮屈にならない幅
+               ・🔴 列幅は最低 300px。**プレート（84px）が3枚入る最小幅**。
+                 300 −（内側の余白24 ＋ 枠線8）= 268 ＝ 84×3 ＋ 隙間8×2。
+                 2枚並びだと5名の枠が3段になり、グリッドの行は高さが揃うため
+                 **同じ行のカードが全部その高さに引き上げられていた**
                ・高さは同じ行の中で揃う（グリッドの既定）。
                  プレート置き場を下端に寄せてあるので、行内で高さの基準線が合う
                ・grid-auto-flow: dense は**使わない**。
@@ -364,7 +366,7 @@ export default async function BoardPage({
                ・🔴 見出しで区切らず**1本のグリッドに詰める**。
                  会社ごとに区切ると1件の会社でも1行を占有して右が空く。
                  まとまりはカード内の得意先名と並び順で示す */
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(296px,1fr))] items-stretch gap-3">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-stretch gap-3">
               {visibleRows.map((row) => (
                 <ShiftRowCard
                   key={row.shift.id}

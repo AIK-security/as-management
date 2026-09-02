@@ -20,21 +20,26 @@ import type { GuardView, PlateView } from "@/lib/types";
 
 const ROLE_LABEL = { leader: "L", sub: "S", member: "" } as const;
 
-// 🔴 プレート幅 112px の根拠（2026-09-02）
-//   配置カードを箱組みにしたため、いちばん狭い箱（272px）の中に
-//   **2枚並ぶ**ことが条件になった。
-//   272 −（内側の余白20 ＋ 枠線10）= 242 ≧ 112×2 ＋ 隙間6 = 230。
-//   これより広げると1名現場の箱でプレートが1枚しか入らず、縦に伸びる。
-const PLATE_BOX = "w-[112px] shrink-0 rounded-lg border-2 px-2 py-1.5";
+// 🔴 プレート幅 84px の根拠（2026-09-02・112px から変更）
+//   日勤は毎日40現場ほどある。2枚並びだと5名の枠で3段になり、
+//   **同じ行のカードが全部その高さに引き上げられる**（グリッドの行は高さが揃う）。
+//   1画面に8件しか入らなかった原因はここ。
+//   → **3枚並び**にする。列幅300px のとき
+//     300 −（内側の余白24 ＋ 枠線8）= 268 ≧ 84×3 ＋ 隙間8×2 = 268。
+//
+// 🔴 役割（L/S）を氏名の行から**バッジの行へ移した**。
+//   84px では氏名とバッジが同居できず、氏名が削れる。
+//   **氏名は削らない** ─ 誰が入っているか読めないプレートは意味が無い。
+const PLATE_BOX = "w-[84px] shrink-0 rounded-lg border-2 px-1.5 py-1";
 
-/** 所属・役割のバッジ。色を持たせず、枠線と文字で読ませる */
+/** 所属のバッジ。色を持たせず、枠線と文字で読ませる */
 const NEUTRAL_BADGE =
-  "t-badge shrink-0 rounded border border-slate-300 bg-white px-1 leading-5 text-slate-600";
+  "t-badge shrink-0 rounded border border-slate-300 bg-white px-0.5 leading-4 text-slate-600";
 
 /** 資格バッジ。緑・細字ではなく、はっきり読める大きさにする */
 function QualBadge({ label }: { label: string }) {
   return (
-    <span className="t-badge shrink-0 rounded border border-emerald-200 bg-emerald-50 px-1.5 leading-5 text-emerald-700">
+    <span className="t-badge shrink-0 rounded border border-emerald-200 bg-emerald-50 px-0.5 leading-4 text-emerald-700">
       {label}
     </span>
   );
@@ -58,21 +63,32 @@ export function Plate({ plate }: { plate: PlateView }) {
             : "border-slate-300 bg-white",
       ].join(" ")}
     >
-      <div className="flex items-center gap-1">
-        <span className="t-plate truncate text-slate-900">{plate.guard.short_name}</span>
+      {/* 氏名の行。**ここには何も同居させない**（幅を氏名に全部使う） */}
+      <div className="t-plate truncate text-slate-900" title={plate.guard.name}>
+        {plate.guard.short_name}
+      </div>
+
+      {/* バッジの行。入り切らない分は切れるので、**重要な順に置く**。
+          NG は枠線と地色でも出ているため、切れても気づけないことは無い */}
+      <div className="mt-0.5 flex min-h-[16px] items-center gap-0.5 overflow-hidden">
+        {hasNg && (
+          <span
+            className="t-badge shrink-0 leading-4 font-bold text-rose-600"
+            title={plate.ngReasons.join(" / ")}
+          >
+            NG
+          </span>
+        )}
         {ROLE_LABEL[plate.role] && (
-          <span className="t-badge ml-auto shrink-0 rounded bg-slate-700 px-1.5 leading-5 text-white">
+          <span className="t-badge shrink-0 rounded bg-slate-700 px-1 leading-4 text-white">
             {ROLE_LABEL[plate.role]}
           </span>
         )}
-      </div>
-
-      <div className="mt-1 flex min-h-[20px] items-center gap-1 overflow-hidden">
         {quals.map((q) => (
           <QualBadge key={q} label={q} />
         ))}
         {plate.experienced && (
-          <span className="t-badge shrink-0 leading-5 text-slate-500" title="この現場の経験あり">
+          <span className="t-badge shrink-0 leading-4 text-slate-500" title="この現場の経験あり">
             ★
           </span>
         )}
@@ -84,11 +100,6 @@ export function Plate({ plate }: { plate: PlateView }) {
         {plate.isOtherJurisdiction && (
           <span className={NEUTRAL_BADGE} title="他管轄からの応援">
             他
-          </span>
-        )}
-        {hasNg && (
-          <span className="t-badge ml-auto shrink-0 leading-5 text-rose-600" title={plate.ngReasons.join(" / ")}>
-            ⚠ NG
           </span>
         )}
       </div>
@@ -107,8 +118,10 @@ export function PoolPlate({ view }: { view: GuardView }) {
         isPartner ? "border-slate-300 bg-slate-100" : "border-slate-300 bg-white",
       ].join(" ")}
     >
-      <div className="t-plate truncate text-slate-900">{guard.short_name}</div>
-      <div className="mt-1 flex min-h-[20px] items-center gap-1 overflow-hidden">
+      <div className="t-plate truncate text-slate-900" title={guard.name}>
+        {guard.short_name}
+      </div>
+      <div className="mt-0.5 flex min-h-[16px] items-center gap-0.5 overflow-hidden">
         {quals.map((q) => (
           <QualBadge key={q} label={q} />
         ))}
@@ -125,7 +138,7 @@ export function PoolPlate({ view }: { view: GuardView }) {
 /** 未充足の空き枠。**赤で欠員だと分かるようにする**（見落とすと当日に事故る） */
 export function EmptySlot() {
   return (
-    <div className="flex h-[52px] w-[112px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed border-rose-300 bg-rose-50/50 text-rose-500">
+    <div className="flex h-[46px] w-[84px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed border-rose-300 bg-rose-50/50 text-rose-500">
       <span className="t-meta">空き ＋</span>
     </div>
   );

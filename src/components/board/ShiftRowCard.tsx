@@ -23,10 +23,14 @@
 //   amber   … まだ終わっていない（仮組み・要 再引き渡し）
 //   rose    … 足りない／入れてはいけない（人数不足・資格不足・NG）
 //   emerald … 資格あり（プレート側だけ）
-//   slate   … それ以外すべて。**確定は色を持たせない**
-//   確定に色を付けないのは、色は「やること」に使うべきで、
-//   確定＝済んでいる＝注意不要だから。以前は確定を緑にしていたが、
-//   資格バッジの緑と意味が二重になっていた。
+//   emerald … 資格あり（プレート側）／ **確定（左の色帯だけ）**
+//   slate   … それ以外すべて
+//
+//   🔴 確定の緑は**左の色帯だけに残す**（2026-09-02 再調整）。
+//     バッジ・地色・件数チップまで緑にすると資格バッジの緑と competing になり、
+//     画面のどこを見ればよいか分からなくなる。
+//     一方で「進んだぶんが見える」ことには価値があるため、
+//     **面積の小さい帯1本だけ**に留める。
 //
 // 見た目の方針：
 //   ・**左端の色帯**で仮組みを拾う（バッジだけだと流し見で拾えない）
@@ -53,10 +57,10 @@ export function ShiftRowCard({
     <section
       className={[
         "flex h-full flex-col overflow-hidden rounded-lg border-2 bg-white shadow-sm",
-        // 左端の色帯：仮組み＝橙／確定＝色なし（済んだものは注意を引かない）
+        // 左端の色帯：仮組み＝橙／確定＝緑。**色を使うのはこの帯だけ**
         isDraft
           ? "border-slate-300 border-l-[6px] border-l-amber-400"
-          : "border-slate-300 border-l-[6px] border-l-slate-300",
+          : "border-slate-300 border-l-[6px] border-l-emerald-500",
       ].join(" ")}
     >
       {/* ── 見出し ── */}
@@ -150,7 +154,7 @@ export function ShiftRowCard({
       {/* ── プレート置き場 ──
           🔴 mt-auto で下端に寄せる。同じ行の箱は高さが揃うため、
              プレートの位置が箱ごとにばらつくと目で追えなくなる */}
-      <div className="mt-auto flex flex-wrap content-end gap-2 bg-slate-50/70 px-3 py-2.5">
+      <div className="mt-auto flex flex-wrap content-end gap-1.5 bg-slate-50/70 px-3 py-2.5">
         {plates.map((plate) => (
           <Plate key={plate.assignmentId} plate={plate} />
         ))}
