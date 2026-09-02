@@ -13,9 +13,14 @@
 //   狭い箱に収めるために情報を落とさず、横並びだった項目を縦に積んで解く。
 //   並べるのは page.tsx 側のグリッド。
 //
+// 🔴 得意先名はカードに出さない（2026-09-02）。
+//   得意先は「タブ」または「グループ見出し」の側で示す。
+//   同じ会社の現場が並ぶ画面で会社名を全カードに繰り返すと、
+//   **1行ぶん場所を取るだけで1件も見分けがつかない**。
+//
 // 見た目の方針：
 //   ・**左端の色帯**で仮組み/確定を一目で分ける（バッジだけだと流し見で拾えない）
-//   ・見出し（現場名）→ 補足（得意先・班）→ 数値（時間・人数）の3段。
+//   ・見出し（現場名）→ 数値（時間・区分・班・休憩・人数）の2段。
 //     狭い箱でも**縦に積めば情報は落ちない**
 //   ・注意帯は必要なときだけ出す（常時出すと見なくなる）
 
@@ -24,7 +29,7 @@ import { WORK_KIND_LABEL, formatTime } from "@/lib/board";
 import type { ShiftRow } from "@/lib/types";
 
 export function ShiftRowCard({ row }: { row: ShiftRow }) {
-  const { shift, site, customer, plates, missingQualifications } = row;
+  const { shift, site, plates, missingQualifications } = row;
   const isDraft = shift.status === "draft";
   const shortage = Math.max(0, shift.headcount - plates.length);
 
@@ -66,24 +71,19 @@ export function ShiftRowCard({ row }: { row: ShiftRow }) {
           </button>
         </div>
 
-        <div className="mt-0.5 flex items-baseline gap-1.5">
-          <span className="t-customer min-w-0 truncate text-slate-500">
-            {customer?.name ?? ""}
-          </span>
-          {shift.band_name && (
-            <span className="t-meta shrink-0 rounded border border-slate-300 bg-white px-1 text-slate-600">
-              {shift.band_name}
-            </span>
-          )}
-        </div>
-
-        <div className="mt-1 flex items-baseline gap-1.5">
+        {/* 🔴 狭い箱では折り返しを許す。切り捨てると休憩や人数が消えるため */}
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
           <span className="t-time shrink-0 text-slate-800">
             {formatTime(shift.start_h, shift.start_m)}–{formatTime(shift.end_h, shift.end_m)}
           </span>
           <span className="t-badge shrink-0 rounded border border-slate-300 bg-white px-1 text-slate-700">
             {WORK_KIND_LABEL[shift.work_kind]}
           </span>
+          {shift.band_name && (
+            <span className="t-meta shrink-0 rounded border border-slate-300 bg-white px-1 text-slate-600">
+              {shift.band_name}
+            </span>
+          )}
           <span className="t-meta shrink-0 text-slate-500">休{shift.break_min}</span>
 
           <span

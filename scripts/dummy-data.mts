@@ -105,8 +105,19 @@ export const CUSTOMERS: Customer[] = CUSTOMER_NAMES.map((name, i) => ({
 
 const rng = makeRng(20260901);
 
+// 🔴 得意先の付き方は**均等ではない**（2026-09-02・管制の実感より）。
+//   「毎日たくさん現場をくれる会社が1社あり、残りは数社」。
+//   均等に配ると、実際に起きる「1社で20件超」の見え方を検証できない。
+const DOMINANT_SITE_RATIO = 0.55;
+
+function customerForSite(index: number, total: number) {
+  // 過半を大口1社に寄せ、残りをその他へ回す
+  if (index < Math.floor(total * DOMINANT_SITE_RATIO)) return CUSTOMERS[0];
+  return CUSTOMERS[1 + ((index - Math.floor(total * DOMINANT_SITE_RATIO)) % (CUSTOMERS.length - 1))];
+}
+
 export const SITES: Site[] = Array.from({ length: 42 }, (_, i) => {
-  const customer = CUSTOMERS[i % CUSTOMERS.length];
+  const customer = customerForSite(i, 42);
   const suffix = SITE_SUFFIX[Math.floor(rng() * SITE_SUFFIX.length)];
   // 現場の 1/4 ほどに必要資格を設定する（全部に付けると警告だらけで検証にならない）
   const required =

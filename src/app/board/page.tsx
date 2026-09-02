@@ -91,10 +91,55 @@ function GroupHeading({
   );
 }
 
+/** 得意先タブ。件数と不足を持たせ、開かなくても状況が分かるようにする */
+function CustomerTab({
+  href,
+  label,
+  count,
+  shortage,
+  active,
+}: {
+  href: string;
+  label: string;
+  count: number;
+  shortage: number;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={[
+        "flex items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-[13px] font-semibold",
+        "transition-all duration-150 ease-in-out",
+        active
+          ? "border-indigo-600 bg-indigo-600 text-white"
+          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
+      ].join(" ")}
+    >
+      <span className="max-w-[16ch] truncate">{label}</span>
+      <span className={active ? "tabular-nums text-indigo-100" : "tabular-nums text-slate-500"}>
+        {count}
+      </span>
+      {/* 🔴 不足はタブに出す。開かないと分からないと、絞り込みが見落としを生む */}
+      {shortage > 0 && (
+        <span
+          className={[
+            "rounded px-1 text-[11px] leading-4",
+            active ? "bg-white/25 text-white" : "bg-rose-100 text-rose-700",
+          ].join(" ")}
+          title={`${shortage}名 不足`}
+        >
+          不足{shortage}
+        </span>
+      )}
+    </Link>
+  );
+}
+
 export default async function BoardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ group?: string; date?: string; j?: string }>;
+  searchParams: Promise<{ group?: string; date?: string; j?: string; c?: string }>;
 }) {
   // 🔴 ここが実際の関門。proxy.ts は導線であって認可ではない。
   const { profile } = await requireStaff();
@@ -116,13 +161,32 @@ export default async function BoardPage({
   const lentTotal = board.lentGroups.reduce((n, g) => n + g.guards.length, 0);
   const placed = board.rows.reduce((n, r) => n + r.plates.length, 0);
 
+  // ── 得意先タブ ──────────────────────────────────────
+  // 🔴 実態は「毎日たくさん現場をくれる会社が1社、残りは数社」（管制の実感）。
+  //   1社で20件超になるため、全件を1画面に積むと他社が下へ流れて見えなくなる。
+  //   → 得意先で切り替えられるようにし、**カードからは得意先名を外す**。
+  //
+  // 🔴 タブの並びはグループと同じ「得意先名順で固定」。件数順にすると
+  //   日によって位置が変わり、探す場所を覚えられなくなる。
+  const selectedCustomer = sp.c ?? "";
+  const visibleGroups = selectedCustomer
+    ? board.groups.filter((g) => g.customer?.staff_code === selectedCustomer)
+    : board.groups;
+  // 得意先を1社に絞っているときは、見出しに出す名前がタブと重複する
+  const showGroupHeadings = !selectedCustomer;
+  const visibleSiteCount = visibleGroups.reduce((n, g) => n + g.siteCount, 0);
+  const visiblePlaced = visibleGroups.reduce((n, g) => n + g.placed, 0);
+
   /** 現在の絞り込みを保ったまま、一部だけ差し替えた URL を作る */
-  const hrefWith = (patch: { date?: string; group?: string; j?: string }) => {
+  const hrefWith = (patch: { date?: string; group?: string; j?: string; c?: string }) => {
     const q = new URLSearchParams();
     q.set("date", patch.date ?? workDate);
     q.set("group", patch.group ?? group);
     const j = patch.j ?? board.jurisdiction.code;
     if (j) q.set("j", j);
+    // 空文字は「すべて」＝パラメータを付けない
+    const c = patch.c ?? selectedCustomer;
+    if (c) q.set("c", c);
     return `/board?${q.toString()}`;
   };
 
@@ -253,9 +317,40 @@ export default async function BoardPage({
           <div className="mb-2 flex items-baseline gap-2 px-1">
             <h1 className="text-[15px] font-semibold tracking-tight text-slate-700">配置</h1>
             <span className="t-meta text-slate-500">
-              現場 {board.rows.length} 件 ／ 配置 {placed} 名
+              現場 {visibleSiteCount} 件 ／ 配置 {visiblePlaced} 名
+              {selectedCustomer && (
+                <span className="ml-1 text-slate-400">
+                  （この日の全体は {board.rows.length} 件 / {placed} 名）
+                </span>
+              )}
             </span>
           </div>
+
+          {/* ── 得意先タブ ──
+              🔴 絞り込むのは**カードだけ**。ヘッダの件数と下の「要確認」は
+                 その日の全体を出し続ける。絞り込みで警告が隠れると、
+                 見えていない現場の不足に気づけないまま当日を迎える */}
+          {board.groups.length > 1 && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <CustomerTab
+                href={hrefWith({ c: "" })}
+                label="すべて"
+                count={board.rows.length}
+                shortage={0}
+                active={!selectedCustomer}
+              />
+              {board.groups.map((g) => (
+                <CustomerTab
+                  key={g.customer?.id ?? "__none__"}
+                  href={hrefWith({ c: g.customer?.staff_code ?? "" })}
+                  label={g.customer?.name ?? "（得意先が未設定）"}
+                  count={g.siteCount}
+                  shortage={Math.max(0, g.headcount - g.placed)}
+                  active={selectedCustomer === g.customer?.staff_code}
+                />
+              ))}
+            </div>
+          )}
 
           {/* 🔴 空のときに何も出さない画面にしない。
               「壊れているのか、その日が本当に空なのか」が利用者に区別できない。 */}
@@ -295,14 +390,16 @@ export default async function BoardPage({
                  枠が増減しても他社のカード位置がずれない
                ・**まとまりの中は開始時刻順**（board.ts のクエリ側で付けている） */
             <div className="space-y-3">
-              {board.groups.map((g) => (
+              {visibleGroups.map((g) => (
                 <section key={g.customer?.id ?? "__none__"}>
-                  <GroupHeading
-                    name={g.customer?.name ?? "（得意先が未設定）"}
-                    siteCount={g.siteCount}
-                    placed={g.placed}
-                    headcount={g.headcount}
-                  />
+                  {showGroupHeadings && (
+                    <GroupHeading
+                      name={g.customer?.name ?? "（得意先が未設定）"}
+                      siteCount={g.siteCount}
+                      placed={g.placed}
+                      headcount={g.headcount}
+                    />
+                  )}
                   <div className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-stretch gap-2.5">
                     {g.rows.map((row) => (
                       <ShiftRowCard key={row.shift.id} row={row} />
