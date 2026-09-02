@@ -13,10 +13,11 @@
 //   狭い箱に収めるために情報を落とさず、横並びだった項目を縦に積んで解く。
 //   並べるのは page.tsx 側のグリッド。
 //
-// 🔴 得意先名はカードに出さない（2026-09-02）。
-//   得意先は「タブ」または「グループ見出し」の側で示す。
-//   同じ会社の現場が並ぶ画面で会社名を全カードに繰り返すと、
-//   **1行ぶん場所を取るだけで1件も見分けがつかない**。
+// 🔴 得意先名はカード内に出す／出さないを切り替える（2026-09-02）。
+//   ・「すべて」表示 … **出す**。会社をまたいで詰めて並べるため、
+//     カード自身が所属を持っていないと、どの会社の現場か分からない
+//   ・得意先タブで1社に絞っているとき … **出さない**。
+//     全カードに同じ会社名が並んでも1件も見分けがつかず、1行ぶん無駄になる
 //
 // 見た目の方針：
 //   ・**左端の色帯**で仮組み/確定を一目で分ける（バッジだけだと流し見で拾えない）
@@ -28,8 +29,14 @@ import { EmptySlot, Plate } from "@/components/board/Plate";
 import { WORK_KIND_LABEL, formatTime } from "@/lib/board";
 import type { ShiftRow } from "@/lib/types";
 
-export function ShiftRowCard({ row }: { row: ShiftRow }) {
-  const { shift, site, plates, missingQualifications } = row;
+export function ShiftRowCard({
+  row,
+  showCustomer = false,
+}: {
+  row: ShiftRow;
+  showCustomer?: boolean;
+}) {
+  const { shift, site, customer, plates, missingQualifications } = row;
   const isDraft = shift.status === "draft";
   const shortage = Math.max(0, shift.headcount - plates.length);
 
@@ -50,6 +57,14 @@ export function ShiftRowCard({ row }: { row: ShiftRow }) {
           isDraft ? "bg-amber-50/60" : "bg-slate-50",
         ].join(" ")}
       >
+        {/* 得意先は現場名の**上**に小さく置く。
+            会社 → 現場 の順で読め、主役（現場名）の大きさを譲らずに済む */}
+        {showCustomer && (
+          <div className="t-meta truncate text-slate-500" title={customer?.name ?? ""}>
+            {customer?.name ?? "（得意先が未設定）"}
+          </div>
+        )}
+
         <div className="flex items-start gap-1.5">
           {/* 現場名は主役。狭い箱では2行まで折り返す（省略すると別現場と見分けがつかない） */}
           <span className="t-site line-clamp-2 min-w-0 flex-1 text-slate-900">{site.name}</span>

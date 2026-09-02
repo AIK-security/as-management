@@ -55,42 +55,6 @@ function CountChip({
   );
 }
 
-/**
- * 得意先の見出し。
- * 🔴 AIK assign（自社の外販システム）より**薄くする**。
- *   1得意先1現場の日が多いと、見出しばかりで縦に伸びる。
- *   1行（約22px）に収め、罫線で区切りだけ作る。
- * 🔴 不足がある会社は見出しの時点で分かるようにする。
- *   カードまで目を落とさないと気づけないと、40現場を見落とさず追えない。
- */
-function GroupHeading({
-  name,
-  siteCount,
-  placed,
-  headcount,
-}: {
-  name: string;
-  siteCount: number;
-  placed: number;
-  headcount: number;
-}) {
-  const shortage = Math.max(0, headcount - placed);
-  return (
-    <div className="flex items-baseline gap-2 pt-1">
-      <h2 className="shrink-0 text-[14px] font-semibold tracking-tight text-slate-700">{name}</h2>
-      <span className="t-meta shrink-0 text-slate-500">
-        {siteCount}件 / {placed}名
-      </span>
-      {shortage > 0 && (
-        <span className="t-badge shrink-0 rounded bg-rose-100 px-1.5 leading-5 text-rose-700">
-          不足 {shortage}
-        </span>
-      )}
-      <span className="h-px min-w-4 flex-1 bg-slate-300" />
-    </div>
-  );
-}
-
 /** 得意先タブ。件数と不足を持たせ、開かなくても状況が分かるようにする */
 function CustomerTab({
   href,
@@ -172,10 +136,16 @@ export default async function BoardPage({
   const visibleGroups = selectedCustomer
     ? board.groups.filter((g) => g.customer?.staff_code === selectedCustomer)
     : board.groups;
-  // 得意先を1社に絞っているときは、見出しに出す名前がタブと重複する
-  const showGroupHeadings = !selectedCustomer;
-  const visibleSiteCount = visibleGroups.reduce((n, g) => n + g.siteCount, 0);
-  const visiblePlaced = visibleGroups.reduce((n, g) => n + g.placed, 0);
+
+  // 🔴 グループごとにグリッドを分けない（2026-09-02 変更）。
+  //   分けると1件しかない会社でも1行を占有し、右側が丸ごと空く。
+  //   得意先の順（groups の並び）を保ったまま**1本のグリッドに流し込んで上から詰める**。
+  //   まとまりは「カード内の得意先名」と「並び順」で示す。
+  const visibleRows = visibleGroups.flatMap((g) => g.rows);
+  // 1社に絞っているときは全カードに同じ会社名が並ぶだけなので出さない
+  const showCustomerOnCard = !selectedCustomer;
+  const visibleSiteCount = visibleRows.length;
+  const visiblePlaced = visibleRows.reduce((n, r) => n + r.plates.length, 0);
 
   /** 現在の絞り込みを保ったまま、一部だけ差し替えた URL を作る */
   const hrefWith = (patch: { date?: string; group?: string; j?: string; c?: string }) => {
@@ -385,27 +355,19 @@ export default async function BoardPage({
                  A表と突き合わせられなくなる
 
                🔴 並び順（2026-09-02 決定）
-               ・得意先ごとにまとめ、**得意先名順で固定**する。
-                 毎日同じ場所に出るので探す位置を覚えられ、当日変更で
-                 枠が増減しても他社のカード位置がずれない
-               ・**まとまりの中は開始時刻順**（board.ts のクエリ側で付けている） */
-            <div className="space-y-3">
-              {visibleGroups.map((g) => (
-                <section key={g.customer?.id ?? "__none__"}>
-                  {showGroupHeadings && (
-                    <GroupHeading
-                      name={g.customer?.name ?? "（得意先が未設定）"}
-                      siteCount={g.siteCount}
-                      placed={g.placed}
-                      headcount={g.headcount}
-                    />
-                  )}
-                  <div className="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-stretch gap-2.5">
-                    {g.rows.map((row) => (
-                      <ShiftRowCard key={row.shift.id} row={row} />
-                    ))}
-                  </div>
-                </section>
+               ・**得意先名順で固定**。毎日同じ場所に出るので探す位置を覚えられ、
+                 当日変更で枠が増減しても他社のカード位置がずれない
+               ・**同じ得意先の中は開始時刻順**（board.ts のクエリ側で付けている）
+               ・🔴 見出しで区切らず**1本のグリッドに詰める**。
+                 会社ごとに区切ると1件の会社でも1行を占有して右が空く。
+                 まとまりはカード内の得意先名と並び順で示す */
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] items-stretch gap-2.5">
+              {visibleRows.map((row) => (
+                <ShiftRowCard
+                  key={row.shift.id}
+                  row={row}
+                  showCustomer={showCustomerOnCard}
+                />
               ))}
             </div>
           )}
