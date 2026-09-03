@@ -295,12 +295,12 @@ w();
 w("-- ── 配置枠（A表の1行）──────────────────────────────");
 w("-- jurisdiction_id はトリガーが sites から埋めるため、ここでは渡さない");
 w(
-  "insert into public.shifts (id, site_id, work_date, jurisdiction_id, work_kind, headcount, start_h, start_m, end_h, end_m, break_min, band_name, plan_comment, status, changed_after_confirm) values",
+  "insert into public.shifts (id, site_id, work_date, jurisdiction_id, work_kind, headcount, start_h, start_m, end_h, end_m, break_min, band_name, plan_comment, status) values",
 );
 w(
   SHIFTS.map(
     (s) =>
-      `  ('${shiftUuid.get(s.id)}', '${siteUuid.get(s.siteId)}', '${s.workDate}', '${jurisdictionUuid.get(s.jurisdictionId)}', ${q(s.workKind)}, ${n(s.headcount)}, ${n(s.startH)}, ${n(s.startM)}, ${n(s.endH)}, ${n(s.endM)}, ${n(s.breakMin)}, ${q(s.bandName)}, ${q(s.planComment)}, ${q(s.status)}, ${b(s.changedAfterConfirm)})`,
+      `  ('${shiftUuid.get(s.id)}', '${siteUuid.get(s.siteId)}', '${s.workDate}', '${jurisdictionUuid.get(s.jurisdictionId)}', ${q(s.workKind)}, ${n(s.headcount)}, ${n(s.startH)}, ${n(s.startM)}, ${n(s.endH)}, ${n(s.endM)}, ${n(s.breakMin)}, ${q(s.bandName)}, ${q(s.planComment)}, ${q(s.status)})`,
   ).join(",\n") + ";",
 );
 w();
@@ -325,13 +325,13 @@ w();
 w("-- ── 稼働（配置・非現場・貸出を1テーブルに統合）──────────");
 w("-- 🔴 実績（actual_*・overtime_min）は入れない。第1弾では埋まらないのが正（§8-4）");
 w("--");
-w("-- 🔴 変更検知トリガーを一時的に止める。");
-w("--   assignments を1件入れるたびに「確定後に変更あり」が立つため、");
-w("--   このまま流すと**確定済みの枠が全部『要 再引き渡し』になる**。");
+w("-- 🔴 「確定後に変わったら仮組みへ戻す」トリガーを一時的に止める。");
+w("--   assignments を1件入れるたびに親の枠が仮組みへ戻るため、");
+w("--   このまま流すと**確定済みの枠が1つも残らない**。");
 w("--   投入は変更ではないので、ここでは走らせない。");
-w("--   （enable し忘れると当日変更を検知できなくなるので、直後に必ず戻す）");
-w("alter table public.assignments disable trigger assignments_mark_shift_changed_ins_del;");
-w("alter table public.assignments disable trigger assignments_mark_shift_changed_upd;");
+w("--   （enable し忘れると当日変更を拾えなくなるので、直後に必ず戻す）");
+w("alter table public.assignments disable trigger assignments_revert_shift_to_draft_ins_del;");
+w("alter table public.assignments disable trigger assignments_revert_shift_to_draft_upd;");
 w();
 w(
   "insert into public.assignments (id, guard_id, work_date, kind, shift_id, planned_start_at, planned_end_at, planned_break_min, role, position, lent_to_company_id, external_site_name, off_kind, status) values",
@@ -378,8 +378,8 @@ w(
 w();
 w("-- 🔴 外したトリガーを戻す。ここから先は編集＝変更として扱われる");
 w("alter table public.assignments enable trigger assignments_fill_planned_times_trg;");
-w("alter table public.assignments enable trigger assignments_mark_shift_changed_ins_del;");
-w("alter table public.assignments enable trigger assignments_mark_shift_changed_upd;");
+w("alter table public.assignments enable trigger assignments_revert_shift_to_draft_ins_del;");
+w("alter table public.assignments enable trigger assignments_revert_shift_to_draft_upd;");
 w();
 
 // NG

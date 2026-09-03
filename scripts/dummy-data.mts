@@ -38,7 +38,7 @@ type Shift = {
   workKind: "day" | "nightA" | "nightB" | "dayCancel" | "nightCancel";
   headcount: number; startH: number; startM: number; endH: number; endM: number;
   breakMin: number; bandName: string; planComment: string; billingNote: string;
-  status: "draft" | "confirmed"; changedAfterConfirm: boolean;
+  status: "draft" | "confirmed";
 };
 type Assignment = {
   id: string; guardId: string; workDate: string;
@@ -185,7 +185,6 @@ export const SHIFTS: Shift[] = SITES.map((site, i) => {
     planComment: i % 7 === 0 ? "集合場所は現場事務所前" : "",
     billingNote: "",
     status: confirmed ? "confirmed" : "draft",
-    changedAfterConfirm: confirmed && i % 13 === 0,
   };
 });
 

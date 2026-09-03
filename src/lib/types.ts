@@ -95,8 +95,6 @@ export type Shift = {
   plan_comment: string | null;
   billing_note: string | null;
   status: ShiftStatus;
-  /** 確定後に編集されたか。ShiftMax へ再度引き渡す必要があることを示す */
-  changed_after_confirm: boolean;
 };
 
 /** 隊員の稼働。自社現場・協力会社への貸出・非現場を1テーブルに統合（data-model.md §4-2） */

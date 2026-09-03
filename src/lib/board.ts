@@ -120,7 +120,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     .select(
       `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
        start_h, start_m, end_h, end_m, break_min,
-       band_name, plan_comment, billing_note, status, changed_after_confirm,
+       band_name, plan_comment, billing_note, status,
        site:sites!inner (
          id, site_code, guard_target_no, name, short_name, customer_id, jurisdiction_id,
          customer:customers ( id, staff_code, name, name_kana ),
@@ -237,7 +237,6 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
 
   const rows: ShiftRow[] = [];
   const warnings: BoardWarning[] = [];
-  const assignedGuardIds = new Set<string>();
   let shortage = 0;
 
   for (const raw of shifts) {
@@ -250,7 +249,6 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     for (const a of rowAssignments) {
       const guard = guardById.get(a.guard_id);
       if (!guard) continue; // 退職して status=inactive になった隊員の過去行など
-      assignedGuardIds.add(guard.id);
       const company = companyById.get(guard.company_id);
       const qualIds = qualIdsByGuard.get(guard.id) ?? [];
       plates.push({
@@ -304,12 +302,25 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     rows.push({ shift, site, customer: site.customer, plates, missingQualifications });
   }
 
-  // 非現場・貸出は「その日そう扱われている隊員」なのでプールから除く
-  const busy = new Set([
-    ...assignedGuardIds,
-    ...offAssignments.map((a) => a.guard_id),
-    ...lentAssignments.map((a) => a.guard_id),
-  ]);
+  // ── プールから除く人 ─────────────────────────────────
+  //
+  // 🔴 「その日すでに稼働がある人」を除く。**いま画面に出ている枠だけでは判定しない**
+  //   （2026-09-03 修正）。
+  //   直していたのは次の誤りである：
+  //   東京の 08:00–17:00 に確定済みの隊員が、管轄を千葉に切り替えた途端
+  //   「未配置」としてプールに現れていた。assignedGuardIds を
+  //   **画面に出ている枠に入っている人**からしか作っていなかったため。
+  //   人は管轄をまたいで1人しかいない。プールは画面の都合ではなく
+  //   **その日の実態**で決まる。
+  //
+  // 🟠 副作用：日勤に入っている人が夜勤のプールにも出なくなる。
+  //   8/27 に「日勤＋夜勤・途中交代がある」と聞いているため、
+  //   掛け持ちをプールから置く経路が無くなる。
+  //   → **管制に確認する**（requirements.md §8-7）。実際に掛け持ちを組むなら、
+  //     「その時間帯に空いているか」で出し分ける形に変える。
+  //     いまは「同じ人が二重に見える」ほうが事故が大きいと判断して閉じる。
+  const workingGuardIds = allAssignments.map((a) => a.guard_id);
+  const busy = new Set(workingGuardIds);
 
   const offMap = new Map<string, Guard[]>();
   for (const a of offAssignments) {

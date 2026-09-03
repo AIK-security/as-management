@@ -20,7 +20,7 @@
 //     全カードに同じ会社名が並んでも1件も見分けがつかず、1行ぶん無駄になる
 //
 // 🔴 色の役割（2026-09-02・1色1意味に統一）
-//   amber   … まだ終わっていない（仮組み・要 再引き渡し）
+//   amber   … まだ終わっていない（仮組み）
 //   rose    … 足りない／入れてはいけない（人数不足・資格不足・NG）
 //   emerald … 資格あり（プレート側だけ）
 //   emerald … 資格あり（プレート側）／ **確定（左の色帯だけ）**
@@ -172,16 +172,12 @@ export function ShiftRowCard({
       </header>
 
       {/* ── 注意帯（必要なときだけ出す。常時出すと見なくなる） ── */}
-      {(shift.changed_after_confirm || missingQualifications.length > 0 || shift.plan_comment) && (
+      {/* 🔴 「要 再引き渡し」バッジは廃止した（2026-09-03・柴山判断）。
+          まだ一度も引き渡していないのに「再度渡せ」と言っており、意味が取れなかった。
+          確定後に配置が変われば、その枠は DB のトリガーで**仮組みに戻る**。
+          状態そのもので言えることに、バッジを足す必要が無い。 */}
+      {(missingQualifications.length > 0 || shift.plan_comment) && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-200 bg-white px-3 py-1.5">
-          {shift.changed_after_confirm && (
-            <span
-              className="t-badge rounded border border-amber-400 bg-amber-50 px-1.5 text-amber-800"
-              title="確定後に変更あり。べんり君へ再度引き渡す必要があります"
-            >
-              要 再引き渡し
-            </span>
-          )}
           {missingQualifications.length > 0 && (
             <span className="t-badge rounded border border-rose-300 bg-rose-50 px-1.5 text-rose-700">
               資格不足：{missingQualifications.map((q) => q.short_label).join("・")}

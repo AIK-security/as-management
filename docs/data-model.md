@@ -362,7 +362,8 @@ alter table public.assignments
 | `handed_at` / `handed_by` | 誰がいつ引き渡したか |
 
 - `result_code` / `message` は**持たない**（通信しないため応答が存在しない）
-- 引き渡し後に `shifts` を変更したら `要 再引き渡し` として `S-01` に出す
+- 引き渡し後に `shifts` を変更したら、その枠は**仮組みに戻る**（2026-09-03 変更）。
+  🔴 `shifts.changed_after_confirm` は**廃止した**。理由は `screen-design.md` §2-7
 
 > **このテーブルと `lib/shiftmax/` は第2弾で不要になる。**
 > ディレクトリごと・テーブルごと捨てられる形に閉じておく（設計原則5）。

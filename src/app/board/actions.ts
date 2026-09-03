@@ -173,8 +173,7 @@ export async function setShiftStatus(input: {
     .update(
       input.status === "confirmed"
         ? { status: "confirmed", confirmed_at: new Date().toISOString(), confirmed_by: user.id }
-        : // 差し戻したら「確定後に変更あり」も消す。渡す対象ではなくなるため
-          { status: "draft", confirmed_at: null, confirmed_by: null, changed_after_confirm: false },
+        : { status: "draft", confirmed_at: null, confirmed_by: null },
     )
     .eq("id", input.shiftId);
   if (error) return { ok: false, message: toMessage(error) };
