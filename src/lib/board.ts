@@ -9,6 +9,8 @@
 //   「見えない」は壊れているのではなく、そう設計してある。
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+// 🔴 内部でも使う。再エクスポートしただけでは同一モジュール内から参照できない
+import { OFF_KIND_LABEL, addDays, daysBetween, todayInJst } from "@/lib/board-format";
 import type {
   Assignment,
   BoardGroup,
@@ -19,7 +21,6 @@ import type {
   GuardView,
   Jurisdiction,
   NgEntry,
-  OffKind,
   PlateView,
   Qualification,
   Shift,
@@ -28,26 +29,18 @@ import type {
   WorkKind,
 } from "@/lib/types";
 
-export const OFF_KIND_LABEL: Record<OffKind, string> = {
-  paid_leave: "有給",
-  training: "研修・講習",
-  medical: "健診",
-  absent_self: "自欠",
-  absent_company: "会欠",
-  night_duty: "宿直",
-  substitute_holiday: "振替休日",
-  control: "管制",
-  office: "内勤",
-  standby: "緊急対応要員",
-};
-
-export const WORK_KIND_LABEL: Record<WorkKind, string> = {
-  day: "日勤",
-  nightA: "夜A",
-  nightB: "夜B",
-  dayCancel: "日勤現中",
-  nightCancel: "夜勤現中",
-};
+// 🔴 表示の整形は board-format.ts へ移した（2026-09-03）。
+//   このファイルは server-only であり、クライアント（D&D）から import できない。
+//   既存の import を壊さないよう、ここから再エクスポートする。
+export {
+  OFF_KIND_LABEL,
+  WORK_KIND_LABEL,
+  todayInJst,
+  addDays,
+  formatTime,
+  toShiftMaxDate,
+  formatBoardDate,
+} from "@/lib/board-format";
 
 export type BoardShiftGroup = "day" | "night";
 
@@ -511,48 +504,4 @@ function emptyBoard(workDate: string, group: BoardShiftGroup): BoardData {
     counts: { draft: 0, confirmed: 0, shortage: 0 },
     nearestDateWithShifts: null,
   };
-}
-
-// ─────────────────────────────────────────────────────────
-// 日付・時刻（JST 固定）
-//
-// 🔴 サーバの地域設定に依存させない。Vercel は UTC で動くため、
-//   ローカル（JST）では合うのに本番で1日ずれる、が起きる。
-// ─────────────────────────────────────────────────────────
-
-export function todayInJst(): string {
-  const now = new Date();
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return jst.toISOString().slice(0, 10);
-}
-
-export function addDays(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const t = new Date(Date.UTC(y, m - 1, d + days));
-  return t.toISOString().slice(0, 10);
-}
-
-function daysBetween(from: string, to: string): number {
-  const [y1, m1, d1] = from.split("-").map(Number);
-  const [y2, m2, d2] = to.split("-").map(Number);
-  return Math.abs(Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000;
-}
-
-/** 09:00 のような表示にする */
-export function formatTime(h: number, m: number): string {
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-/** ShiftMax の ArgNenTukiHi 書式：YYYY/MM/D（🔴 日はゼロ埋めしない） */
-export function toShiftMaxDate(iso: string): string {
-  const [y, m, d] = iso.split("-");
-  return `${y}/${m}/${Number(d)}`;
-}
-
-export function formatBoardDate(iso: string): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  const week = "日月火水木金土"[date.getUTCDay()];
-  return `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")} (${week})`;
 }

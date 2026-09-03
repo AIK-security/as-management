@@ -358,6 +358,12 @@ w();
 w("-- ── 過去の稼働（★の元データ）────────────────────────");
 w("-- 予定時刻は入れない。架空の過去に時刻を捏造しても意味が無く、");
 w("-- 時刻が無い行は重なり判定の対象外（assignments_no_overlap の where 句）");
+w("--");
+w("-- 🔴 予定時刻の自動補完も外す（20260903000000_assignment_planned_times.sql）。");
+w("--   このトリガーは kind='site' の行に枠の時刻を必ず埋める。埋まると");
+w("--   **同じ日に複数現場へ行った履歴が EXCLUDE 制約に触れて seed が落ちる**。");
+w("--   履歴は「行ったことがある」を示すためだけの行であり、時刻は使わない。");
+w("alter table public.assignments disable trigger assignments_fill_planned_times_trg;");
 w(
   "insert into public.assignments (id, guard_id, work_date, kind, shift_id, role, position, status) values",
 );
@@ -370,7 +376,8 @@ w(
     .join(",\n") + ";",
 );
 w();
-w("-- 🔴 変更検知トリガーを戻す。ここから先は編集＝変更として扱われる");
+w("-- 🔴 外したトリガーを戻す。ここから先は編集＝変更として扱われる");
+w("alter table public.assignments enable trigger assignments_fill_planned_times_trg;");
 w("alter table public.assignments enable trigger assignments_mark_shift_changed_ins_del;");
 w("alter table public.assignments enable trigger assignments_mark_shift_changed_upd;");
 w();

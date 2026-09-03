@@ -535,6 +535,12 @@ insert into public.assignments (id, guard_id, work_date, kind, shift_id, planned
 -- ── 過去の稼働（★の元データ）────────────────────────
 -- 予定時刻は入れない。架空の過去に時刻を捏造しても意味が無く、
 -- 時刻が無い行は重なり判定の対象外（assignments_no_overlap の where 句）
+--
+-- 🔴 予定時刻の自動補完も外す（20260903000000_assignment_planned_times.sql）。
+--   このトリガーは kind='site' の行に枠の時刻を必ず埋める。埋まると
+--   **同じ日に複数現場へ行った履歴が EXCLUDE 制約に触れて seed が落ちる**。
+--   履歴は「行ったことがある」を示すためだけの行であり、時刻は使わない。
+alter table public.assignments disable trigger assignments_fill_planned_times_trg;
 insert into public.assignments (id, guard_id, work_date, kind, shift_id, role, position, status) values
   ('d0000000-0000-4000-8000-000000000001', '60000000-0000-4000-8000-000000000001', '2026-08-18', 'site', 'c0000000-0000-4000-8000-000000000001', 'member', 0, 'planned'),
   ('d0000000-0000-4000-8000-000000000002', '60000000-0000-4000-8000-000000000002', '2026-08-18', 'site', 'c0000000-0000-4000-8000-000000000001', 'member', 0, 'planned'),
@@ -616,7 +622,8 @@ insert into public.assignments (id, guard_id, work_date, kind, shift_id, role, p
   ('d0000000-0000-4000-8000-000000000078', '60000000-0000-4000-8000-000000000022', '2026-08-18', 'site', 'c0000000-0000-4000-8000-000000000040', 'member', 0, 'planned'),
   ('d0000000-0000-4000-8000-000000000079', '60000000-0000-4000-8000-000000000027', '2026-08-18', 'site', 'c0000000-0000-4000-8000-000000000042', 'member', 0, 'planned');
 
--- 🔴 変更検知トリガーを戻す。ここから先は編集＝変更として扱われる
+-- 🔴 外したトリガーを戻す。ここから先は編集＝変更として扱われる
+alter table public.assignments enable trigger assignments_fill_planned_times_trg;
 alter table public.assignments enable trigger assignments_mark_shift_changed_ins_del;
 alter table public.assignments enable trigger assignments_mark_shift_changed_upd;
 

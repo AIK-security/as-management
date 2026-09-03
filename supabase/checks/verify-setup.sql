@@ -1,6 +1,8 @@
 -- =============================================================
--- 認証土台の適用確認（supabase/migrations/ が正しく入ったか）
+-- マイグレーションの適用確認（supabase/migrations/ が正しく入ったか）
 --   対象：20260901000000_auth_roles / 20260901120000_profiles_is_active
+--        20260902000000_board_core / 20260902120000_assignment_role_simplify
+--        20260903000000_assignment_planned_times
 --
 -- 使い方：Supabase ダッシュボード > SQL Editor に貼って実行する。
 -- 🔴 **result 列がすべて ✅ になること。** 1つでも ❌ なら土台が入っていない。
@@ -87,4 +89,72 @@ union all
 --    クエリ全体が構文エラーになる（＝一番知りたい「未適用」で結果が出ない）。
 select '  うち有効（is_active）',
        '📊 ' || (select count(*)::text from public.profiles p
-                 where to_jsonb(p) ->> 'is_active' = 'true') || ' 件';
+                 where to_jsonb(p) ->> 'is_active' = 'true') || ' 件'
+
+-- ---- 20260902000000_board_core.sql ----
+
+union all
+select '配置ボードのテーブル（期待 14）',
+       case when (select count(*) from information_schema.tables
+                  where table_schema = 'public'
+                    and table_name in (
+                      'jurisdictions','departments','companies','guards','guard_contacts',
+                      'customers','sites','qualifications','guard_qualifications',
+                      'site_required_qualifications','shifts','board_reviews',
+                      'assignments','ng_entries')) = 14
+            then '✅ 14本'
+            else '❌ ' || (select count(*)::text from information_schema.tables
+                           where table_schema = 'public'
+                             and table_name in (
+                               'jurisdictions','departments','companies','guards','guard_contacts',
+                               'customers','sites','qualifications','guard_qualifications',
+                               'site_required_qualifications','shifts','board_reviews',
+                               'assignments','ng_entries')) || '本（未適用）' end
+
+union all
+-- 🔴 重複配置を止めている唯一の仕組み。これが無いと
+--    同じ隊員を同じ時間帯の2枠に確定できてしまう
+select '重複防止 assignments_no_overlap',
+       case when exists (select 1 from pg_constraint
+                         where conname = 'assignments_no_overlap')
+            then '✅ ある' else '❌ 無い（重複配置を止められない）' end
+
+-- ---- 20260902120000_assignment_role_simplify.sql ----
+
+union all
+select 'role が「隊長 / それ以外」の2値か',
+       case when exists (
+              select 1 from pg_constraint
+              where conname = 'assignments_role_check'
+                and pg_get_constraintdef(oid) not like '%sub%')
+            then '✅ leader / member'
+            else '❌ sub が残っている（未適用）' end
+
+-- ---- 20260903000000_assignment_planned_times.sql ----
+
+union all
+-- 🔴 予定時刻が空の行は assignments_no_overlap の判定対象から外れる。
+--    このトリガーが無いと、画面から入れた配置は重複チェックを素通りする
+select '予定時刻の自動補完トリガー',
+       case when exists (select 1 from pg_trigger
+                         where tgname = 'assignments_fill_planned_times_trg'
+                           and not tgisinternal)
+            then '✅ ある' else '❌ 無い（画面から入れた配置が重複判定を素通りする）' end
+
+union all
+select '枠の時刻変更を配置へ写すトリガー',
+       case when exists (select 1 from pg_trigger
+                         where tgname = 'shifts_refill_assignment_times_trg'
+                           and not tgisinternal)
+            then '✅ ある' else '❌ 無い' end
+
+union all
+-- 🔴 seed 実行後に確認する。0 件でなければ、その行は重複判定の対象外になっている
+select '予定時刻が空の現場配置（当日以降）',
+       case when (select count(*) from public.assignments
+                  where kind = 'site' and planned_start_at is null
+                    and work_date >= current_date) = 0
+            then '✅ 0 件'
+            else '⚠️ ' || (select count(*)::text from public.assignments
+                            where kind = 'site' and planned_start_at is null
+                              and work_date >= current_date) || ' 件（重複判定の対象外）' end;

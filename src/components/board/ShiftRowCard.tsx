@@ -38,25 +38,52 @@
 //     狭い箱でも**縦に積めば情報は落ちない**
 //   ・注意帯は必要なときだけ出す（常時出すと見なくなる）
 
-import { EmptySlot, Plate } from "@/components/board/Plate";
-import { WORK_KIND_LABEL, formatTime } from "@/lib/board";
+// 🔴 段2-③（2026-09-03）でクライアントコンポーネントになった。
+//   カード＝ドロップ先であり、確定トグルの押し先でもある。
+//
+// 🔴 import 元が `@/lib/board` → `@/lib/board-format` に変わっている。
+//   `board.ts` は server-only（取得処理が混ざるのを防ぐ壁）なので、
+//   クライアントから読むと**ビルドが落ちる**。表示の整形だけを切り出してある。
+"use client";
+
+import { useDroppable } from "@dnd-kit/core";
+import { DraggablePlate, EmptySlot } from "@/components/board/Plate";
+import { WORK_KIND_LABEL, formatTime } from "@/lib/board-format";
 import type { ShiftRow } from "@/lib/types";
 
 export function ShiftRowCard({
   row,
   showCustomer = false,
+  editable = false,
+  onToggleStatus,
 }: {
   row: ShiftRow;
   showCustomer?: boolean;
+  /** 事務ロールは閲覧のみ。掴めず・押せない（requirements.md §3 決定 #2） */
+  editable?: boolean;
+  onToggleStatus?: (shiftId: string, next: "draft" | "confirmed") => void;
 }) {
   const { shift, site, customer, plates, missingQualifications } = row;
   const isDraft = shift.status === "draft";
   const shortage = Math.max(0, shift.headcount - plates.length);
 
+  // 🔴 カード**全体**をドロップ先にする。プレート置き場だけにすると、
+  //   1名の枠では的が 84×46px しかなく、40枚並んだ画面では狙えない。
+  const { setNodeRef, isOver } = useDroppable({
+    id: `shift:${shift.id}`,
+    data: { type: "shift", shiftId: shift.id, plateCount: plates.length },
+    disabled: !editable,
+  });
+
   return (
     <section
+      ref={setNodeRef}
       className={[
         "flex h-full flex-col overflow-hidden rounded-lg border-2 bg-white shadow-sm",
+        // 🔴 ドロップ先は**藍**で示す（1色1意味：藍＝操作）。
+        //   状態を表す橙・赤・緑と混ぜない。掴んでいる間だけ出るので
+        //   「今ここに置ける」以外の意味に読まれる余地がない
+        isOver ? "ring-2 ring-indigo-500 ring-offset-1" : "",
         // 左端の色帯：仮組み＝橙／確定＝緑。**色を使うのはこの帯だけ**
         isDraft
           ? "border-slate-300 border-l-[6px] border-l-amber-400"
@@ -81,22 +108,39 @@ export function ShiftRowCard({
         <div className="flex items-start gap-1.5">
           {/* 現場名は主役。狭い箱では2行まで折り返す（省略すると別現場と見分けがつかない） */}
           <span className="t-site line-clamp-2 min-w-0 flex-1 text-slate-900">{site.name}</span>
-          {shift.status === "confirmed" ? (
-            <span className="t-badge shrink-0 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-600">
-              確定
-            </span>
+          {/* 🔴 状態バッジをそのまま押せるようにした（2026-09-03）。
+              別にボタンを足すと、状態を見る場所と変える場所が離れる。
+              確定は取り消せる（差し戻し・screen-design.md §2-6）。
+              一方通行にすると押し間違いを直す手段が無くなる */}
+          {editable && onToggleStatus ? (
+            <button
+              type="button"
+              onClick={() => onToggleStatus(shift.id, isDraft ? "confirmed" : "draft")}
+              title={isDraft ? "この枠を確定する" : "仮組みに戻す"}
+              className={[
+                "t-badge shrink-0 cursor-pointer rounded border px-1.5 py-0.5",
+                "transition-all duration-150 ease-in-out",
+                isDraft
+                  ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100",
+              ].join(" ")}
+            >
+              {isDraft ? "仮組み" : "確定"}
+            </button>
           ) : (
-            <span className="t-badge shrink-0 rounded border border-amber-400 bg-amber-50 px-1.5 py-0.5 text-amber-800">
-              仮組み
+            <span
+              className={[
+                "t-badge shrink-0 rounded border px-1.5 py-0.5",
+                isDraft
+                  ? "border-amber-400 bg-amber-50 text-amber-800"
+                  : "border-slate-300 bg-white text-slate-600",
+              ].join(" ")}
+            >
+              {isDraft ? "仮組み" : "確定"}
             </span>
           )}
-          <button
-            type="button"
-            className="-mr-1 shrink-0 rounded px-1 leading-5 text-slate-400 transition-all duration-150 ease-in-out hover:bg-slate-200 hover:text-slate-700"
-            aria-label="この枠の操作"
-          >
-            ⋯
-          </button>
+          {/* 🟠 枠の操作メニュー（中止・時刻変更）は未実装。段2-③ の範囲外。
+              押せるのに何も起きないボタンは残さない ─ 壊れていると読まれる */}
         </div>
 
         {/* 🔴 狭い箱では折り返しを許す。切り捨てると休憩や人数が消えるため */}
@@ -156,7 +200,7 @@ export function ShiftRowCard({
              プレートの位置が箱ごとにばらつくと目で追えなくなる */}
       <div className="mt-auto flex flex-wrap content-end gap-1.5 bg-slate-50/70 px-3 py-2.5">
         {plates.map((plate) => (
-          <Plate key={plate.assignmentId} plate={plate} />
+          <DraggablePlate key={plate.assignmentId} plate={plate} disabled={!editable} />
         ))}
         {Array.from({ length: shortage }, (_, i) => (
           <EmptySlot key={`empty-${shift.id}-${i}`} />

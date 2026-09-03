@@ -145,6 +145,10 @@ npm install
 | 2 | `20260901120000_profiles_is_active.sql` | 退職・異動を「削除しない」で止めるための `is_active` |
 | 3 | `20260902000000_board_core.sql` | 🔴 **配置ボードの中核**（マスタ＋`shifts`＋`assignments`＋NG＋RLS） |
 | 4 | `20260902120000_assignment_role_simplify.sql` | 役割を「隊長 / それ以外」の2値に（`sub` を廃止） |
+| 5 | `20260903000000_assignment_planned_times.sql` | 🔴 **配置の予定時刻を枠から自動で埋める**（重複防止の EXCLUDE 制約が見る列。空だと重複判定が黙って無効になる） |
+
+適用できたかは `supabase/checks/verify-setup.sql` を SQL Editor で実行して確かめる。
+**`result` 列がすべて ✅ になること。**
 
 ### 4-2. ダミーデータの投入（開発環境のみ）
 

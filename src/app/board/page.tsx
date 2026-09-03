@@ -12,14 +12,19 @@
 //
 // 🔴 認可は3枚重ね。requireStaff() は関門で、最後の砦は DB の RLS。
 //    事務ロールは**閲覧のみ**なので編集系のボタンを出さない（requirements.md §3 決定 #2）。
+//
+// 🔴 段2-③（2026-09-03）で本体を BoardDnd（クライアント）へ移した。
+//    ここに残るのは**サーバでしかできないこと**だけ ─ 認可・取得・ヘッダ。
+//    得意先タブと空表示は Link を含むのでサーバで描き、
+//    ReactNode として BoardDnd に差し込む（クライアントに Link の生成を持ち込まない）。
 
 import Link from "next/link";
 import { requireStaff, canEdit, roleLabel } from "@/lib/auth";
 import { logout } from "@/app/login/actions";
-import { ShiftRowCard } from "@/components/board/ShiftRowCard";
-import { PoolPlate } from "@/components/board/Plate";
 import { PaneHeading } from "@/components/board/PaneHeading";
-import { PoolPane, WarningsPane } from "@/components/board/BoardPanes";
+import { WarningsPane } from "@/components/board/BoardPanes";
+import { BoardDnd } from "@/components/board/BoardDnd";
+import { ConfirmAllButton } from "@/components/board/ConfirmAllButton";
 import {
   addDays,
   formatBoardDate,
@@ -146,8 +151,13 @@ export default async function BoardPage({
   const visibleRows = visibleGroups.flatMap((g) => g.rows);
   // 1社に絞っているときは全カードに同じ会社名が並ぶだけなので出さない
   const showCustomerOnCard = !selectedCustomer;
-  const visibleSiteCount = visibleRows.length;
-  const visiblePlaced = visibleRows.reduce((n, r) => n + r.plates.length, 0);
+
+  // 🔴 一括確定の対象は**いま表示している**仮組みの枠だけ。
+  //   得意先タブで絞っているときに画面外の枠まで確定すると、
+  //   「押した範囲」と「変わった範囲」が食い違う。
+  const draftShiftIdsOnScreen = visibleRows
+    .filter((r) => r.shift.status === "draft")
+    .map((r) => r.shift.id);
 
   /** 現在の絞り込みを保ったまま、一部だけ差し替えた URL を作る */
   const hrefWith = (patch: { date?: string; group?: string; j?: string; c?: string }) => {
@@ -242,12 +252,8 @@ export default async function BoardPage({
               ⚠️ 出し分けは見た目の話。実際の防御は RLS と Server Action 側で行う。 */}
           {editable && (
             <>
-              <button
-                type="button"
-                className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
-              >
-                一括確定
-              </button>
+              {/* 🔴 対象は**いま表示している**仮組みの枠。得意先タブで絞っていればその範囲 */}
+              <ConfirmAllButton shiftIds={draftShiftIdsOnScreen} />
               <button
                 type="button"
                 className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
@@ -282,27 +288,22 @@ export default async function BoardPage({
         </div>
       </header>
 
-      {/* ══ 本体 ═════════════════════════════════════════════ */}
-      <div className="flex min-h-0 flex-1">
-        {/* ── 左：配置（現場 × 枠） ── */}
-        <main className="thin-scroll min-w-0 flex-1 overflow-y-auto p-4">
-          <div className="mb-2.5 flex items-baseline gap-2 px-0.5">
-            <h1 className="text-[15px] font-semibold tracking-tight text-slate-700">配置</h1>
-            <span className="t-meta text-slate-500">
-              現場 {visibleSiteCount} 件 ／ 配置 {visiblePlaced} 名
-              {selectedCustomer && (
-                <span className="ml-1 text-slate-400">
-                  （この日の全体は {board.rows.length} 件 / {placed} 名）
-                </span>
-              )}
-            </span>
-          </div>
-
-          {/* ── 得意先タブ ──
-              🔴 絞り込むのは**カードだけ**。ヘッダの件数と下の「要確認」は
-                 その日の全体を出し続ける。絞り込みで警告が隠れると、
-                 見えていない現場の不足に気づけないまま当日を迎える */}
-          {board.groups.length > 1 && (
+      {/* ══ 本体（D&D はクライアント側） ═══════════════════ */}
+      <BoardDnd
+        rows={visibleRows}
+        pool={board.pool}
+        editable={editable}
+        showCustomerOnCard={showCustomerOnCard}
+        jurisdictionId={board.jurisdiction.id}
+        totalSiteCount={board.rows.length}
+        totalPlaced={placed}
+        filtered={Boolean(selectedCustomer)}
+        /* ── 得意先タブ ──
+           🔴 絞り込むのは**カードだけ**。ヘッダの件数と下の「要確認」は
+              その日の全体を出し続ける。絞り込みで警告が隠れると、
+              見えていない現場の不足に気づけないまま当日を迎える */
+        customerTabs={
+          board.groups.length > 1 ? (
             <div className="mb-3.5 flex flex-wrap items-center gap-2">
               <CustomerTab
                 href={hrefWith({ c: "" })}
@@ -322,132 +323,65 @@ export default async function BoardPage({
                 />
               ))}
             </div>
-          )}
-
-          {/* 🔴 空のときに何も出さない画面にしない。
-              「壊れているのか、その日が本当に空なのか」が利用者に区別できない。 */}
-          {board.rows.length === 0 ? (
-            <div className="rounded-lg border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center">
-              <p className="text-[15px] font-semibold text-slate-700">
-                この日の{group === "day" ? "日勤" : "夜勤"}の枠はありません
-              </p>
-              <p className="t-meta mt-1 text-slate-500">
-                {formatBoardDate(board.date)} ／ {board.jurisdiction.name}
-              </p>
-              {board.nearestDateWithShifts && (
-                <Link
-                  href={hrefWith({ date: board.nearestDateWithShifts })}
-                  className="mt-3 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white transition-all duration-150 ease-in-out hover:bg-indigo-700"
+          ) : null
+        }
+        /* 🔴 空のときに何も出さない画面にしない。
+           「壊れているのか、その日が本当に空なのか」が利用者に区別できない。 */
+        emptyState={
+          <div className="rounded-lg border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+            <p className="text-[15px] font-semibold text-slate-700">
+              この日の{group === "day" ? "日勤" : "夜勤"}の枠はありません
+            </p>
+            <p className="t-meta mt-1 text-slate-500">
+              {formatBoardDate(board.date)} ／ {board.jurisdiction.name}
+            </p>
+            {board.nearestDateWithShifts && (
+              <Link
+                href={hrefWith({ date: board.nearestDateWithShifts })}
+                className="mt-3 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white transition-all duration-150 ease-in-out hover:bg-indigo-700"
+              >
+                枠がある直近の日（{formatBoardDate(board.nearestDateWithShifts)}）へ
+              </Link>
+            )}
+          </div>
+        }
+        poolFooter={
+          <>
+            {/* 非現場ステータス */}
+            <PaneHeading title="非現場" sub={`${offTotal} 名`} />
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
+              {board.offGroups.map((g) => (
+                <div
+                  key={g.label}
+                  className="flex items-baseline justify-between border-b border-slate-200 pb-1"
                 >
-                  枠がある直近の日（{formatBoardDate(board.nearestDateWithShifts)}）へ
-                </Link>
-              )}
-            </div>
-          ) : (
-            /* 🔴 箱組み（2026-09-02）。横幅いっぱいの帯から変更した。
-               日勤は平均 1.7名/現場で1名の枠が多く、帯だと右側がほぼ空白だった。
-
-               ・🔴 **箱の大きさは統一する。** 人数で幅を変える案は大小が混ざって
-                 読みにくく、一覧として成立しなかった
-               ・🔴 列幅は最低 300px。**プレート（84px）が3枚入る最小幅**。
-                 300 −（内側の余白24 ＋ 枠線8）= 268 ＝ 84×3 ＋ 隙間8×2。
-                 2枚並びだと5名の枠が3段になり、グリッドの行は高さが揃うため
-                 **同じ行のカードが全部その高さに引き上げられていた**
-               ・高さは同じ行の中で揃う（グリッドの既定）。
-                 プレート置き場を下端に寄せてあるので、行内で高さの基準線が合う
-               ・grid-auto-flow: dense は**使わない**。
-                 隙間は埋まるが表示順が入れ替わる。順番が変わると
-                 A表と突き合わせられなくなる
-
-               🔴 並び順（2026-09-02 決定）
-               ・**得意先名順で固定**。毎日同じ場所に出るので探す位置を覚えられ、
-                 当日変更で枠が増減しても他社のカード位置がずれない
-               ・**同じ得意先の中は開始時刻順**（board.ts のクエリ側で付けている）
-               ・🔴 見出しで区切らず**1本のグリッドに詰める**。
-                 会社ごとに区切ると1件の会社でも1行を占有して右が空く。
-                 まとまりはカード内の得意先名と並び順で示す */
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-stretch gap-3">
-              {visibleRows.map((row) => (
-                <ShiftRowCard
-                  key={row.shift.id}
-                  row={row}
-                  showCustomer={showCustomerOnCard}
-                />
+                  <span className="text-[14px] text-slate-700">{g.label}</span>
+                  <span className="text-[15px] font-bold tabular-nums text-slate-800">
+                    {g.guards.length}
+                  </span>
+                </div>
               ))}
             </div>
-          )}
 
-          {editable && board.rows.length > 0 && (
-            <button
-              type="button"
-              className="mt-2.5 w-full rounded-lg border-2 border-dashed border-slate-300 py-3 text-[14px] font-semibold text-slate-400 transition-all duration-150 ease-in-out hover:border-slate-400 hover:bg-white hover:text-slate-600"
-            >
-              ＋ 現場を追加
-            </button>
-          )}
-        </main>
-
-        {/* ── 右：隊員プール（閉じられる） ── */}
-        <PoolPane poolCount={board.pool.length}>
-          <div className="px-3 py-2">
-            <input
-              type="search"
-              placeholder="氏名で検索"
-              className="h-10 w-full rounded-md border-2 border-slate-300 px-2.5 text-[14px] transition-all duration-150 ease-in-out outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-            />
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {["自社", "協力会社", "他管轄", "資格あり"].map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  className="t-meta rounded-md border-2 border-slate-300 bg-white px-2 py-1 text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
+            {/* 協力会社への貸出。🔴 請求に効くため第1弾から持つ（data-model.md §4-2） */}
+            <PaneHeading title="貸出中（協力会社へ）" sub={`${lentTotal} 名`} />
+            <div className="px-3 py-2">
+              {board.lentGroups.map((g) => (
+                <div
+                  key={`${g.companyName}:${g.siteName}`}
+                  className="flex items-baseline gap-2 border-b border-slate-200 py-1"
                 >
-                  {f}
-                </button>
+                  <span className="text-[14px] font-semibold text-slate-800">{g.companyName}</span>
+                  <span className="t-meta truncate text-slate-500">{g.siteName}</span>
+                  <span className="ml-auto text-[15px] font-bold tabular-nums text-slate-800">
+                    {g.guards.length}
+                  </span>
+                </div>
               ))}
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 px-3 pb-3">
-            {board.pool.map((view) => (
-              <PoolPlate key={view.guard.id} view={view} />
-            ))}
-          </div>
-
-          {/* 非現場ステータス */}
-          <PaneHeading title="非現場" sub={`${offTotal} 名`} />
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
-            {board.offGroups.map((g) => (
-              <div
-                key={g.label}
-                className="flex items-baseline justify-between border-b border-slate-200 pb-1"
-              >
-                <span className="text-[14px] text-slate-700">{g.label}</span>
-                <span className="text-[15px] font-bold tabular-nums text-slate-800">
-                  {g.guards.length}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* 協力会社への貸出。🔴 請求に効くため第1弾から持つ（data-model.md §4-2） */}
-          <PaneHeading title="貸出中（協力会社へ）" sub={`${lentTotal} 名`} />
-          <div className="px-3 py-2">
-            {board.lentGroups.map((g) => (
-              <div
-                key={`${g.companyName}:${g.siteName}`}
-                className="flex items-baseline gap-2 border-b border-slate-200 py-1"
-              >
-                <span className="text-[14px] font-semibold text-slate-800">{g.companyName}</span>
-                <span className="t-meta truncate text-slate-500">{g.siteName}</span>
-                <span className="ml-auto text-[15px] font-bold tabular-nums text-slate-800">
-                  {g.guards.length}
-                </span>
-              </div>
-            ))}
-          </div>
-        </PoolPane>
-      </div>
+          </>
+        }
+      />
 
       {/* ══ 要確認（閉じられる） ══════════════════════════════ */}
       <WarningsPane count={board.warnings.length}>

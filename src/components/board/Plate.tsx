@@ -14,8 +14,14 @@
 //   色を残すのは「資格」だけ ─ 現場からの直接の要望であり、
 //   数ある中から探す対象だから。
 
+// 🔴 段2-③（2026-09-03）でクライアントコンポーネントになった。
+//   つかんで動かす対象そのものなので、ここはブラウザ側で動く必要がある。
+//   見た目のコードは一切変えていない ─ **ドラッグの取っ手を外側に足しただけ**。
+"use client";
+
 // 🔴 資格ラベルは board.ts で畳んである（qualLabels）。
 //   プレートを描くたびにマスタを引かせない（1日 約150枚 描く画面のため）。
+import { useDraggable } from "@dnd-kit/core";
 import type { GuardView, PlateView } from "@/lib/types";
 
 // 🔴 隊長だけバッジを出す。「それ以外」は何も出さない（2026-09-02）。
@@ -150,6 +156,73 @@ export function EmptySlot() {
   return (
     <div className="flex h-[46px] w-[84px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed border-rose-300 bg-rose-50/50 text-rose-500">
       <span className="t-meta">空き ＋</span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// D&D の取っ手（段2-③・2026-09-03）
+//
+// 🔴 プレートの中身には手を入れず、**外側に1枚かぶせる**形にした。
+//   見た目の調整（幅・バッジ・色）と、動かす仕組みが同じ場所にあると、
+//   どちらを直しても両方を壊しうる。分けておけば片方だけ触れる。
+//
+// 🔴 ラッパは幅を持たない（shrink-0 のみ）。プレート側が w-[84px] を
+//   持っているので、flex の並びは1枚かぶせても変わらない。
+//
+// 🔴 touch-none を付ける。付けないとタブレットで
+//   「ドラッグしたつもりが画面がスクロールする」になる。
+// ─────────────────────────────────────────────────────────
+
+/** ドラッグ中の元プレートは薄くする。掴んだものが2つ見えている状態を避ける */
+const DRAGGING = "opacity-30";
+
+export function DraggablePlate({
+  plate,
+  disabled,
+}: {
+  plate: PlateView;
+  disabled?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `plate:${plate.assignmentId}`,
+    data: { type: "plate", plate },
+    disabled,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`shrink-0 touch-none ${isDragging ? DRAGGING : ""}`}
+    >
+      <Plate plate={plate} />
+    </div>
+  );
+}
+
+export function DraggablePoolPlate({
+  view,
+  disabled,
+}: {
+  view: GuardView;
+  disabled?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `pool:${view.guard.id}`,
+    data: { type: "pool", view },
+    disabled,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`shrink-0 touch-none ${isDragging ? DRAGGING : ""}`}
+    >
+      <PoolPlate view={view} />
     </div>
   );
 }
