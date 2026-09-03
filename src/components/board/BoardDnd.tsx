@@ -19,6 +19,7 @@
 //   ずれるのは1秒未満で、置けたか置けなかったかは色で分かる。
 "use client";
 
+import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import {
   DndContext,
@@ -35,6 +36,7 @@ import {
 import { Plate, PoolPlate, DraggablePoolPlate } from "@/components/board/Plate";
 import { ShiftRowCard } from "@/components/board/ShiftRowCard";
 import { PoolPane } from "@/components/board/BoardPanes";
+import { PaneHeading } from "@/components/board/PaneHeading";
 import {
   moveAssignment,
   placeGuard,
@@ -168,6 +170,99 @@ function PoolDropArea({ children }: { children: React.ReactNode }) {
 }
 
 // ─────────────────────────────────────────────────────────
+// 得意先タブ・空表示
+//
+// 🔴 なぜサーバから JSX ではなく**データ**を受け取るのか（2026-09-03 修正）
+//   当初は「Link はサーバで描くもの」と思い込み、タブと空表示を
+//   ReactNode の props として page.tsx から渡していた。**これは誤り。**
+//   ・`next/link` はクライアントコンポーネントでも普通に動く
+//   ・Server Component で作った JSX を Client Component の props で渡すと、
+//     クライアント側で配列の子として並んだときに
+//     「key が無い」と React に警告される（境界を越えた要素は未検証扱いになる）
+//   → 渡すのは**プレーンなデータだけ**にし、markup は使う場所で組む。
+//     RSC のペイロードに描画済み markup を積まずに済む利点もある。
+// ─────────────────────────────────────────────────────────
+
+export type CustomerTabView = {
+  /** 並びの key。得意先 id、未設定は固定値 */
+  id: string;
+  href: string;
+  label: string;
+  count: number;
+  /** 🔴 不足はタブに出す。開かないと分からないと、絞り込みが見落としを生む */
+  shortage: number;
+  active: boolean;
+};
+
+export type EmptyBoardView = {
+  /** 「日勤」/「夜勤」 */
+  groupLabel: string;
+  dateLabel: string;
+  jurisdictionName: string;
+  /** 枠がある直近の日への導線。無ければ null */
+  nearest: { href: string; label: string } | null;
+};
+
+/** 得意先タブ。件数と不足を持たせ、開かなくても状況が分かるようにする */
+function CustomerTab({ tab }: { tab: CustomerTabView }) {
+  return (
+    <Link
+      href={tab.href}
+      className={[
+        "flex items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-[13px] font-semibold",
+        "transition-all duration-150 ease-in-out",
+        tab.active
+          ? "border-indigo-600 bg-indigo-600 text-white"
+          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
+      ].join(" ")}
+    >
+      <span className="max-w-[16ch] truncate">{tab.label}</span>
+      <span
+        className={tab.active ? "tabular-nums text-indigo-100" : "tabular-nums text-slate-500"}
+      >
+        {tab.count}
+      </span>
+      {tab.shortage > 0 && (
+        <span
+          className={[
+            "rounded px-1 text-[11px] leading-4",
+            tab.active ? "bg-white/25 text-white" : "bg-rose-100 text-rose-700",
+          ].join(" ")}
+          title={`${tab.shortage}名 不足`}
+        >
+          不足{tab.shortage}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/**
+ * 🔴 空のときに何も出さない画面にしない。
+ *   「壊れているのか、その日が本当に空なのか」が利用者に区別できない。
+ */
+function EmptyBoard({ empty }: { empty: EmptyBoardView }) {
+  return (
+    <div className="rounded-lg border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center">
+      <p className="text-[15px] font-semibold text-slate-700">
+        この日の{empty.groupLabel}の枠はありません
+      </p>
+      <p className="t-meta mt-1 text-slate-500">
+        {empty.dateLabel} ／ {empty.jurisdictionName}
+      </p>
+      {empty.nearest && (
+        <Link
+          href={empty.nearest.href}
+          className="mt-3 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white transition-all duration-150 ease-in-out hover:bg-indigo-700"
+        >
+          枠がある直近の日（{empty.nearest.label}）へ
+        </Link>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // 本体
 // ─────────────────────────────────────────────────────────
 
@@ -178,18 +273,20 @@ export type BoardDndProps = {
   showCustomerOnCard: boolean;
   /** 現在の管轄。プールの「他管轄」絞り込みに使う */
   jurisdictionId: string;
-  /** サーバで描いた得意先タブ（Link を含むのでそのまま差し込む） */
-  customerTabs: React.ReactNode;
+  /** 得意先タブ。1つ以下なら出さない（page.tsx が空配列で渡す） */
+  customerTabs: CustomerTabView[];
   /** 🔴 見出しの件数は state から数える。得意先タブで絞っていても
    *  「この日の全体」は出し続ける（絞り込みで不足を見落とさないため） */
   totalSiteCount: number;
   totalPlaced: number;
   /** 得意先タブで絞っているか */
   filtered: boolean;
-  /** 枠が0件のときの案内（Link を含む） */
-  emptyState: React.ReactNode;
-  /** プールの下に続く「非現場」「貸出中」 */
-  poolFooter: React.ReactNode;
+  /** 枠が0件のときに出す案内 */
+  empty: EmptyBoardView;
+  /** 非現場ステータス（有給・研修 …）。人数だけあればよい */
+  offCounts: { label: string; count: number }[];
+  /** 協力会社への貸出 */
+  lentGroups: { companyName: string; siteName: string; count: number }[];
 };
 
 const POOL_FILTERS = ["自社", "協力会社", "他管轄", "資格あり"] as const;
@@ -205,8 +302,9 @@ export function BoardDnd({
   totalSiteCount,
   totalPlaced,
   filtered,
-  emptyState,
-  poolFooter,
+  empty,
+  offCounts,
+  lentGroups,
 }: BoardDndProps) {
   const [state, applyMove] = useOptimistic<BoardState, Move>({ rows, pool }, reduce);
   const [, startTransition] = useTransition();
@@ -314,6 +412,12 @@ export function BoardDnd({
 
   return (
     <DndContext
+      // 🔴 id を必ず渡す（2026-09-03）。渡さないと dnd-kit は
+      //   モジュール内のカウンタで採番する（@dnd-kit/utilities の useUniqueId）。
+      //   サーバ描画とクライアント描画で番号がずれ、読み上げ用の
+      //   aria-describedby が食い違って **hydration mismatch** になる。
+      //   1画面に DndContext は1つなので、固定文字列で足りる。
+      id="board"
       sensors={sensors}
       // 🔴 pointerWithin にする。既定の rectIntersection は
       //   カードが密に並ぶ画面で「隣の枠が反応する」ことがある。
@@ -341,10 +445,19 @@ export function BoardDnd({
             </span>
           </div>
 
-          {customerTabs}
+          {/* 🔴 絞り込むのは**カードだけ**。ヘッダの件数と下の「要確認」は
+              その日の全体を出し続ける。絞り込みで警告が隠れると、
+              見えていない現場の不足に気づけないまま当日を迎える */}
+          {customerTabs.length > 0 && (
+            <div className="mb-3.5 flex flex-wrap items-center gap-2">
+              {customerTabs.map((tab) => (
+                <CustomerTab key={tab.id} tab={tab} />
+              ))}
+            </div>
+          )}
 
           {state.rows.length === 0 ? (
-            emptyState
+            <EmptyBoard empty={empty} />
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-stretch gap-3">
               {state.rows.map((row) => (
@@ -405,7 +518,44 @@ export function BoardDnd({
               ))}
             </div>
 
-            {poolFooter}
+            {/* 非現場ステータス */}
+            <PaneHeading
+              title="非現場"
+              sub={`${offCounts.reduce((n, g) => n + g.count, 0)} 名`}
+            />
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
+              {offCounts.map((g) => (
+                <div
+                  key={g.label}
+                  className="flex items-baseline justify-between border-b border-slate-200 pb-1"
+                >
+                  <span className="text-[14px] text-slate-700">{g.label}</span>
+                  <span className="text-[15px] font-bold tabular-nums text-slate-800">
+                    {g.count}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* 協力会社への貸出。🔴 請求に効くため第1弾から持つ（data-model.md §4-2） */}
+            <PaneHeading
+              title="貸出中（協力会社へ）"
+              sub={`${lentGroups.reduce((n, g) => n + g.count, 0)} 名`}
+            />
+            <div className="px-3 py-2">
+              {lentGroups.map((g) => (
+                <div
+                  key={`${g.companyName}:${g.siteName}`}
+                  className="flex items-baseline gap-2 border-b border-slate-200 py-1"
+                >
+                  <span className="text-[14px] font-semibold text-slate-800">{g.companyName}</span>
+                  <span className="t-meta truncate text-slate-500">{g.siteName}</span>
+                  <span className="ml-auto text-[15px] font-bold tabular-nums text-slate-800">
+                    {g.count}
+                  </span>
+                </div>
+              ))}
+            </div>
           </PoolDropArea>
         </PoolPane>
       </div>

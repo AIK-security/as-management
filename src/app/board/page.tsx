@@ -21,7 +21,6 @@
 import Link from "next/link";
 import { requireStaff, canEdit, roleLabel } from "@/lib/auth";
 import { logout } from "@/app/login/actions";
-import { PaneHeading } from "@/components/board/PaneHeading";
 import { WarningsPane } from "@/components/board/BoardPanes";
 import { BoardDnd } from "@/components/board/BoardDnd";
 import { ConfirmAllButton } from "@/components/board/ConfirmAllButton";
@@ -62,51 +61,6 @@ function CountChip({
   );
 }
 
-/** 得意先タブ。件数と不足を持たせ、開かなくても状況が分かるようにする */
-function CustomerTab({
-  href,
-  label,
-  count,
-  shortage,
-  active,
-}: {
-  href: string;
-  label: string;
-  count: number;
-  shortage: number;
-  active: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "flex items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-[13px] font-semibold",
-        "transition-all duration-150 ease-in-out",
-        active
-          ? "border-indigo-600 bg-indigo-600 text-white"
-          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
-      ].join(" ")}
-    >
-      <span className="max-w-[16ch] truncate">{label}</span>
-      <span className={active ? "tabular-nums text-indigo-100" : "tabular-nums text-slate-500"}>
-        {count}
-      </span>
-      {/* 🔴 不足はタブに出す。開かないと分からないと、絞り込みが見落としを生む */}
-      {shortage > 0 && (
-        <span
-          className={[
-            "rounded px-1 text-[11px] leading-4",
-            active ? "bg-white/25 text-white" : "bg-rose-100 text-rose-700",
-          ].join(" ")}
-          title={`${shortage}名 不足`}
-        >
-          不足{shortage}
-        </span>
-      )}
-    </Link>
-  );
-}
-
 export default async function BoardPage({
   searchParams,
 }: {
@@ -128,8 +82,6 @@ export default async function BoardPage({
     group,
   });
 
-  const offTotal = board.offGroups.reduce((n, g) => n + g.guards.length, 0);
-  const lentTotal = board.lentGroups.reduce((n, g) => n + g.guards.length, 0);
   const placed = board.rows.reduce((n, r) => n + r.plates.length, 0);
 
   // ── 得意先タブ ──────────────────────────────────────
@@ -137,6 +89,19 @@ export default async function BoardPage({
   //   1社で20件超になるため、全件を1画面に積むと他社が下へ流れて見えなくなる。
   //   → 得意先で切り替えられるようにし、**カードからは得意先名を外す**。
   //
+  /** 現在の絞り込みを保ったまま、一部だけ差し替えた URL を作る */
+  const hrefWith = (patch: { date?: string; group?: string; j?: string; c?: string }) => {
+    const q = new URLSearchParams();
+    q.set("date", patch.date ?? workDate);
+    q.set("group", patch.group ?? group);
+    const j = patch.j ?? board.jurisdiction.code;
+    if (j) q.set("j", j);
+    // 空文字は「すべて」＝パラメータを付けない
+    const c = patch.c ?? selectedCustomer;
+    if (c) q.set("c", c);
+    return `/board?${q.toString()}`;
+  };
+
   // 🔴 タブの並びはグループと同じ「得意先名順で固定」。件数順にすると
   //   日によって位置が変わり、探す場所を覚えられなくなる。
   const selectedCustomer = sp.c ?? "";
@@ -159,18 +124,30 @@ export default async function BoardPage({
     .filter((r) => r.shift.status === "draft")
     .map((r) => r.shift.id);
 
-  /** 現在の絞り込みを保ったまま、一部だけ差し替えた URL を作る */
-  const hrefWith = (patch: { date?: string; group?: string; j?: string; c?: string }) => {
-    const q = new URLSearchParams();
-    q.set("date", patch.date ?? workDate);
-    q.set("group", patch.group ?? group);
-    const j = patch.j ?? board.jurisdiction.code;
-    if (j) q.set("j", j);
-    // 空文字は「すべて」＝パラメータを付けない
-    const c = patch.c ?? selectedCustomer;
-    if (c) q.set("c", c);
-    return `/board?${q.toString()}`;
-  };
+  // 🔴 タブの並びはグループと同じ「得意先名順で固定」。件数順にすると
+  //   日によって位置が変わり、探す場所を覚えられなくなる。
+  //   1社しか無い日はタブ自体を出さない（切り替える先が無い）。
+  const customerTabs =
+    board.groups.length > 1
+      ? [
+          {
+            id: "__all__",
+            href: hrefWith({ c: "" }),
+            label: "すべて",
+            count: board.rows.length,
+            shortage: 0,
+            active: !selectedCustomer,
+          },
+          ...board.groups.map((g) => ({
+            id: g.customer?.id ?? "__none__",
+            href: hrefWith({ c: g.customer?.staff_code ?? "" }),
+            label: g.customer?.name ?? "（得意先が未設定）",
+            count: g.siteCount,
+            shortage: Math.max(0, g.headcount - g.placed),
+            active: selectedCustomer === g.customer?.staff_code,
+          })),
+        ]
+      : [];
 
   const navBtn =
     "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
@@ -289,6 +266,9 @@ export default async function BoardPage({
       </header>
 
       {/* ══ 本体（D&D はクライアント側） ═══════════════════ */}
+      {/* 🔴 渡すのはプレーンなデータだけ。JSX を境界越しに渡さない。
+          Link はクライアント側でも動くので、markup は BoardDnd 側で組む
+          （2026-09-03 修正。理由は BoardDnd.tsx の「得意先タブ・空表示」節） */}
       <BoardDnd
         rows={visibleRows}
         pool={board.pool}
@@ -298,89 +278,24 @@ export default async function BoardPage({
         totalSiteCount={board.rows.length}
         totalPlaced={placed}
         filtered={Boolean(selectedCustomer)}
-        /* ── 得意先タブ ──
-           🔴 絞り込むのは**カードだけ**。ヘッダの件数と下の「要確認」は
-              その日の全体を出し続ける。絞り込みで警告が隠れると、
-              見えていない現場の不足に気づけないまま当日を迎える */
-        customerTabs={
-          board.groups.length > 1 ? (
-            <div className="mb-3.5 flex flex-wrap items-center gap-2">
-              <CustomerTab
-                href={hrefWith({ c: "" })}
-                label="すべて"
-                count={board.rows.length}
-                shortage={0}
-                active={!selectedCustomer}
-              />
-              {board.groups.map((g) => (
-                <CustomerTab
-                  key={g.customer?.id ?? "__none__"}
-                  href={hrefWith({ c: g.customer?.staff_code ?? "" })}
-                  label={g.customer?.name ?? "（得意先が未設定）"}
-                  count={g.siteCount}
-                  shortage={Math.max(0, g.headcount - g.placed)}
-                  active={selectedCustomer === g.customer?.staff_code}
-                />
-              ))}
-            </div>
-          ) : null
-        }
-        /* 🔴 空のときに何も出さない画面にしない。
-           「壊れているのか、その日が本当に空なのか」が利用者に区別できない。 */
-        emptyState={
-          <div className="rounded-lg border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-center">
-            <p className="text-[15px] font-semibold text-slate-700">
-              この日の{group === "day" ? "日勤" : "夜勤"}の枠はありません
-            </p>
-            <p className="t-meta mt-1 text-slate-500">
-              {formatBoardDate(board.date)} ／ {board.jurisdiction.name}
-            </p>
-            {board.nearestDateWithShifts && (
-              <Link
-                href={hrefWith({ date: board.nearestDateWithShifts })}
-                className="mt-3 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white transition-all duration-150 ease-in-out hover:bg-indigo-700"
-              >
-                枠がある直近の日（{formatBoardDate(board.nearestDateWithShifts)}）へ
-              </Link>
-            )}
-          </div>
-        }
-        poolFooter={
-          <>
-            {/* 非現場ステータス */}
-            <PaneHeading title="非現場" sub={`${offTotal} 名`} />
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
-              {board.offGroups.map((g) => (
-                <div
-                  key={g.label}
-                  className="flex items-baseline justify-between border-b border-slate-200 pb-1"
-                >
-                  <span className="text-[14px] text-slate-700">{g.label}</span>
-                  <span className="text-[15px] font-bold tabular-nums text-slate-800">
-                    {g.guards.length}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* 協力会社への貸出。🔴 請求に効くため第1弾から持つ（data-model.md §4-2） */}
-            <PaneHeading title="貸出中（協力会社へ）" sub={`${lentTotal} 名`} />
-            <div className="px-3 py-2">
-              {board.lentGroups.map((g) => (
-                <div
-                  key={`${g.companyName}:${g.siteName}`}
-                  className="flex items-baseline gap-2 border-b border-slate-200 py-1"
-                >
-                  <span className="text-[14px] font-semibold text-slate-800">{g.companyName}</span>
-                  <span className="t-meta truncate text-slate-500">{g.siteName}</span>
-                  <span className="ml-auto text-[15px] font-bold tabular-nums text-slate-800">
-                    {g.guards.length}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </>
-        }
+        customerTabs={customerTabs}
+        empty={{
+          groupLabel: group === "day" ? "日勤" : "夜勤",
+          dateLabel: formatBoardDate(board.date),
+          jurisdictionName: board.jurisdiction.name,
+          nearest: board.nearestDateWithShifts
+            ? {
+                href: hrefWith({ date: board.nearestDateWithShifts }),
+                label: formatBoardDate(board.nearestDateWithShifts),
+              }
+            : null,
+        }}
+        offCounts={board.offGroups.map((g) => ({ label: g.label, count: g.guards.length }))}
+        lentGroups={board.lentGroups.map((g) => ({
+          companyName: g.companyName,
+          siteName: g.siteName,
+          count: g.guards.length,
+        }))}
       />
 
       {/* ══ 要確認（閉じられる） ══════════════════════════════ */}
