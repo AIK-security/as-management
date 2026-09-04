@@ -67,6 +67,48 @@ export function formatTime(h: number, m: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** timestamptz（ISO 8601）を JST の HH:MM にする。表示のためだけに使う */
+export function jstHm(iso: string): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(iso));
+}
+
+/**
+ * 重なりの説明に出す「どこの・いつの稼働か」1件ぶん。
+ *
+ * 🔴 得意先名を必ず入れる（2026-09-04・柴山の指摘）。
+ *   現場名と時刻だけでは**盤面のどこにあるカードか分からない**。
+ *   配置ボードは得意先タブで切り替える画面なので、
+ *   探すときにまず要るのは得意先名。
+ * 🔴 管轄と日勤/夜勤も入れる。重なりの相手は**別の盤面にいることが多い**
+ *   （1画面 = 1日 × 1管轄 × 日勤/夜勤）。どの盤面を開けばよいかが
+ *   書いていないと、結局全部見て回ることになる。
+ */
+export type SpanPlace = {
+  siteName: string | null;
+  customerName: string | null;
+  jurisdictionName: string | null;
+  workKind: WorkKind | null;
+  start: string;
+  end: string;
+};
+
+export function formatSpanPlace(p: SpanPlace): string {
+  // 貸出・非現場は枠を持たない。名前を出せないより「現場外」と言うほうがまし
+  const site = p.siteName ?? "現場外の稼働";
+  const where = [p.customerName, [p.jurisdictionName, p.workKind && WORK_KIND_LABEL[p.workKind]]
+    .filter(Boolean)
+    .join(" ")]
+    .filter(Boolean)
+    .join("／");
+  const when = `${jstHm(p.start)}–${jstHm(p.end)}`;
+  return where ? `${site}（${where}）${when}` : `${site} ${when}`;
+}
+
 /** ShiftMax の ArgNenTukiHi 書式：YYYY/MM/D（🔴 日はゼロ埋めしない） */
 export function toShiftMaxDate(iso: string): string {
   const [y, m, d] = iso.split("-");

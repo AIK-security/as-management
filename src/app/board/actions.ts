@@ -18,8 +18,10 @@
 
 import { refresh } from "next/cache";
 import { requireRole } from "@/lib/auth";
-import { addDays } from "@/lib/board-format";
+import { addDays, formatSpanPlace } from "@/lib/board-format";
+import { findOverlaps, type Span } from "@/lib/overlap";
 import { createClient } from "@/lib/supabase/server";
+import type { WorkKind } from "@/lib/types";
 
 /**
  * 🔴 `details` は「なぜ落ちたか」を**名前で**並べたもの（2026-09-04 追加）。
@@ -61,44 +63,23 @@ function toMessage(error: { code?: string; message: string }): string {
 //   文面は PostgreSQL の版に依存する。素直に引き直したほうが壊れない。
 // ─────────────────────────────────────────────────────────
 
-type OverlapRow = {
+type OverlapRow = Span & {
   shift_id: string | null;
-  planned_start_at: string;
-  planned_end_at: string;
   is_confirmed: boolean;
-  guard: { name: string; short_name: string } | null;
-  shift: { site: { short_name: string } | null } | null;
+  guardName: string;
+  place: string;
 };
-
-/** timestamptz を JST の HH:MM にする。表示のためだけに使う */
-function jstHm(iso: string): string {
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(iso));
-}
-
-function label(r: OverlapRow): string {
-  // 貸出・非現場は枠を持たない。名前が出せないより「現場外」と言うほうがまし
-  const site = r.shift?.site?.short_name ?? "現場外の稼働";
-  return `${site}（${jstHm(r.planned_start_at)}–${jstHm(r.planned_end_at)}）`;
-}
 
 /**
  * これから確定しようとしている枠のせいで、時間帯が重なる隊員を洗い出す。
  * @param shiftIds 確定しようとした枠
- * @returns 「氏名：A と B が重なっています」の配列。空なら説明できなかった
+ * @returns 「氏名：A と B」の配列。空なら説明できなかった
  */
 async function describeOverlaps(
   supabase: Awaited<ReturnType<typeof createClient>>,
   shiftIds: string[],
 ): Promise<string[]> {
-  const { data: targets } = await supabase
-    .from("shifts")
-    .select("work_date")
-    .in("id", shiftIds);
+  const { data: targets } = await supabase.from("shifts").select("work_date").in("id", shiftIds);
   const dates = (targets ?? []).map((s) => s.work_date as string).sort();
   if (dates.length === 0) return [];
 
@@ -107,8 +88,13 @@ async function describeOverlaps(
   const { data } = await supabase
     .from("assignments")
     .select(
-      "shift_id, planned_start_at, planned_end_at, is_confirmed, " +
-        "guard:guards ( name, short_name ), shift:shifts ( site:sites ( short_name ) )",
+      `guard_id, shift_id, planned_start_at, planned_end_at, is_confirmed,
+       guard:guards ( name ),
+       shift:shifts (
+         work_kind,
+         site:sites ( short_name, customer:customers ( name ) ),
+         jurisdiction:jurisdictions ( name )
+       )`,
     )
     .eq("status", "planned")
     .gte("work_date", addDays(dates[0], -1))
@@ -116,33 +102,47 @@ async function describeOverlaps(
     .not("planned_start_at", "is", null)
     .not("planned_end_at", "is", null);
 
-  const targetIds = new Set(shiftIds);
-  const rows = ((data ?? []) as unknown as OverlapRow[]).filter(
-    // 確定後に制約が見る行＝すでに確定済み ＋ 今回確定しようとしている枠の行
-    (r) => r.is_confirmed || (r.shift_id !== null && targetIds.has(r.shift_id)),
-  );
+  type Raw = {
+    guard_id: string;
+    shift_id: string | null;
+    planned_start_at: string;
+    planned_end_at: string;
+    is_confirmed: boolean;
+    guard: { name: string } | null;
+    shift: {
+      work_kind: WorkKind;
+      site: { short_name: string; customer: { name: string } | null } | null;
+      jurisdiction: { name: string } | null;
+    } | null;
+  };
 
-  const byGuard = new Map<string, OverlapRow[]>();
-  for (const r of rows) {
-    const key = r.guard?.name ?? "（氏名不明）";
-    byGuard.set(key, [...(byGuard.get(key) ?? []), r]);
-  }
+  const targetIds = new Set(shiftIds);
+  const rows: OverlapRow[] = ((data ?? []) as unknown as Raw[])
+    // 確定後に制約が見る行＝すでに確定済み ＋ 今回確定しようとしている枠の行
+    .filter((r) => r.is_confirmed || (r.shift_id !== null && targetIds.has(r.shift_id)))
+    .map((r) => ({
+      key: r.guard_id,
+      start: r.planned_start_at,
+      end: r.planned_end_at,
+      shift_id: r.shift_id,
+      is_confirmed: r.is_confirmed,
+      guardName: r.guard?.name ?? "（氏名不明）",
+      place: formatSpanPlace({
+        siteName: r.shift?.site?.short_name ?? null,
+        customerName: r.shift?.site?.customer?.name ?? null,
+        jurisdictionName: r.shift?.jurisdiction?.name ?? null,
+        workKind: r.shift?.work_kind ?? null,
+        start: r.planned_start_at,
+        end: r.planned_end_at,
+      }),
+    }));
 
   const messages = new Set<string>();
-  for (const [name, list] of byGuard) {
-    const sorted = [...list].sort((a, b) => a.planned_start_at.localeCompare(b.planned_start_at));
-    for (let i = 0; i < sorted.length; i++) {
-      for (let j = i + 1; j < sorted.length; j++) {
-        const a = sorted[i];
-        const b = sorted[j];
-        if (Date.parse(b.planned_start_at) >= Date.parse(a.planned_end_at)) break; // 以降は重ならない
-        // 🔴 既に両方とも確定済みなら、今回の確定が原因ではない。
-        //   （そもそも DB が許していないはずだが、原因でないものを挙げない）
-        const causedByThis = !a.is_confirmed || !b.is_confirmed;
-        if (!causedByThis) continue;
-        messages.add(`${name}：${label(a)} と ${label(b)}`);
-      }
-    }
+  for (const [a, b] of findOverlaps(rows)) {
+    // 🔴 両方すでに確定済みなら、今回の確定が原因ではない。
+    //   （そもそも DB が許していないはずだが、原因でないものを挙げない）
+    if (a.is_confirmed && b.is_confirmed) continue;
+    messages.add(`${a.guardName}：${a.place} と ${b.place}`);
   }
   return [...messages];
 }

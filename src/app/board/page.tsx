@@ -302,20 +302,44 @@ export default async function BoardPage({
       <WarningsPane count={board.warnings.length}>
         <ul className="mt-1.5 grid grid-cols-2 gap-x-6 gap-y-0.5">
           {board.warnings.map((w, i) => (
-            <li key={i} className="flex items-baseline gap-1.5 text-[13px]">
+            // 🔴 重なりだけ2列ぶんを使い、省略もしない（2026-09-04）。
+            //   ここだけが「直さないと確定できない」警告で、文面も長い
+            //   （相手が別の管轄・別の勤務にいることが多いため、
+            //   得意先・管轄・区分まで書かないと探せない）。
+            //   truncate すると、いちばん要る後半が消える。
+            <li
+              key={i}
+              className={[
+                "flex items-baseline gap-1.5 text-[13px]",
+                w.kind === "overlap" ? "col-span-2" : "",
+              ].join(" ")}
+            >
               <span
                 className={[
                   "t-badge shrink-0 rounded px-1.5 leading-5",
-                  w.kind === "ng"
-                    ? "bg-rose-100 text-rose-700"
-                    : w.kind === "shortage"
-                      ? "bg-slate-200 text-slate-700"
-                      : "bg-amber-100 text-amber-800",
+                  w.kind === "overlap"
+                    ? "bg-rose-600 text-white"
+                    : w.kind === "ng"
+                      ? "bg-rose-100 text-rose-700"
+                      : w.kind === "shortage"
+                        ? "bg-slate-200 text-slate-700"
+                        : "bg-amber-100 text-amber-800",
                 ].join(" ")}
               >
-                {w.kind === "ng" ? "NG" : w.kind === "shortage" ? "不足" : "資格"}
+                {w.kind === "overlap"
+                  ? "重複"
+                  : w.kind === "ng"
+                    ? "NG"
+                    : w.kind === "shortage"
+                      ? "不足"
+                      : "資格"}
               </span>
-              <span className="truncate text-slate-700">{w.message}</span>
+              <span
+                className={w.kind === "overlap" ? "text-slate-800" : "truncate text-slate-700"}
+                title={w.message}
+              >
+                {w.message}
+              </span>
             </li>
           ))}
         </ul>

@@ -10,7 +10,14 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 // 🔴 内部でも使う。再エクスポートしただけでは同一モジュール内から参照できない
-import { OFF_KIND_LABEL, addDays, daysBetween, todayInJst } from "@/lib/board-format";
+import {
+  OFF_KIND_LABEL,
+  addDays,
+  daysBetween,
+  formatSpanPlace,
+  todayInJst,
+} from "@/lib/board-format";
+import { findOverlaps } from "@/lib/overlap";
 import type {
   Assignment,
   BoardGroup,
@@ -301,6 +308,88 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
 
     rows.push({ shift, site, customer: site.customer, plates, missingQualifications });
   }
+
+  // ── 時間帯の重なり（要確認に最初から出す）────────────
+  //
+  // 🔴 なぜ「確定して失敗してから」ではないのか（2026-09-04・柴山の指摘）
+  //   重なりは、警告の中で**唯一 確定 を丸ごと止める**条件である
+  //   （不足も資格不足も NG も置ける ─ screen-design.md §2-5）。
+  //   押してから知らされると、40枠のどこを直せばよいかを探すところから始まる。
+  //   **押す前に見えていれば、そもそもエラーに当たらない。**
+  //
+  // 🔴 その日の実態で見る。プールと同じ理由で、管轄や日勤/夜勤で切ると
+  //   見えない重なりが残る。人は管轄をまたいで1人しかいない。
+  //
+  // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
+  //   20:00–06:00 の枠は隣の日の枠と重なりうる。
+  //   ただし出すのは**この日に関係する重なりだけ**（隣の日の話まで出さない）。
+  //
+  // 🔴 判定はしていない。保存を止めるのは DB の assignments_no_overlap だけで、
+  //   ここは同じ規則の写しを**先に見せている**にすぎない（src/lib/overlap.ts）。
+  const { data: spanRaw, error: spanError } = await supabase
+    .from("assignments")
+    .select(
+      `guard_id, work_date, planned_start_at, planned_end_at,
+       shift:shifts (
+         id,
+         work_kind,
+         site:sites ( short_name, customer:customers ( name ) ),
+         jurisdiction:jurisdictions ( name )
+       )`,
+    )
+    .eq("status", "planned")
+    .gte("work_date", addDays(workDate, -1))
+    .lte("work_date", addDays(workDate, 1))
+    .not("planned_start_at", "is", null)
+    .not("planned_end_at", "is", null);
+  if (spanError) throw spanError;
+
+  type SpanRaw = {
+    guard_id: string;
+    work_date: string;
+    planned_start_at: string;
+    planned_end_at: string;
+    shift: {
+      id: string;
+      work_kind: WorkKind;
+      site: { short_name: string; customer: { name: string } | null } | null;
+      jurisdiction: { name: string } | null;
+    } | null;
+  };
+
+  const spans = ((spanRaw ?? []) as unknown as SpanRaw[]).map((r) => ({
+    key: r.guard_id,
+    start: r.planned_start_at,
+    end: r.planned_end_at,
+    // 🔴 片方でもこの盤面にあるものだけ出す。
+    //   両方とも別の管轄・別の勤務なら、この画面からは直せず、
+    //   この画面の 一括確定 も止めない。出しても手が出せない警告は
+    //   「読まない帯」を作るだけで、本当に効く警告まで埋もれる。
+    //   （どちらの盤面にも片側は必ずあるので、見落としにはならない）
+    onThisBoard: r.shift ? shiftIdSet.has(r.shift.id) : false,
+    place: formatSpanPlace({
+      siteName: r.shift?.site?.short_name ?? null,
+      customerName: r.shift?.site?.customer?.name ?? null,
+      jurisdictionName: r.shift?.jurisdiction?.name ?? null,
+      workKind: r.shift?.work_kind ?? null,
+      start: r.planned_start_at,
+      end: r.planned_end_at,
+    }),
+  }));
+
+  const overlapSeen = new Set<string>();
+  for (const [a, b] of findOverlaps(spans)) {
+    if (!a.onThisBoard && !b.onThisBoard) continue;
+    const guard = guardById.get(a.key);
+    const message = `${guard?.short_name ?? "（氏名不明）"}：${a.place} と ${b.place}`;
+    if (overlapSeen.has(message)) continue;
+    overlapSeen.add(message);
+    warnings.push({ kind: "overlap", message });
+  }
+
+  // 🔴 重なりを先頭に出す。ここだけが「直さないと確定できない」種類の警告で、
+  //   不足・資格・NG と同じ扱いで混ぜると、閉じられる帯の下へ流れて見えなくなる。
+  warnings.sort((a, b) => Number(b.kind === "overlap") - Number(a.kind === "overlap"));
 
   // ── プールから除く人 ─────────────────────────────────
   //
