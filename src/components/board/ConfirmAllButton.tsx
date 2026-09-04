@@ -7,20 +7,30 @@
 // 🔴 確認を挟む。40枠が一度に確定し、確定は EXCLUDE 制約を効かせ始める
 //   （仮組み中に重ねてあった配置がここで初めて弾かれる）。
 //   D&D と違って**押し間違いを目で戻せない**種類の操作なので、ここだけ一手増やす。
+//
+// 🔴 その確認に window.confirm を使わない（2026-09-04 変更）。
+//   Chrome には「このページでこれ以上ダイアログを表示しない」がある。
+//   一度これが効くと、以後 `confirm()` は**何も表示せず false を返す**。
+//   ＝ボタンを押しても無反応になり、サーバには何も届かず、ログにも残らない。
+//   利用者から見れば「壊れている」、こちらから見れば「何も起きていない」で、
+//   いちばん追いにくい壊れ方をする。
+//   → **確認は画面の中に出す。** ブラウザの設定で消えうるものに、
+//     業務の関門を預けない。
 "use client";
 
 import { useState, useTransition } from "react";
 import { confirmShifts } from "@/app/board/actions";
 
+const BTN = "rounded-md border-2 px-3 py-1.5 text-[14px] font-semibold transition-all duration-150 ease-in-out";
+
 export function ConfirmAllButton({ shiftIds }: { shiftIds: string[] }) {
   const [pending, startTransition] = useTransition();
+  const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const disabled = shiftIds.length === 0 || pending;
+  const none = shiftIds.length === 0;
 
-  function handleClick() {
-    if (!window.confirm(`いま表示している仮組み ${shiftIds.length} 件を確定します。よろしいですか？`)) {
-      return;
-    }
+  function handleConfirm() {
+    setAsking(false);
     startTransition(async () => {
       const result = await confirmShifts({ shiftIds });
       setError(result.ok ? null : result.message);
@@ -29,25 +39,46 @@ export function ConfirmAllButton({ shiftIds }: { shiftIds: string[] }) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={disabled}
-        title={
-          shiftIds.length === 0
-            ? "確定できる仮組みの枠がありません"
-            : `仮組み ${shiftIds.length} 件を確定`
-        }
-        className={[
-          "rounded-md border-2 px-3 py-1.5 text-[14px] font-semibold",
-          "transition-all duration-150 ease-in-out",
-          disabled
-            ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-            : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
-        ].join(" ")}
-      >
-        {pending ? "確定中…" : `一括確定${shiftIds.length > 0 ? `（${shiftIds.length}）` : ""}`}
-      </button>
+      {asking ? (
+        // 🔴 確認は「押した場所」に出す。別の場所に出すと、何に対する
+        //   確認なのかが離れる。件数をもう一度書いて範囲を示す
+        <div className="flex items-center gap-2 rounded-md border-2 border-amber-400 bg-amber-50 px-2.5 py-1">
+          <span className="text-[14px] font-semibold text-amber-900">
+            表示中の仮組み {shiftIds.length} 件を確定します
+          </span>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className={`${BTN} cursor-pointer border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700`}
+          >
+            確定する
+          </button>
+          <button
+            type="button"
+            onClick={() => setAsking(false)}
+            className={`${BTN} cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100`}
+          >
+            やめる
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAsking(true)}
+          disabled={none || pending}
+          title={
+            none ? "確定できる仮組みの枠がありません" : `仮組み ${shiftIds.length} 件を確定`
+          }
+          className={[
+            BTN,
+            none || pending
+              ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+              : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
+          ].join(" ")}
+        >
+          {pending ? "確定中…" : `一括確定${none ? "" : `（${shiftIds.length}）`}`}
+        </button>
+      )}
 
       {/* 🔴 一括確定が落ちる原因はほぼ「時間帯の重複」。
           どこかで1件でも当たれば全部確定していない（actions.ts の判断）。

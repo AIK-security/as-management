@@ -53,6 +53,19 @@ function isDndFocused(): boolean {
   return el instanceof HTMLElement && el.getAttribute("aria-roledescription") === "draggable";
 }
 
+/**
+ * ボタンやリンクにフォーカスがあるか。
+ *
+ * 🔴 2026-09-04 追加。ここを見ていなかったため、**フォーカスのあるボタンを
+ *   Enter で押せなくしていた**（`一括確定` が押せないという報告の原因の1つ）。
+ *   Enter でボタンを押すのはブラウザの既定動作であって、こちらの持ち物ではない。
+ *   盤面のショートカットを足すときは「奪ってよいキーか」を必ず先に問う。
+ */
+function isActivatable(el: Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  return el.tagName === "BUTTON" || el.tagName === "A" || el.getAttribute("role") === "button";
+}
+
 export type BoardKeysOptions = {
   /** いま画面に出ている枠。並び順がそのまま ↑↓ の順になる */
   rows: ShiftRow[];
@@ -176,6 +189,10 @@ export function useBoardKeys({
           return;
 
         case "Enter":
+          // 🔴 ボタン・リンクにフォーカスがあるときの Enter は「それを押す」。
+          //   preventDefault すると、キーボードだけで操作している人にとって
+          //   そのボタンが**存在しないのと同じ**になる
+          if (isActivatable(document.activeElement)) return;
           e.preventDefault();
           if (!selectedRow) {
             setNotice("先に枠を ↑↓ で選んでください");
