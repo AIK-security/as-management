@@ -44,24 +44,39 @@
 // 🔴 import 元が `@/lib/board` → `@/lib/board-format` に変わっている。
 //   `board.ts` は server-only（取得処理が混ざるのを防ぐ壁）なので、
 //   クライアントから読むと**ビルドが落ちる**。表示の整形だけを切り出してある。
+// 🔴 2026-09-04：キーボード操作のために「選択」を持つようになった（§2-8）。
+//   選択は D&D と**別の状態**。掴んでいる最中と、いま操作対象にしている枠は違う。
+//   色も分ける ── ドロップ先は ring（掴んでいる間だけ）、選択は outline（居座る）。
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { DraggablePlate, EmptySlot } from "@/components/board/Plate";
 import { WORK_KIND_LABEL, formatTime } from "@/lib/board-format";
-import type { ShiftRow } from "@/lib/types";
+import type { AssignmentRole, ShiftRow } from "@/lib/types";
 
 export function ShiftRowCard({
   row,
   showCustomer = false,
   editable = false,
+  selected = false,
+  selectedPlateId = null,
   onToggleStatus,
+  onSelect,
+  onSetRole,
 }: {
   row: ShiftRow;
   showCustomer?: boolean;
   /** 事務ロールは閲覧のみ。掴めず・押せない（requirements.md §3 決定 #2） */
   editable?: boolean;
+  /** キーボード操作でいま選ばれている枠か */
+  selected?: boolean;
+  /** その枠の中で選ばれているプレート（assignmentId） */
+  selectedPlateId?: string | null;
   onToggleStatus?: (shiftId: string, next: "draft" | "confirmed") => void;
+  /** クリックでも選べるようにする。assignmentId が null なら枠だけの選択 */
+  onSelect?: (shiftId: string, assignmentId: string | null) => void;
+  onSetRole?: (assignmentId: string, role: AssignmentRole) => void;
 }) {
   const { shift, site, customer, plates, missingQualifications } = row;
   const isDraft = shift.status === "draft";
@@ -75,15 +90,29 @@ export function ShiftRowCard({
     disabled: !editable,
   });
 
+  // 🔴 ↑↓ で選んだ枠が画面の外にあると、押しても何も起きていないように見える。
+  //   block:"nearest" にして、見えているときは動かさない（勝手に飛ぶと目で追えない）。
+  const boxRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (selected) boxRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
   return (
     <section
-      ref={setNodeRef}
+      ref={(el) => {
+        boxRef.current = el;
+        setNodeRef(el);
+      }}
+      onClick={() => onSelect?.(shift.id, null)}
       className={[
         "flex h-full flex-col overflow-hidden rounded-lg border-2 bg-white shadow-sm",
         // 🔴 ドロップ先は**藍**で示す（1色1意味：藍＝操作）。
         //   状態を表す橙・赤・緑と混ぜない。掴んでいる間だけ出るので
         //   「今ここに置ける」以外の意味に読まれる余地がない
         isOver ? "ring-2 ring-indigo-500 ring-offset-1" : "",
+        // 🔴 選択は outline で出す。ring はドロップ先に使っているので、
+        //   同じ形にすると「掴んでいる先」と「選んでいる枠」が見分けられない
+        selected ? "outline-2 outline-offset-2 outline-indigo-600" : "",
         // 左端の色帯：仮組み＝橙／確定＝緑。**色を使うのはこの帯だけ**
         isDraft
           ? "border-slate-300 border-l-[6px] border-l-amber-400"
@@ -195,9 +224,49 @@ export function ShiftRowCard({
           🔴 mt-auto で下端に寄せる。同じ行の箱は高さが揃うため、
              プレートの位置が箱ごとにばらつくと目で追えなくなる */}
       <div className="mt-auto flex flex-wrap content-end gap-1.5 bg-slate-50/70 px-3 py-2.5">
-        {plates.map((plate) => (
-          <DraggablePlate key={plate.assignmentId} plate={plate} disabled={!editable} />
-        ))}
+        {plates.map((plate) => {
+          const picked = plate.assignmentId === selectedPlateId;
+          return (
+            // 🔴 選択の枠線と隊長ボタンは、ドラッグの取っ手の**外側**に置く。
+            //   DraggablePlate の中に入れると、ボタンを押した指がドラッグ開始と
+            //   取り合いになる（Plate.tsx の「外側に1枚かぶせる」と同じ理由）。
+            <div
+              key={plate.assignmentId}
+              className="relative"
+              onClick={(e) => {
+                e.stopPropagation(); // 枠だけの選択に上書きさせない
+                onSelect?.(shift.id, plate.assignmentId);
+              }}
+            >
+              <div className={picked ? "rounded-lg outline-2 outline-offset-1 outline-indigo-600" : ""}>
+                <DraggablePlate plate={plate} disabled={!editable} />
+              </div>
+
+              {/* 🔴 隊長の付け外しは**選んだ1枚にだけ**出す。
+                  全プレートに出すと 84px の中がボタンで埋まり、氏名が読めなくなる。
+                  キーボードでは `L`（useBoardKeys）。同じことを2つの経路で出す */}
+              {picked && editable && onSetRole && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSetRole(plate.assignmentId, plate.role === "leader" ? "member" : "leader");
+                  }}
+                  title={plate.role === "leader" ? "隊長を外す（L）" : "隊長にする（L）"}
+                  className={[
+                    "absolute -top-2 -right-1.5 z-10 cursor-pointer rounded border px-1",
+                    "t-badge leading-4 shadow-sm transition-all duration-150 ease-in-out",
+                    plate.role === "leader"
+                      ? "border-slate-700 bg-slate-700 text-white hover:bg-slate-800"
+                      : "border-slate-400 bg-white text-slate-600 hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  L
+                </button>
+              )}
+            </div>
+          );
+        })}
         {Array.from({ length: shortage }, (_, i) => (
           <EmptySlot key={`empty-${shift.id}-${i}`} />
         ))}

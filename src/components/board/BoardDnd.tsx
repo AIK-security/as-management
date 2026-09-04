@@ -20,7 +20,7 @@
 "use client";
 
 import Link from "next/link";
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -37,14 +37,16 @@ import { Plate, PoolPlate, DraggablePoolPlate } from "@/components/board/Plate";
 import { ShiftRowCard } from "@/components/board/ShiftRowCard";
 import { PoolPane } from "@/components/board/BoardPanes";
 import { PaneHeading } from "@/components/board/PaneHeading";
+import { useBoardKeys } from "@/components/board/useBoardKeys";
 import {
   moveAssignment,
   placeGuard,
+  setAssignmentRole,
   setShiftStatus,
   unplaceAssignment,
   type ActionResult,
 } from "@/app/board/actions";
-import type { GuardView, PlateView, ShiftRow } from "@/lib/types";
+import type { AssignmentRole, GuardView, PlateView, ShiftRow } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────
 // 楽観更新
@@ -59,6 +61,8 @@ type Move =
   | { type: "move"; assignmentId: string; toShiftId: string }
   /** 枠 → プール */
   | { type: "unplace"; assignmentId: string }
+  /** 隊長の付け外し */
+  | { type: "role"; assignmentId: string; role: AssignmentRole }
   | { type: "status"; shiftId: string; status: "draft" | "confirmed" };
 
 /**
@@ -138,6 +142,20 @@ function reduce(state: BoardState, move: Move): BoardState {
       };
     }
 
+    // 🔴 隊長は枠に1人とは限らない（複数人置ける）。ここで他を降ろさない。
+    //   「1枠1人」という規則は管制に確認していない（requirements.md §8-7）。
+    //   確かめていない規則を画面が勝手に強制すると、直すのは現場ではなくこちらになる。
+    case "role":
+      return {
+        pool: state.pool,
+        rows: state.rows.map((r) => ({
+          ...r,
+          plates: r.plates.map((p) =>
+            p.assignmentId === move.assignmentId ? { ...p, role: move.role } : p,
+          ),
+        })),
+      };
+
     case "status":
       return {
         pool: state.pool,
@@ -202,6 +220,15 @@ export type EmptyBoardView = {
   /** 枠がある直近の日への導線。無ければ null */
   nearest: { href: string; label: string } | null;
 };
+
+/** キーの表記。文中に混ぜても「これはキー」と読めるだけの見た目にする */
+function KeyCap({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-sans text-[11px] text-slate-700">
+      {children}
+    </kbd>
+  );
+}
 
 /** 得意先タブ。件数と不足を持たせ、開かなくても状況が分かるようにする */
 function CustomerTab({ tab }: { tab: CustomerTabView }) {
@@ -316,6 +343,10 @@ export function BoardDnd({
   // プールの絞り込み（ここはサーバに聞く必要が無い＝即座に効く）
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<Set<PoolFilter>>(new Set());
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  // 🔴 「Enter で置かれる1名」を光らせるのは、検索欄に居るときだけ。
+  //   常に光らせると、盤面を触っている間ずっと関係のない1枚が目立つ
+  const [searchFocused, setSearchFocused] = useState(false);
 
   // 🔴 マウスを少し動かすまでドラッグを始めない。
   //   0 にすると確定バッジのクリックがドラッグとして食われる。
@@ -404,10 +435,51 @@ export function BoardDnd({
   function toggleFilter(f: PoolFilter) {
     setFilters((prev) => {
       const next = new Set(prev);
-      if (next.has(f)) next.delete(f);
-      else next.add(f);
+      if (next.has(f)) {
+        next.delete(f);
+      } else {
+        // 🔴 `自社` と `協力会社` は同時に押せない（押すと必ず0件になる）。
+        //   0件の理由が「そういう人が居ない」のか「押し方が悪い」のかを
+        //   画面から区別できない。後から押したほうを生かす。
+        if (f === "自社") next.delete("協力会社");
+        if (f === "協力会社") next.delete("自社");
+        next.add(f);
+      }
       return next;
     });
+  }
+
+  // ── キーボード操作（§2-8） ────────────────────────────
+  //
+  // 🔴 キーボードと D&D で**別の書き込み経路を作らない**。どちらも同じ run() を通す。
+  //   2本あると、片方だけ直した／片方だけ楽観更新が効かない、が必ず起きる。
+  const keys = useBoardKeys({
+    rows: state.rows,
+    candidates: visiblePool,
+    enabled: editable,
+    searchRef,
+    onClearQuery: () => setQuery(""),
+    onPlace: (guardId, shiftId) => {
+      // position は D&D と同じ「いま何枚入っているか」＝末尾に足す
+      const count = state.rows.find((r) => r.shift.id === shiftId)?.plates.length ?? 0;
+      run({ type: "place", guardId, toShiftId: shiftId }, () =>
+        placeGuard({ guardId, shiftId, position: count }),
+      );
+    },
+    onUnplace: (assignmentId) =>
+      run({ type: "unplace", assignmentId }, () => unplaceAssignment({ assignmentId })),
+    onSetRole: (assignmentId, role) =>
+      run({ type: "role", assignmentId, role }, () => setAssignmentRole({ assignmentId, role })),
+    onConfirm: (shiftId) => handleToggleStatus(shiftId, "confirmed"),
+  });
+
+  function handleSelect(shiftId: string, assignmentId: string | null) {
+    if (!editable) return;
+    keys.select(shiftId, assignmentId);
+  }
+
+  function handleSetRole(assignmentId: string, role: AssignmentRole) {
+    run({ type: "role", assignmentId, role }, () => setAssignmentRole({ assignmentId, role }));
   }
 
   return (
@@ -466,7 +538,13 @@ export function BoardDnd({
                   row={row}
                   showCustomer={showCustomerOnCard}
                   editable={editable}
+                  selected={keys.selection.shiftId === row.shift.id}
+                  selectedPlateId={
+                    keys.selection.shiftId === row.shift.id ? keys.selection.assignmentId : null
+                  }
                   onToggleStatus={handleToggleStatus}
+                  onSelect={handleSelect}
+                  onSetRole={handleSetRole}
                 />
               ))}
             </div>
@@ -478,10 +556,14 @@ export function BoardDnd({
           <PoolDropArea>
             <div className="px-3 py-2">
               <input
+                ref={searchRef}
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="氏名で検索"
+                onKeyDown={keys.onSearchKeyDown}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                placeholder="氏名で検索（/ でここへ）"
                 className="h-10 w-full rounded-md border-2 border-slate-300 px-2.5 text-[14px] transition-all duration-150 ease-in-out outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
               />
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -510,11 +592,46 @@ export function BoardDnd({
                   {visiblePool.length} 名を表示（未配置 {state.pool.length} 名中）
                 </div>
               )}
+
+              {/* ── キーの案内 ──
+                  🔴 ショートカットは**見えていないと使われない**。
+                    「知っている人だけ速い」は、覚える気のない人の速度が
+                    現行（べんり君）より落ちるということ。常時1行だけ出す。
+                  🔴 押したのに何も起きなかったときは、同じ場所で理由を出す。
+                    無反応だと「壊れている」と読まれる。 */}
+              {editable &&
+                (keys.notice ? (
+                  <div
+                    role="status"
+                    className="t-meta mt-2 rounded border border-amber-400 bg-amber-50 px-2 py-1 text-amber-800"
+                  >
+                    {keys.notice}
+                  </div>
+                ) : (
+                  <div className="t-meta mt-2 leading-snug text-slate-500">
+                    <KeyCap>↑↓</KeyCap> 枠 <KeyCap>←→</KeyCap> プレート <KeyCap>Enter</KeyCap>{" "}
+                    枠→検索→配置 <KeyCap>Esc</KeyCap> 盤面へ戻る
+                    <br />
+                    <KeyCap>/</KeyCap> 検索 <KeyCap>Del</KeyCap> 外す <KeyCap>L</KeyCap> 隊長{" "}
+                    <KeyCap>Ctrl+S</KeyCap> この枠を確定
+                  </div>
+                ))}
             </div>
 
             <div className="flex flex-wrap gap-2 px-3 pb-3">
-              {visiblePool.map((view) => (
-                <DraggablePoolPlate key={view.guard.id} view={view} disabled={!editable} />
+              {visiblePool.map((view, i) => (
+                // 🔴 Enter で置かれる1名を光らせる。「どれが置かれるのか」が
+                //   見えないまま Enter を押させると、外れたときに原因が分からない
+                <div
+                  key={view.guard.id}
+                  className={
+                    searchFocused && i === keys.cursor
+                      ? "rounded-lg outline-2 outline-offset-1 outline-indigo-600"
+                      : ""
+                  }
+                >
+                  <DraggablePoolPlate view={view} disabled={!editable} />
+                </div>
               ))}
             </div>
 
