@@ -162,11 +162,29 @@ function breakMinFor(startH: number, isNight: boolean): number {
   return startH < 23 ? 60 : 0; // 夜A=60分 / 夜B=0分
 }
 
+// 🔴 必要人数は「平均 1.7名／1名の現場が相当数ある」に寄せる（2026-09-04 修正）。
+//
+//   それまでは `1 + floor(rng() * 5)`（1〜5の一様乱数・平均3.3）で、
+//   **実測のほぼ2倍**だった。これが2つの実害を出していた：
+//
+//   ① 42枠の必要人数が 138名 になり、隊員 104名（うち15名は非現場・貸出）では
+//      **どう配っても足りず、同じ人を同じ時間帯の2枠に入れるしかなかった**。
+//      ＝ダミーの時点で `assignments_no_overlap` に触れる状態で、
+//        一括確定が最初から通らなかった（2026-09-04・柴山の報告）
+//   ② カードは「1名の枠が多い」前提で**箱**に組み替えてある（2026-09-02）。
+//      平均3.3名では、その判断を確かめられる絵になっていない
+//
+//   → 実測（40現場・68名＝平均1.7）に寄せる。5名の枠も1割入れておく
+//     ─ プレート3枚並びの折り返しを確かめる材料が要るため。
+//   🔴 rng() の消費回数は1回のまま変えない。増減させると以降の乱数が全部ずれ、
+//     現場名・確定/仮組み・資格の割り当てまで別物になる。
+const HEADCOUNTS = [1, 1, 1, 1, 1, 1, 2, 2, 3, 5];
+
 export const SHIFTS: Shift[] = SITES.map((site, i) => {
   const isNight = i % 3 === 2;
   const startH = isNight ? (i % 6 === 5 ? 23 : 20) : 8 + (i % 2);
   const endH = isNight ? 6 : 17 + (i % 2);
-  const headcount = 1 + Math.floor(rng() * 5);
+  const headcount = HEADCOUNTS[Math.floor(rng() * HEADCOUNTS.length)];
   // 3分の2ほどを確定済みにする（仮組みと確定が混在した状態を見たい）
   const confirmed = rng() < 0.66;
   return {
@@ -188,18 +206,97 @@ export const SHIFTS: Shift[] = SITES.map((site, i) => {
   };
 });
 
-/** 配置。枠の人数をだいたい満たすが、一部わざと不足させる */
+/**
+ * 配置。枠の人数をだいたい満たすが、一部わざと不足させる。
+ *
+ * 🔴 **1人が同じ時間帯に2か所へ入るデータを作らない**（2026-09-04 修正）。
+ *   以前は隊員カーソルを `% GUARDS.length` で一巡させており、
+ *   人数が足りなくなると**先頭に戻って同じ人をもう一度置いていた**。
+ *   結果、ダミーの時点で 13件の重なりがあり、
+ *   `assignments_no_overlap` に触れて**一括確定が最初から通らなかった**。
+ *   （`gen-seed.mts` は「確定どうし」だけを落としていたため、
+ *     仮組みを含む重なりが残り、確定した瞬間に表面化した）
+ *
+ * 🔴 重なりの規則は DB（`assignments_no_overlap`）と揃える。
+ *   時刻は「その日の 0:00 からの分」で持ち、**終了が開始以下なら翌日**
+ *   （夜勤 20:00 → 06:00）── `supabase/migrations/20260903000000_...` と同じ。
+ *
+ * 🟢 日勤と夜勤の掛け持ちは**禁じない**（8/27「日勤＋夜勤・途中交代がある」）。
+ *   禁じるのは**時間帯が重なること**だけ。ただし掛け持ちは最後の手段にし、
+ *   まだ何も入っていない人から先に配る（半分が掛け持ちでは実態と違う）。
+ */
 export const ASSIGNMENTS: Assignment[] = (() => {
   const rows: Assignment[] = [];
-  let guardCursor = 0;
   let seq = 1;
 
-  for (const shift of SHIFTS) {
-    // 5枠に1つは1名不足させる（未充足の見え方を確認するため）
-    const filled = seq % 5 === 0 ? Math.max(0, shift.headcount - 1) : shift.headcount;
+  /** その日の 0:00 からの分。日跨ぎは +24h（DB のトリガーと同じ規則） */
+  function spanOf(shift: Shift): [number, number] {
+    const start = shift.startH * 60 + shift.startM;
+    let end = shift.endH * 60 + shift.endM;
+    if (end <= start) end += 24 * 60;
+    return [start, end];
+  }
+
+  /** 現場に入っている時間帯（隊員ごと） */
+  const busy = new Map<string, [number, number][]>();
+  /** 非現場・貸出。その日は現場に立たない */
+  const exclusive = new Set<string>();
+
+  // ── 先に非現場・貸出の人を確保する ──
+  //   後回しにすると、現場に配り終わったあとで空いている人が居なくなり、
+  //   **有給の人が現場にも立っている**という有り得ないデータになる
+  //   （以前は実際にそうなっていた）。
+  //   7人おきに採るのは、連番で固まって「前のほうの人だけ休む」絵にしないため。
+  const offKinds = [
+    "paid_leave", "paid_leave", "paid_leave",
+    "training", "training",
+    "night_duty", "night_duty",
+    "absent_self", "medical", "office", "standby", "control",
+  ] as const;
+  const lents = [
+    { companyId: "c-p1", site: "◯◯地区 交通規制" },
+    { companyId: "c-p1", site: "◯◯地区 交通規制" },
+    { companyId: "c-p2", site: "△△ビル 竣工警備" },
+  ];
+  const reserved = [...offKinds, ...lents].map((_, i) => GUARDS[(i * 7) % GUARDS.length]);
+  for (const g of reserved) exclusive.add(g.id);
+
+  // ── 現場への配置 ──
+  let cursor = 0;
+
+  /** その時間帯に入れる隊員を1人返す。誰も居なければ null（＝その枠は埋まらない） */
+  function take(span: [number, number]): (typeof GUARDS)[number] | null {
+    const fits = (id: string) =>
+      (busy.get(id) ?? []).every(([s, e]) => span[0] >= e || span[1] <= s);
+
+    // ① まだ何も入っていない人から配る
+    for (let k = 0; k < GUARDS.length; k++) {
+      const g = GUARDS[(cursor + k) % GUARDS.length];
+      if (exclusive.has(g.id) || busy.has(g.id)) continue;
+      cursor = (cursor + k + 1) % GUARDS.length;
+      return g;
+    }
+    // ② 全員に1件入っている。ここで初めて掛け持ちを許す（重ならない場合だけ）
+    for (let k = 0; k < GUARDS.length; k++) {
+      const g = GUARDS[(cursor + k) % GUARDS.length];
+      if (exclusive.has(g.id) || !fits(g.id)) continue;
+      cursor = (cursor + k + 1) % GUARDS.length;
+      return g;
+    }
+    return null;
+  }
+
+  SHIFTS.forEach((shift, shiftNo) => {
+    const span = spanOf(shift);
+    // 5枠に1つは1名不足させる（未充足の見え方を確認するため）。
+    // 🔴 判定に seq（行の通し番号）を使っていたのを枠の番号に直した（2026-09-04）。
+    //   seq は枠ごとに人数ぶん進むため、「5枠に1つ」と書いてありながら
+    //   実際は 42枠中15枠が不足していた。コメントと動きが違っていた。
+    const filled = shiftNo % 5 === 4 ? Math.max(0, shift.headcount - 1) : shift.headcount;
     for (let n = 0; n < filled; n++) {
-      const guard = GUARDS[guardCursor % GUARDS.length];
-      guardCursor++;
+      const guard = take(span);
+      if (!guard) break; // 人が尽きた。埋まらない枠が出るのは実際に起きること
+      busy.set(guard.id, [...(busy.get(guard.id) ?? []), span]);
       rows.push({
         id: `a-${seq++}`,
         guardId: guard.id,
@@ -215,20 +312,13 @@ export const ASSIGNMENTS: Assignment[] = (() => {
         status: "planned",
       });
     }
-  }
+  });
 
   // 非現場ステータス
-  const offKinds = [
-    "paid_leave", "paid_leave", "paid_leave",
-    "training", "training",
-    "night_duty", "night_duty",
-    "absent_self", "medical", "office", "standby", "control",
-  ] as const;
   offKinds.forEach((offKind, i) => {
-    const guard = GUARDS[(guardCursor + i * 3) % GUARDS.length];
     rows.push({
       id: `a-${seq++}`,
-      guardId: guard.id,
+      guardId: reserved[i].id,
       workDate: WORK_DATE,
       kind: "off",
       shiftId: null,
@@ -243,15 +333,10 @@ export const ASSIGNMENTS: Assignment[] = (() => {
   });
 
   // 🔴 協力会社への貸出（AS の隊員を他社の現場へ出す）。請求に効くため第1弾から持つ
-  [
-    { companyId: "c-p1", site: "◯◯地区 交通規制" },
-    { companyId: "c-p1", site: "◯◯地区 交通規制" },
-    { companyId: "c-p2", site: "△△ビル 竣工警備" },
-  ].forEach((lent, i) => {
-    const guard = GUARDS[(guardCursor + 40 + i * 5) % GUARDS.length];
+  lents.forEach((lent, i) => {
     rows.push({
       id: `a-${seq++}`,
-      guardId: guard.id,
+      guardId: reserved[offKinds.length + i].id,
       workDate: WORK_DATE,
       kind: "lent_out",
       shiftId: null,

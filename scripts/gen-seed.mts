@@ -105,36 +105,46 @@ function shiftInterval(sh: (typeof SHIFTS)[number]) {
 
 const shiftById = new Map(SHIFTS.map((s) => [s.id, s]));
 
-// ── 🔴 確定どうしの時間帯の重なりを取り除く ────────────────
+// ── 🔴 時間帯の重なりを取り除く（安全網）────────────────
 //
-// fixtures は隊員カーソルを一巡させて枠を埋めるため、
-// **同じ隊員が同じ時間帯の2枠に入っている行がある**（現実には不可能）。
-// DB 側は EXCLUDE 制約（assignments_no_overlap）でこれを拒否するので、
-// そのまま流すと seed が落ちる。
+// 🔴 2026-09-04 に役割が変わった。**本来ここは0件を落とすはず**である。
+//   重なりを作らない責任は `dummy-data.mts` 側へ移した（同じ人を同じ時間帯に
+//   2か所へ置かない）。ここはその結果を確かめる関門として残す。
 //
-// 🟢 制約が正しく仕事をしている。dummy 側を現実に合わせる。
-// ・**確定どうしが重なる場合だけ**後から来たほうを落とす（枠は1名不足になる）
-// ・仮組み（draft）どうしの重なりは残す。**仮組み中は重ねられる**のが仕様であり、
-//   画面の警告表示を確かめる材料になる（8/27 決定・自動で弾かない）
-const confirmedByGuard = new Map<string, Interval[]>();
+// 🔴 それまでは「**確定どうしだけ**落とし、仮組みの重なりは残す」としていた。
+//   理由は「仮組み中は重ねられるのが仕様（8/27）だから、警告表示の材料になる」。
+//   → **この判断は誤りだった。**
+//     仮組みで重ねられるのは「管制が作業中に一時的にそうなる」という意味であって、
+//     初期データがその状態で配られてよいという意味ではない。
+//     結果として**一括確定が最初から通らない**ダミーになっており、
+//     押した人には「機能が壊れている」としか見えなかった（柴山の報告）。
+//
+// 落としたときは黙って続けない。黙ると、また同じことが起きても気づけない。
+const takenByGuard = new Map<string, Interval[]>();
 const droppedAssignmentIds = new Set<string>();
 
 for (const a of ASSIGNMENTS) {
   if (a.kind !== "site" || !a.shiftId) continue;
   const sh = shiftById.get(a.shiftId)!;
-  if (sh.status !== "confirmed") continue;
   const { range } = shiftInterval(sh);
-  const taken = confirmedByGuard.get(a.guardId) ?? [];
+  const taken = takenByGuard.get(a.guardId) ?? [];
   const clash = taken.some((t) => t.start < range.end && range.start < t.end);
   if (clash) {
     droppedAssignmentIds.add(a.id);
   } else {
     taken.push(range);
-    confirmedByGuard.set(a.guardId, taken);
+    takenByGuard.set(a.guardId, taken);
   }
 }
 
 const assignments = ASSIGNMENTS.filter((a) => !droppedAssignmentIds.has(a.id));
+
+if (droppedAssignmentIds.size > 0) {
+  console.warn(
+    `⚠ 時間帯の重なりを ${droppedAssignmentIds.size} 件落とした。` +
+      "dummy-data.mts 側で重なりを作らないはずなので、生成規則が壊れている。",
+  );
+}
 
 // ── 過去の配置履歴（★「行ったことがある」の元データ）─────────
 //
