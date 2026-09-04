@@ -18,9 +18,16 @@
 
 import { refresh } from "next/cache";
 import { requireRole } from "@/lib/auth";
+import { addDays } from "@/lib/board-format";
 import { createClient } from "@/lib/supabase/server";
 
-export type ActionResult = { ok: true } | { ok: false; message: string };
+/**
+ * 🔴 `details` は「なぜ落ちたか」を**名前で**並べたもの（2026-09-04 追加）。
+ *   `message` だけだと「この隊員は…」としか言えず、40枠を一度に確定したときに
+ *   **どの隊員のことか分からない**（柴山の指摘）。
+ *   直せる場所が分からない失敗の通知は、無いのとあまり変わらない。
+ */
+export type ActionResult = { ok: true } | { ok: false; message: string; details?: string[] };
 
 /**
  * PostgreSQL のエラーを画面に出す日本語に直す。
@@ -38,6 +45,106 @@ function toMessage(error: { code?: string; message: string }): string {
     return "この操作の権限がありません。";
   }
   return `保存できませんでした（${error.message}）`;
+}
+
+// ─────────────────────────────────────────────────────────
+// 重なりを名前で説明する
+//
+// 🔴 **判定はしない。判定は DB がした。** ここは起きた失敗を説明するだけ。
+//   ここで「確定できるか」を先に判断し始めると、規則が DB とアプリの
+//   2か所に増え、やがて食い違う（このファイル冒頭の方針）。
+//   → 呼ぶのは **23P01 が返ってきた後だけ**。成功経路では1クエリも増えない。
+//
+// 🔴 なぜ PostgreSQL のエラー本文を解析しないのか
+//   23P01 の details は `Key (guard_id, tstzrange(...))=(...)` という形で
+//   **UUID と時刻しか持たない**。管制に読ませる文字ではないし、
+//   文面は PostgreSQL の版に依存する。素直に引き直したほうが壊れない。
+// ─────────────────────────────────────────────────────────
+
+type OverlapRow = {
+  shift_id: string | null;
+  planned_start_at: string;
+  planned_end_at: string;
+  is_confirmed: boolean;
+  guard: { name: string; short_name: string } | null;
+  shift: { site: { short_name: string } | null } | null;
+};
+
+/** timestamptz を JST の HH:MM にする。表示のためだけに使う */
+function jstHm(iso: string): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(iso));
+}
+
+function label(r: OverlapRow): string {
+  // 貸出・非現場は枠を持たない。名前が出せないより「現場外」と言うほうがまし
+  const site = r.shift?.site?.short_name ?? "現場外の稼働";
+  return `${site}（${jstHm(r.planned_start_at)}–${jstHm(r.planned_end_at)}）`;
+}
+
+/**
+ * これから確定しようとしている枠のせいで、時間帯が重なる隊員を洗い出す。
+ * @param shiftIds 確定しようとした枠
+ * @returns 「氏名：A と B が重なっています」の配列。空なら説明できなかった
+ */
+async function describeOverlaps(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  shiftIds: string[],
+): Promise<string[]> {
+  const { data: targets } = await supabase
+    .from("shifts")
+    .select("work_date")
+    .in("id", shiftIds);
+  const dates = (targets ?? []).map((s) => s.work_date as string).sort();
+  if (dates.length === 0) return [];
+
+  // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
+  //   翌朝までかかる枠は隣の日の枠と重なりうる（20:00–06:00）。
+  const { data } = await supabase
+    .from("assignments")
+    .select(
+      "shift_id, planned_start_at, planned_end_at, is_confirmed, " +
+        "guard:guards ( name, short_name ), shift:shifts ( site:sites ( short_name ) )",
+    )
+    .eq("status", "planned")
+    .gte("work_date", addDays(dates[0], -1))
+    .lte("work_date", addDays(dates[dates.length - 1], 1))
+    .not("planned_start_at", "is", null)
+    .not("planned_end_at", "is", null);
+
+  const targetIds = new Set(shiftIds);
+  const rows = ((data ?? []) as unknown as OverlapRow[]).filter(
+    // 確定後に制約が見る行＝すでに確定済み ＋ 今回確定しようとしている枠の行
+    (r) => r.is_confirmed || (r.shift_id !== null && targetIds.has(r.shift_id)),
+  );
+
+  const byGuard = new Map<string, OverlapRow[]>();
+  for (const r of rows) {
+    const key = r.guard?.name ?? "（氏名不明）";
+    byGuard.set(key, [...(byGuard.get(key) ?? []), r]);
+  }
+
+  const messages = new Set<string>();
+  for (const [name, list] of byGuard) {
+    const sorted = [...list].sort((a, b) => a.planned_start_at.localeCompare(b.planned_start_at));
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        const a = sorted[i];
+        const b = sorted[j];
+        if (Date.parse(b.planned_start_at) >= Date.parse(a.planned_end_at)) break; // 以降は重ならない
+        // 🔴 既に両方とも確定済みなら、今回の確定が原因ではない。
+        //   （そもそも DB が許していないはずだが、原因でないものを挙げない）
+        const causedByThis = !a.is_confirmed || !b.is_confirmed;
+        if (!causedByThis) continue;
+        messages.add(`${name}：${label(a)} と ${label(b)}`);
+      }
+    }
+  }
+  return [...messages];
 }
 
 /** 配置を編集できるロールであることを確かめ、クライアントを返す */
@@ -176,7 +283,13 @@ export async function setShiftStatus(input: {
         : { status: "draft", confirmed_at: null, confirmed_by: null },
     )
     .eq("id", input.shiftId);
-  if (error) return { ok: false, message: toMessage(error) };
+  if (error) {
+    return {
+      ok: false,
+      message: toMessage(error),
+      details: error.code === "23P01" ? await describeOverlaps(supabase, [input.shiftId]) : undefined,
+    };
+  }
 
   refresh();
   return { ok: true };
@@ -206,7 +319,21 @@ export async function confirmShifts(input: {
     })
     .in("id", input.shiftIds)
     .eq("status", "draft");
-  if (error) return { ok: false, message: toMessage(error) };
+  if (error) {
+    // 🔴 40枠を一度に確定したときの「この隊員は…」は、**どの隊員か分からない**。
+    //   直せる場所が分からない失敗の通知は、無いのとあまり変わらない（柴山の指摘）。
+    if (error.code !== "23P01") return { ok: false, message: toMessage(error) };
+    const details = await describeOverlaps(supabase, input.shiftIds);
+    return {
+      ok: false,
+      // 🔴 名前を出せたときだけ言い方を変える。
+      //   洗い出せなかったのに「重なっている隊員がいます」とだけ言うと、
+      //   元の文面より情報が減る。特定できなければ元の文面に戻す
+      message:
+        details.length > 0 ? "時間帯が重なっている隊員がいます。" : toMessage(error),
+      details,
+    };
+  }
 
   refresh();
   return { ok: true };

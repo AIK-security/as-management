@@ -338,7 +338,7 @@ export function BoardDnd({
   const [dragging, setDragging] = useState<
     { kind: "plate"; plate: PlateView } | { kind: "pool"; view: GuardView } | null
   >(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; details: string[] } | null>(null);
 
   // プールの絞り込み（ここはサーバに聞く必要が無い＝即座に効く）
   const [query, setQuery] = useState("");
@@ -363,7 +363,7 @@ export function BoardDnd({
       // 🔴 失敗しても画面を戻す処理は書かない。
       //   useOptimistic は transition が終わるとサーバの値に戻る＝
       //   置けなかったプレートは自動で元の場所へ帰る（§2-5「プレートが戻る」）
-      setError(result.ok ? null : result.message);
+      setError(result.ok ? null : { message: result.message, details: result.details ?? [] });
     });
   }
 
@@ -699,12 +699,24 @@ export function BoardDnd({
       {error && (
         <div
           role="alert"
-          className="fixed top-16 left-1/2 z-50 flex max-w-[560px] -translate-x-1/2 items-start gap-3 rounded-lg border-2 border-rose-400 bg-white px-4 py-2.5 shadow-lg"
+          className="fixed top-16 left-1/2 z-50 flex max-w-[720px] -translate-x-1/2 items-start gap-3 rounded-lg border-2 border-rose-400 bg-white px-4 py-2.5 text-left shadow-lg"
         >
-          <span className="t-badge shrink-0 rounded bg-rose-100 px-1.5 py-0.5 leading-5 text-rose-700">
+          <span className="t-badge mt-0.5 shrink-0 rounded bg-rose-100 px-1.5 py-0.5 leading-5 text-rose-700">
             置けません
           </span>
-          <span className="text-[14px] leading-snug text-slate-800">{error}</span>
+          <div className="min-w-0 text-[14px] leading-snug text-slate-800">
+            {error.message}
+            {/* 🔴 誰が・どことどこで重なっているかを名前で出す（2026-09-04） */}
+            {error.details.length > 0 && (
+              <ul className="mt-1.5 space-y-0.5 border-t border-slate-200 pt-1.5">
+                {error.details.slice(0, 8).map((d) => (
+                  <li key={d} className="text-[13px] text-slate-700">
+                    ・{d}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setError(null)}

@@ -26,14 +26,14 @@ const BTN = "rounded-md border-2 px-3 py-1.5 text-[14px] font-semibold transitio
 export function ConfirmAllButton({ shiftIds }: { shiftIds: string[] }) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; details: string[] } | null>(null);
   const none = shiftIds.length === 0;
 
   function handleConfirm() {
     setAsking(false);
     startTransition(async () => {
       const result = await confirmShifts({ shiftIds });
-      setError(result.ok ? null : result.message);
+      setError(result.ok ? null : { message: result.message, details: result.details ?? [] });
     });
   }
 
@@ -86,17 +86,35 @@ export function ConfirmAllButton({ shiftIds }: { shiftIds: string[] }) {
       {error && (
         <div
           role="alert"
-          className="fixed top-16 left-1/2 z-50 flex max-w-[560px] -translate-x-1/2 items-start gap-3 rounded-lg border-2 border-rose-400 bg-white px-4 py-2.5 shadow-lg"
+          className="fixed top-16 left-1/2 z-50 flex max-w-[720px] -translate-x-1/2 items-start gap-3 rounded-lg border-2 border-rose-400 bg-white px-4 py-2.5 text-left shadow-lg"
         >
-          <span className="t-badge shrink-0 rounded bg-rose-100 px-1.5 py-0.5 leading-5 text-rose-700">
+          <span className="t-badge mt-0.5 shrink-0 rounded bg-rose-100 px-1.5 py-0.5 leading-5 text-rose-700">
             確定できません
           </span>
-          <span className="text-[14px] leading-snug text-slate-800">
-            {error}
+          <div className="min-w-0 text-[14px] leading-snug text-slate-800">
+            {error.message}
             <span className="mt-0.5 block text-slate-500">
               1件も確定していません。重なっている配置を直してからやり直してください。
             </span>
-          </span>
+
+            {/* 🔴 誰が・どことどこで重なっているかを名前で出す（2026-09-04）。
+                これが無いと、40枠のどこを直せばよいのか画面から分からない。
+                多いときは全部は出さない ─ 読み切れない一覧は結局読まれない */}
+            {error.details.length > 0 && (
+              <ul className="mt-1.5 max-h-[40vh] space-y-0.5 overflow-y-auto border-t border-slate-200 pt-1.5">
+                {error.details.slice(0, 8).map((d) => (
+                  <li key={d} className="text-[13px] text-slate-700">
+                    ・{d}
+                  </li>
+                ))}
+                {error.details.length > 8 && (
+                  <li className="t-meta text-slate-500">
+                    ほか {error.details.length - 8} 件
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setError(null)}
