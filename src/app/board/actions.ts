@@ -318,7 +318,10 @@ export async function confirmShifts(input: {
       confirmed_by: user.id,
     })
     .in("id", input.shiftIds)
-    .eq("status", "draft");
+    .eq("status", "draft")
+    // 🔴 中止の枠は確定しない。画面側でも対象から外しているが、
+    //   Server Action は URL なので**画面を通らずに呼べる**。ここでも塞ぐ。
+    .is("cancelled_at", null);
   if (error) {
     // 🔴 40枠を一度に確定したときの「この隊員は…」は、**どの隊員か分からない**。
     //   直せる場所が分からない失敗の通知は、無いのとあまり変わらない（柴山の指摘）。
@@ -334,6 +337,149 @@ export async function confirmShifts(input: {
       details,
     };
   }
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 枠の中止 / 中止の取り消し（2026-09-07）
+//
+// 🔴 枠も配置も消さない。状態だけを変える。
+//   管制の要望は「取り消す」ではなく「中止になったと分かる表示に変わる」。
+//   誰を入れていたかが残っていないと、空いた隊員をどこへ回すか判断できない。
+//
+// 🔴 確定済みの枠でも中止にできる。現場が飛ぶのは確定の後のほうが多い。
+//   status（仮組み/確定）は触らない ─ 中止と確定は別の軸だから。
+// ─────────────────────────────────────────────────────────
+export async function setShiftCancelled(input: {
+  shiftId: string;
+  cancelled: boolean;
+}): Promise<ActionResult> {
+  const { user } = await requireRole("control", "admin");
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("shifts")
+    .update(
+      input.cancelled
+        ? { cancelled_at: new Date().toISOString(), cancelled_by: user.id }
+        : { cancelled_at: null, cancelled_by: null },
+    )
+    .eq("id", input.shiftId);
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 現場を盤面に追加する（枠を1つ作る）─ 2026-09-07
+//
+// 🔴 ここは第1弾でいちばん効く導線。
+//   AIK assign が使われなくなった大きな原因が
+//   「忙しい中、案件をいちいち作るのが面倒」だった（2026-09-07・管制）。
+//   **手数を増やさない**ことが仕様。既存現場を選んだら、
+//   時刻・休憩は sites のひな形（plan_*）から埋めて、そのまま作れる。
+//
+// 🔴 新規現場は「名前と時間」だけで作れる。
+//   site_code と guard_target_no（べんり君の警備先番号）は NOT NULL だが、
+//   **新しい仕事が入った瞬間に管制がこれらを知っているとは限らない**。
+//   ここで番号を要求すると、いちばん急いでいるときに手が止まる。
+//   → 仮の番号を採番して先へ通し、後で正しい番号に差し替える。
+//   ⚠️ 仮番号のままでは ShiftMax へ渡せない（段3）。
+//      「番号は誰がいつ決めるのか」は管制・事務に要確認。
+// ─────────────────────────────────────────────────────────
+export async function addShift(input: {
+  /** 既存現場を選んだ場合 */
+  siteId?: string;
+  /** 新規現場を作る場合の名前 */
+  newSiteName?: string;
+  /** 新規現場の得意先。ShiftMax 由来のマスタから選ぶ（ここで新規作成はしない） */
+  newSiteCustomerId?: string;
+  jurisdictionId: string;
+  workDate: string;
+  workKind: WorkKind;
+  startH: number;
+  startM: number;
+  endH: number;
+  endM: number;
+  breakMin: number;
+  headcount: number;
+}): Promise<ActionResult> {
+  await requireRole("control", "admin");
+  const supabase = await createClient();
+
+  let siteId = input.siteId;
+
+  if (!siteId) {
+    const name = (input.newSiteName ?? "").trim();
+    if (!name) return { ok: false, message: "現場名を入れてください。" };
+
+    // 🔴 仮番号。`TMP-` で始めておくと、あとから
+    //   「まだ本番の番号が入っていない現場」を1クエリで洗い出せる。
+    const tmp = `TMP-${Date.now().toString(36).toUpperCase()}`;
+    const { data: created, error: cError } = await supabase
+      .from("sites")
+      .insert({
+        site_code: tmp,
+        guard_target_no: tmp,
+        name,
+        short_name: name.slice(0, 8),
+        customer_id: input.newSiteCustomerId ?? null,
+        jurisdiction_id: input.jurisdictionId,
+        plan_start_h: input.startH,
+        plan_start_m: input.startM,
+        plan_end_h: input.endH,
+        plan_end_m: input.endM,
+        plan_break: input.breakMin,
+      })
+      .select("id")
+      .single();
+    if (cError) return { ok: false, message: toMessage(cError) };
+    siteId = created.id;
+  }
+
+  const { error } = await supabase.from("shifts").insert({
+    site_id: siteId,
+    work_date: input.workDate,
+    jurisdiction_id: input.jurisdictionId,
+    work_kind: input.workKind,
+    headcount: input.headcount,
+    start_h: input.startH,
+    start_m: input.startM,
+    end_h: input.endH,
+    end_m: input.endM,
+    break_min: input.breakMin,
+    status: "draft",
+  });
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 枠を消す（2026-09-07）
+//
+// 🔴 「中止」とは別物。使い分けが違う。
+//   ・中止 … 現場が飛んだ。**記録は残す**。誰を入れていたかも残す
+//   ・削除 … そもそも間違って作った枠。**残す価値が無い**
+//   中止しかないと、打ち間違いの枠が盤面に居座り続ける。
+//
+// 🔴 assignments は `on delete cascade` で**一緒に消える**。
+//   だから画面側で「何名ぶん消えるのか」を見せてから押させる。
+//   消えたことに後で気づく作りにしない。
+//
+// 🔴 現場（sites）は消さない。消すのは枠（shifts）だけ。
+//   現場は他の日の枠からも参照されるうえ、ShiftMax 由来のマスタでもある。
+//   マスタの削除は admin の操作（20260907120000_sites_insert_by_control.sql）。
+// ─────────────────────────────────────────────────────────
+export async function deleteShift(input: { shiftId: string }): Promise<ActionResult> {
+  const supabase = await editorClient();
+
+  const { error } = await supabase.from("shifts").delete().eq("id", input.shiftId);
+  if (error) return { ok: false, message: toMessage(error) };
 
   refresh();
   return { ok: true };

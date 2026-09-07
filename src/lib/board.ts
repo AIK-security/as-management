@@ -57,6 +57,19 @@ const GROUP_WORK_KINDS: Record<BoardShiftGroup, WorkKind[]> = {
   night: ["nightA", "nightB", "nightCancel"],
 };
 
+/** 「現場を追加」の候補。予定のひな形（plan_*）を持つので、選ぶだけで時刻が埋まる */
+export type SitePick = {
+  id: string;
+  name: string;
+  short_name: string;
+  customerName: string | null;
+  plan_start_h: number | null;
+  plan_start_m: number | null;
+  plan_end_h: number | null;
+  plan_end_m: number | null;
+  plan_break: number | null;
+};
+
 export type BoardData = {
   date: string;
   jurisdiction: Jurisdiction;
@@ -72,6 +85,15 @@ export type BoardData = {
   offGroups: { label: string; guards: Guard[] }[];
   /** 協力会社への貸出 */
   lentGroups: { companyName: string; siteName: string; guards: Guard[] }[];
+  /**
+   * 「現場を追加」で選べる現場（その管轄の稼働中のもの）。
+   * 🔴 ダミーは42件だが**実データは 1,593 件**。件数が増えたら
+   *   ここで全件を画面へ送るのをやめ、検索をサーバ側へ移すこと。
+   *   （今は全件でも一瞬で、検索の往復を挟まないほうが速い）
+   */
+  sitePicks: SitePick[];
+  /** 新規現場を作るときに選ぶ得意先。ShiftMax 由来のマスタなので**選ぶだけ**（新規作成はしない） */
+  customerPicks: { id: string; name: string }[];
   warnings: BoardWarning[];
   counts: { draft: number; confirmed: number; shortage: number };
   /** 🔴 その日に枠が1件も無いとき、データがある直近の日付を出す（空画面で詰まらせない） */
@@ -127,7 +149,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     .select(
       `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
        start_h, start_m, end_h, end_m, break_min,
-       band_name, plan_comment, billing_note, status,
+       band_name, plan_comment, billing_note, status, cancelled_at,
        site:sites!inner (
          id, site_code, guard_target_no, name, short_name, customer_id, jurisdiction_id,
          customer:customers ( id, staff_code, name, name_kana ),
@@ -249,7 +271,16 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   for (const raw of shifts) {
     const site = raw.site;
     if (!site) continue; // !inner を付けているので通常は起きない
-    const rowAssignments = (byShift.get(raw.id) ?? []).sort((a, b) => a.position - b.position);
+    // 🔴 隊長を先頭に置く（2026-09-07・管制からの要望）。
+    //   position は「枠の中で人を並べ替えた結果」を持つ列で、隊長かどうかとは別。
+    //   並べ替えの中に隊長を混ぜると、隊長を付け外しするたびに順番が動いて分かりにくい。
+    //   そこで **表示の段でだけ** 隊長を前に出し、position は触らない。
+    const rowAssignments = (byShift.get(raw.id) ?? [])
+      .slice()
+      .sort((a, b) => {
+        const lead = Number(b.role === "leader") - Number(a.role === "leader");
+        return lead !== 0 ? lead : a.position - b.position;
+      });
     const coAssignedGuardIds = rowAssignments.map((a) => a.guard_id);
 
     const plates: PlateView[] = [];
@@ -284,14 +315,18 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
 
     const shift = toShift(raw);
 
-    if (plates.length < shift.headcount) {
+    // 🔴 中止の枠は警告を出さない。誰も稼働しないので「不足」も「資格」も意味を持たない。
+    //   ここで消さないと、中止にした瞬間に⚠要確認が増える＝中止にするほど画面が汚れる。
+    const cancelled = shift.cancelled_at !== null;
+
+    if (!cancelled && plates.length < shift.headcount) {
       shortage++;
       warnings.push({
         kind: "shortage",
         message: `${site.name}：必要${shift.headcount}に対し${plates.length}名（${shift.headcount - plates.length}名不足）`,
       });
     }
-    for (const q of missingQualifications) {
+    for (const q of cancelled ? [] : missingQualifications) {
       warnings.push({
         kind: "qualification",
         message: `${site.name}：${q.name} が必要だが未配置`,
@@ -444,12 +479,41 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       isPartner: companyById.get(g.company_id)?.kind === "partner",
     }));
 
+  // ── 「現場を追加」の候補 ────────────────────────────
+  // 🔴 その管轄の稼働中の現場だけ。管轄をまたぐ配置はできるが、
+  //   **枠を作る**のは自管轄の現場に限る（jurisdiction は shifts の NOT NULL 列で、
+  //   引き渡しが「日付 × 管轄」単位のため）。
+  const { data: siteRows, error: spError } = await supabase
+    .from("sites")
+    .select(
+      `id, name, short_name, plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
+       customer:customers ( name )`,
+    )
+    .eq("jurisdiction_id", jurisdiction.id)
+    .eq("status", "active")
+    .order("name");
+  if (spError) throw spError;
+
+  const sitePicks: SitePick[] = (
+    (siteRows ?? []) as unknown as (Omit<SitePick, "customerName"> & {
+      customer: { name: string } | null;
+    })[]
+  ).map(({ customer, ...rest }) => ({ ...rest, customerName: customer?.name ?? null }));
+
+  const { data: customerRows, error: cpError } = await supabase
+    .from("customers")
+    .select("id, name")
+    .order("name");
+  if (cpError) throw cpError;
+
   return {
     date: workDate,
     jurisdiction,
     jurisdictions,
     group,
     rows,
+    sitePicks,
+    customerPicks: (customerRows ?? []) as { id: string; name: string }[],
     groups: groupByCustomer(rows),
     pool,
     offGroups: [...offMap.entries()].map(([label, guards]) => ({ label, guards })),
@@ -600,6 +664,8 @@ function emptyBoard(workDate: string, group: BoardShiftGroup): BoardData {
     pool: [],
     offGroups: [],
     lentGroups: [],
+    sitePicks: [],
+    customerPicks: [],
     warnings: [],
     counts: { draft: 0, confirmed: 0, shortage: 0 },
     nearestDateWithShifts: null,

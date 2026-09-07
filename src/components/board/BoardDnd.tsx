@@ -42,6 +42,8 @@ import {
   moveAssignment,
   placeGuard,
   setAssignmentRole,
+  deleteShift,
+  setShiftCancelled,
   setShiftStatus,
   unplaceAssignment,
   type ActionResult,
@@ -63,7 +65,11 @@ type Move =
   | { type: "unplace"; assignmentId: string }
   /** 隊長の付け外し */
   | { type: "role"; assignmentId: string; role: AssignmentRole }
-  | { type: "status"; shiftId: string; status: "draft" | "confirmed" };
+  | { type: "status"; shiftId: string; status: "draft" | "confirmed" }
+  /** 枠の中止／取り消し（2026-09-07） */
+  | { type: "cancel"; shiftId: string; cancelled: boolean }
+  /** 枠そのものを消す（2026-09-07） */
+  | { type: "deleteShift"; shiftId: string };
 
 /**
  * 🔴 プールの並びはサーバと同じ規則で戻す（staff_code 順・空は最後）。
@@ -163,6 +169,39 @@ function reduce(state: BoardState, move: Move): BoardState {
           r.shift.id === move.shiftId ? { ...r, shift: { ...r.shift, status: move.status } } : r,
         ),
       };
+    case "cancel":
+      // 🔴 配置（plates）はそのまま。中止でも「誰を入れていたか」は残す。
+      //   サーバ側も消していない（actions.ts の setShiftCancelled）。
+      return {
+        pool: state.pool,
+        rows: state.rows.map((r) =>
+          r.shift.id === move.shiftId
+            ? {
+                ...r,
+                shift: {
+                  ...r.shift,
+                  // 楽観更新なので時刻の中身は使わない。null かどうかだけを見ている
+                  cancelled_at: move.cancelled ? new Date().toISOString() : null,
+                },
+              }
+            : r,
+        ),
+      };
+    case "deleteShift": {
+      // 🔴 枠に居た隊員はプールへ戻す。消えたまま画面から居なくなると、
+      //   その人が空いていることに気づけない（サーバ側は cascade で
+      //   assignments が消え、次の取得でプールに現れる）。
+      const gone = state.rows.find((r) => r.shift.id === move.shiftId);
+      const back: GuardView[] = (gone?.plates ?? []).map((p) => ({
+        guard: p.guard,
+        qualLabels: p.qualLabels,
+        isPartner: p.isPartner,
+      }));
+      return {
+        pool: sortPool([...state.pool, ...back]),
+        rows: state.rows.filter((r) => r.shift.id !== move.shiftId),
+      };
+    }
   }
 }
 
@@ -422,6 +461,14 @@ export function BoardDnd({
     run({ type: "status", shiftId, status: next }, () => setShiftStatus({ shiftId, status: next }));
   }
 
+  function handleDeleteShift(shiftId: string) {
+    run({ type: "deleteShift", shiftId }, () => deleteShift({ shiftId }));
+  }
+
+  function handleToggleCancel(shiftId: string, cancelled: boolean) {
+    run({ type: "cancel", shiftId, cancelled }, () => setShiftCancelled({ shiftId, cancelled }));
+  }
+
   // ── プールの絞り込み ──────────────────────────────────
   const visiblePool = state.pool.filter((v) => {
     if (query && !`${v.guard.name}${v.guard.short_name}`.includes(query)) return false;
@@ -543,6 +590,8 @@ export function BoardDnd({
                     keys.selection.shiftId === row.shift.id ? keys.selection.assignmentId : null
                   }
                   onToggleStatus={handleToggleStatus}
+                  onToggleCancel={handleToggleCancel}
+                  onDelete={handleDeleteShift}
                   onSelect={handleSelect}
                   onSetRole={handleSetRole}
                 />

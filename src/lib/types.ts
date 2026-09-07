@@ -95,6 +95,12 @@ export type Shift = {
   plan_comment: string | null;
   billing_note: string | null;
   status: ShiftStatus;
+  /**
+   * 中止（行く前の中止）にした時刻。null=中止でない。
+   * 🔴 現着中止（`work_kind` の `dayCancel`/`nightCancel`＝「現中」）とは別物。
+   *   現中は稼働が立つため請求に効く。こちらは稼働しない。
+   */
+  cancelled_at: string | null;
 };
 
 /** 隊員の稼働。自社現場・協力会社への貸出・非現場を1テーブルに統合（data-model.md §4-2） */

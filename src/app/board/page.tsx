@@ -24,6 +24,7 @@ import { logout } from "@/app/login/actions";
 import { WarningsPane } from "@/components/board/BoardPanes";
 import { BoardDnd } from "@/components/board/BoardDnd";
 import { ConfirmAllButton } from "@/components/board/ConfirmAllButton";
+import { AddShiftDialog } from "@/components/board/AddShiftDialog";
 import {
   addDays,
   formatBoardDate,
@@ -120,8 +121,10 @@ export default async function BoardPage({
   // 🔴 一括確定の対象は**いま表示している**仮組みの枠だけ。
   //   得意先タブで絞っているときに画面外の枠まで確定すると、
   //   「押した範囲」と「変わった範囲」が食い違う。
+  //   🔴 中止の枠は対象外（2026-09-07）。誰も行かない枠を確定しても意味がなく、
+  //      「一括確定を押したのに件数が合わない」という不信のもとになる。
   const draftShiftIdsOnScreen = visibleRows
-    .filter((r) => r.shift.status === "draft")
+    .filter((r) => r.shift.status === "draft" && r.shift.cancelled_at === null)
     .map((r) => r.shift.id);
 
   // 🔴 タブの並びはグループと同じ「得意先名順で固定」。件数順にすると
@@ -230,6 +233,15 @@ export default async function BoardPage({
           {editable && (
             <>
               {/* 🔴 対象は**いま表示している**仮組みの枠。得意先タブで絞っていればその範囲 */}
+              {/* 🔴 「現場を追加」は一括確定の**左**に置く。
+                  作る → 人を入れる → 確定する、の順に手が動く */}
+              <AddShiftDialog
+                workDate={board.date}
+                jurisdictionId={board.jurisdiction.id}
+                group={board.group}
+                sitePicks={board.sitePicks}
+                customerPicks={board.customerPicks}
+              />
               <ConfirmAllButton shiftIds={draftShiftIdsOnScreen} />
               <button
                 type="button"
