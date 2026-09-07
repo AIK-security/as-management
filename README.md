@@ -102,9 +102,9 @@ Node の既定上限 16KB を超える。
 |---|---|
 | [`docs/mtg-agenda-20260826.md`](docs/mtg-agenda-20260826.md) | 全体MTG の進行台本・趣旨説明台本 |
 | [`docs/hearing-sheet.md`](docs/hearing-sheet.md) | 個別ヒアリングシート（印刷して使用） |
-| [`docs/tech-stack-checklist.md`](docs/tech-stack-checklist.md) | AIK assign 技術情報の確認リスト＋保守会社への依頼文 |
+| [`docs/vendor/tech-stack-checklist.md`](docs/vendor/tech-stack-checklist.md) | AIK assign 技術情報の確認リスト＋保守会社への依頼文 |
 | [`docs/roi-estimate.md`](docs/roi-estimate.md) | ROI 試算枠 ⚠️**経営層限定** |
-| [`docs/inhouse-maintenance-plan.md`](docs/inhouse-maintenance-plan.md) | 旧目的（AIK assign 保守内製化）の検討メモ。方式②の参照資料 |
+| [`docs/vendor/inhouse-maintenance-plan.md`](docs/vendor/inhouse-maintenance-plan.md) | 旧目的（AIK assign 保守内製化）の検討メモ。方式②の参照資料 |
 
 ## セットアップ
 

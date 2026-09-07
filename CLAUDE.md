@@ -197,7 +197,7 @@
 
 ### AIK assign（既存・分析済み 2026-08-20）
 
-詳細は `docs/aik-assign-analysis.md`。要点のみ：
+詳細は `docs/vendor/aik-assign-analysis.md`。要点のみ：
 
 - **マイクロサービス13個／約10.5万行**（Node.js 中心＋Rust 1本）
 - Next.js 11/12・React 17/18・Sequelize・PostgreSQL + PostGIS
@@ -232,6 +232,27 @@
 - 🔴 **型の命名で出どころを分ける**（`src/lib/types.ts`）。
   `snake_case`＝DB の列と一対一（変換層を作らない）／`camelCase`＝画面のために組み立てた形
 - **セッションログ**：`logs/YYYY-MM-DD.md`（同日は追記）
+- 🔴 **このプロジェクトは2系統が同居している。ログとドキュメントを分けて運用する**（2026-09-04 分離）
+
+  | 系統 | 内容 | ログ | ドキュメント |
+  |---|---|---|---|
+  | **本流** | AS 向け社内システムの構築（現フェーズ） | `logs/YYYY-MM-DD.md` | `docs/` 直下 |
+  | **別流** | 既存 AIK assign（本番・外販中）の保守とベンダ対応 | `logs/vendor/YYYY-MM-DD.md` | `docs/vendor/` |
+
+  - **迷ったら**：手を動かす対象が**これから作る AS のシステム**なら本流、
+    **既に動いている AIK assign や保守会社とのやり取り**なら別流
+  - ⚠️ **`logs/2026-08-20.md` と `logs/2026-08-24.md` は両系統が混在**（AS の 8/26 MTG 準備と
+    ベンダへの資料依頼が同日だったため）。**ベンダ側の経緯もこの2ファイル内にある**
+  - ⚠️ 過去ログ内の `docs/...` というパス表記は**当時のもの**。ベンダ系6文書は現在 `docs/vendor/` にある
+  - 🔴 **セッション開始時（`/kickoff`）にどちらのログを読むか**
+    | 指定 | 読むログ | 用途 |
+    |---|---|---|
+    | `/kickoff aik-assign` | `logs/` 直下の最新 | **既定は本流（AS向けシステム開発）** |
+    | `/kickoff aik-assign vendor` | `logs/vendor/` の最新 | ベンダ対応・既存システムの件 |
+    | `/kickoff aik-assign 両方` | 両方の最新 | どちらを触るか決まっていないとき |
+
+    **両系統に同じ日付のログが存在しうる**ため、`logs/` 直下だけを見て「最新」と判断しないこと。
+    引数が無く、どちらか判断できない場合は**推測せずユーザーに確認する**
 - **AIK assign の本番システムには一切触れない。** 外販稼働中であり、保守会社の切り替え作業中でもある
 - **本番データを開発環境・本リポジトリに持ち込まない**（個人情報保護）。
   テストデータが必要な場合はマスキング版を依頼する
@@ -269,21 +290,25 @@
 | `docs/hearing-sheet.md` | 汎用の個別ヒアリングシート。**`hearing-jimu.md` を作ったため出番は減った** |
 | **`docs/schedule-plan.md`** | **第1弾スケジュール修正案（社長再共有用）。暫定案を引き直したもの** |
 | `docs/roi-estimate.md` | ROI 試算枠 ⚠️**経営層限定** |
-| `docs/tech-stack-checklist.md` | AIK assign 技術情報の確認リスト＋保守会社への依頼文 |
+| `docs/vendor/tech-stack-checklist.md` | AIK assign 技術情報の確認リスト＋保守会社への依頼文 |
 | **`docs/data-model.md`** | **第1弾のデータモデル（ER）。テーブル定義・応援の表現・未確定の設計論点5件** |
 | **`docs/architecture-decision.md`** | **構築方式・技術スタックの決定記録（ADR）。<br>①スクラッチ＋Next.js/Supabase で確定。設計原則もここ** |
 | **`docs/gap-analysis.md`** | **第1弾 着手前ギャップ分析。何が足りず・何を詰めるべきか・誰待ちかの棚卸し。<br>着手判断はここを見る** |
 | **`docs/screen-design.md`** | **第1弾の画面設計。画面9本＋ワイヤー。<br>中核は `S-01` 配置ボード（D&D）と `S-02` ShiftMax 投入。<br>実装順（段1〜7）と未決7件もここ。実装はここから始める** |
 | **`docs/shiftmax-inquiry.md`** | 🔴 **ShiftMax 照会 ─「送らない」決定の記録**（2026-08-31）。<br>契約条件4件は社内で決着／API照会6件は理由ごと消滅。<br>**投入方式を「直接POST しない」に変えた判断もここ**（§3・最終方式は `screen-design.md` §3-2） |
 | **`docs/shiftmax-api-analysis.md`** | **ShiftMax 連携方式の解析結果（べんり君 VBA）。投入API仕様・CSV18項目・<br>マスタ構造・現行入力UI。第1弾の設計に直結** |
-| `docs/aik-assign-analysis.md` | AIK assign ソースコード分析レポート（構成・EOL・データモデル・方式判断） |
-| `docs/inhouse-maintenance-plan.md` | 旧目的（AIK assign 保守内製化）の検討メモ。**②案を検討する際の参照資料** |
+| **`docs/vendor/` 以下** | **既存 AIK assign・ベンダ対応の系統（6本）** |
+| `docs/vendor/aik-assign-analysis.md` | AIK assign ソースコード分析レポート（構成・EOL・データモデル・方式判断） |
+| `docs/vendor/inhouse-maintenance-plan.md` | 旧目的（AIK assign 保守内製化）の検討メモ。**②案を検討する際の参照資料** |
+| **`docs/vendor/received-materials-inventory.md`** | **受領資料の全目録**（新ベンダ調査3ファイル／2023-07-31 納品物／2026-09-02 Terraform） |
+| **`docs/vendor/additional-request-20260904.md`** | **追加依頼・確認事項。A章は 2026-09-04 送付版。返信が来たらここを起点にする** |
+| `docs/vendor/license-audit-20260904.md` | ライセンス全数監査（npm 4,508／Rust 257）。**コピーレフト系の義務なしを確認済み** |
 | 🔴 `docs/管制_別紙/` | AS 受領の管制業務資料（WB写真・A表・べんり君）**※Git 除外対象** |
 | 🔴 `docs/請求関係　業務棚卸/` | AS 受領の請求業務資料（別紙帳票①〜⑧）**※Git 除外対象** |
 | 🔴 `docs/請求_管制　業務棚卸.xlsx` | AS 作成の業務棚卸。**情報密度が最も高い一次資料** ※Git 除外対象 |
 | 🔴 `docs/ヒアリング結果_管制/` | 8/27 記入済みシートの写真10枚 ※Git 除外対象<br>（**内容は `logs/2026-08-27.md` にテキストで転記済み**） |
 | `source-code/` | 受領ソースコード（受領後に作成） |
-| `logs/` | セッションログ（日付別） |
+| `logs/` | セッションログ（本流・日付別）<br>`logs/vendor/` は既存システム／ベンダ対応の系統 |
 
 <!-- BEGIN:nextjs-agent-rules -->
 
