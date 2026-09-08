@@ -143,11 +143,37 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   const jurisdiction =
     jurisdictions.find((j) => j.code === params.jurisdictionCode) ?? jurisdictions[0];
 
-  // ── 枠（現場・得意先・必要資格を同時に引く）────────────
-  const { data: shiftRaw, error: sError } = await supabase
-    .from("shifts")
-    .select(
-      `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
+  // ── 取得：🔴 段数を2つに畳む（2026-09-08）────────────────
+  //
+  // 以前はここから下が**8回の直列**だった。1回ごとに Supabase への往復が
+  // まるごと積み上がり、日付の切り替えに約4秒かかっていた（柴山の実測）。
+  // 管轄以外はどれも他の結果を必要としないので、まとめて投げてよい。
+  // → 効くのは往復の**回数**ではなく**段数**。8段 → 2段。
+  //
+  // 🟠 経験（past）は以前「枠が1件以上あるときだけ」引いていた。
+  //   並列にすると先に投げることになるため、枠が0件の日は無駄打ちになる。
+  //   それでも直列に戻すと1段増えるので、**無駄打ちのほうを選ぶ**。
+  //
+  // 🔴 ここに足すクエリは「管轄が決まっていれば投げられる」ものだけ。
+  //   他の結果に依存するものを混ぜると、静かに壊れる。
+  const [
+    shiftRes,
+    assignRes,
+    guardsRes,
+    companiesRes,
+    qualsRes,
+    guardQualsRes,
+    ngRes,
+    pastRes,
+    spanRes,
+    sitePickRes,
+    customerPickRes,
+  ] = await Promise.all([
+    // 枠（現場・得意先・必要資格を同時に引く）
+    supabase
+      .from("shifts")
+      .select(
+        `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
        start_h, start_m, end_h, end_m, break_min,
        band_name, plan_comment, billing_note, status, cancelled_at,
        site:sites!inner (
@@ -155,40 +181,33 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
          customer:customers ( id, staff_code, name, name_kana ),
          site_required_qualifications ( qualification_id )
        )`,
-    )
-    .eq("work_date", workDate)
-    .eq("jurisdiction_id", jurisdiction.id)
-    .in("work_kind", GROUP_WORK_KINDS[group])
-    // 🔴 ここで付ける順序は**グループの中の順序**になる（2026-09-02 決定）。
-    //    得意先でまとめたあと、そのまとまりの中は開始時刻順。
-    //    id を最後に入れるのは同時刻の並びを毎回同じにするため
-    //    （seed の id は連番由来なので安定する）。
-    .order("start_h")
-    .order("start_m")
-    .order("id");
-  if (sError) throw sError;
+      )
+      .eq("work_date", workDate)
+      .eq("jurisdiction_id", jurisdiction.id)
+      .in("work_kind", GROUP_WORK_KINDS[group])
+      // 🔴 ここで付ける順序は**グループの中の順序**になる（2026-09-02 決定）。
+      //    得意先でまとめたあと、そのまとまりの中は開始時刻順。
+      //    id を最後に入れるのは同時刻の並びを毎回同じにするため
+      //    （seed の id は連番由来なので安定する）。
+      .order("start_h")
+      .order("start_m")
+      .order("id"),
 
-  const shifts = (shiftRaw ?? []) as unknown as ShiftRowRaw[];
-  const shiftIds = shifts.map((s) => s.id);
-
-  // ── その日の稼働（配置・非現場・貸出をまとめて1回で引く）──
-  // 🔴 data-model.md §4-2 が1テーブルに統合した意図がここで効く。
-  //    「応援中と気づかず自社案件に配置する」を防ぐには、
-  //    その日の稼働が**1回のクエリで全部見える**必要がある。
-  const { data: assignRaw, error: aError } = await supabase
-    .from("assignments")
-    .select(
-      `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
+    // その日の稼働（配置・非現場・貸出をまとめて1回で引く）
+    // 🔴 data-model.md §4-2 が1テーブルに統合した意図がここで効く。
+    //    「応援中と気づかず自社案件に配置する」を防ぐには、
+    //    その日の稼働が**1回のクエリで全部見える**必要がある。
+    supabase
+      .from("assignments")
+      .select(
+        `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
        off_kind, lent_to_company_id, external_site_name, status`,
-    )
-    .eq("work_date", workDate)
-    .eq("status", "planned")
-    .order("position");
-  if (aError) throw aError;
-  const allAssignments = (assignRaw ?? []) as Assignment[];
+      )
+      .eq("work_date", workDate)
+      .eq("status", "planned")
+      .order("position"),
 
-  // ── マスタ（隊員・会社・資格・NG）────────────────────
-  const [guardsRes, companiesRes, qualsRes, guardQualsRes, ngRes] = await Promise.all([
+    // マスタ（隊員・会社・資格・NG）
     supabase
       .from("guards")
       .select("id, staff_code, name, short_name, company_id, jurisdiction_id")
@@ -200,10 +219,77 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     supabase
       .from("ng_entries")
       .select("id, kind, guard_id, site_id, counterpart_guard_id, reason, severity"),
+
+    // 経験（★）── 専用テーブルは作らず assignments の履歴から引く
+    // 🔴 期間を切る。切らないと年々重くなり、いずれ画面が開かなくなる。
+    //   1年より前の経験を「行ったことがある」と言ってよいかは業務判断だが、
+    //   誰にも確認していないので、まず1年で置く（gap-analysis A-1 に積む）。
+    supabase
+      .from("assignments")
+      .select("guard_id, shift:shifts!inner ( site_id )")
+      .eq("kind", "site")
+      .lt("work_date", workDate)
+      .gte("work_date", addDays(workDate, -365)),
+
+    // 重なり判定に使う前後1日ぶんの稼働時間帯
+    // 🔴 その日の実態で見る。管轄や日勤/夜勤で切ると見えない重なりが残る。
+    // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
+    //   20:00–06:00 の枠は隣の日の枠と重なりうる。
+    // 🔴 判定はしていない。保存を止めるのは DB の assignments_no_overlap だけで、
+    //   ここは同じ規則の写しを**先に見せている**にすぎない（src/lib/overlap.ts）。
+    supabase
+      .from("assignments")
+      .select(
+        `guard_id, work_date, planned_start_at, planned_end_at,
+       shift:shifts (
+         id,
+         work_kind,
+         site:sites ( short_name, customer:customers ( name ) ),
+         jurisdiction:jurisdictions ( name )
+       )`,
+      )
+      .eq("status", "planned")
+      .gte("work_date", addDays(workDate, -1))
+      .lte("work_date", addDays(workDate, 1))
+      .not("planned_start_at", "is", null)
+      .not("planned_end_at", "is", null),
+
+    // 「現場を追加」の候補
+    // 🔴 その管轄の稼働中の現場だけ。管轄をまたぐ配置はできるが、
+    //   **枠を作る**のは自管轄の現場に限る（jurisdiction は shifts の NOT NULL 列で、
+    //   引き渡しが「日付 × 管轄」単位のため）。
+    supabase
+      .from("sites")
+      .select(
+        `id, name, short_name, plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
+       customer:customers ( name )`,
+      )
+      .eq("jurisdiction_id", jurisdiction.id)
+      .eq("status", "active")
+      .order("name"),
+
+    supabase.from("customers").select("id, name").order("name"),
   ]);
-  for (const r of [guardsRes, companiesRes, qualsRes, guardQualsRes, ngRes]) {
+
+  for (const r of [
+    shiftRes,
+    assignRes,
+    guardsRes,
+    companiesRes,
+    qualsRes,
+    guardQualsRes,
+    ngRes,
+    pastRes,
+    spanRes,
+    sitePickRes,
+    customerPickRes,
+  ]) {
     if (r.error) throw r.error;
   }
+
+  const shifts = (shiftRes.data ?? []) as unknown as ShiftRowRaw[];
+  const shiftIds = shifts.map((s) => s.id);
+  const allAssignments = (assignRes.data ?? []) as Assignment[];
 
   const guards = (guardsRes.data ?? []) as Guard[];
   const companies = (companiesRes.data ?? []) as Company[];
@@ -225,26 +311,13 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     qualIdsByGuard.set(gq.guard_id, list);
   }
 
-  // ── 経験（★）── 専用テーブルは作らず assignments の履歴から引く
-  //
-  // 🔴 期間を切る。切らないと年々重くなり、いずれ画面が開かなくなる。
-  //   1年より前の経験を「行ったことがある」と言ってよいかは業務判断だが、
-  //   誰にも確認していないので、まず1年で置く（gap-analysis A-1 に積む）。
+  // ── 経験（★）── 取得は上の Promise.all 済み。ここは組み立てるだけ
   const experienced = new Set<string>();
-  if (shiftIds.length > 0) {
-    const { data: pastRaw, error: pError } = await supabase
-      .from("assignments")
-      .select("guard_id, shift:shifts!inner ( site_id )")
-      .eq("kind", "site")
-      .lt("work_date", workDate)
-      .gte("work_date", addDays(workDate, -365));
-    if (pError) throw pError;
-    for (const row of (pastRaw ?? []) as unknown as {
-      guard_id: string;
-      shift: { site_id: string } | null;
-    }[]) {
-      if (row.shift) experienced.add(`${row.guard_id}:${row.shift.site_id}`);
-    }
+  for (const row of (pastRes.data ?? []) as unknown as {
+    guard_id: string;
+    shift: { site_id: string } | null;
+  }[]) {
+    if (row.shift) experienced.add(`${row.guard_id}:${row.shift.site_id}`);
   }
 
   // ─────────────────────────────────────────────────────
@@ -352,32 +425,8 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   //   押してから知らされると、40枠のどこを直せばよいかを探すところから始まる。
   //   **押す前に見えていれば、そもそもエラーに当たらない。**
   //
-  // 🔴 その日の実態で見る。プールと同じ理由で、管轄や日勤/夜勤で切ると
-  //   見えない重なりが残る。人は管轄をまたいで1人しかいない。
-  //
-  // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
-  //   20:00–06:00 の枠は隣の日の枠と重なりうる。
-  //   ただし出すのは**この日に関係する重なりだけ**（隣の日の話まで出さない）。
-  //
-  // 🔴 判定はしていない。保存を止めるのは DB の assignments_no_overlap だけで、
-  //   ここは同じ規則の写しを**先に見せている**にすぎない（src/lib/overlap.ts）。
-  const { data: spanRaw, error: spanError } = await supabase
-    .from("assignments")
-    .select(
-      `guard_id, work_date, planned_start_at, planned_end_at,
-       shift:shifts (
-         id,
-         work_kind,
-         site:sites ( short_name, customer:customers ( name ) ),
-         jurisdiction:jurisdictions ( name )
-       )`,
-    )
-    .eq("status", "planned")
-    .gte("work_date", addDays(workDate, -1))
-    .lte("work_date", addDays(workDate, 1))
-    .not("planned_start_at", "is", null)
-    .not("planned_end_at", "is", null);
-  if (spanError) throw spanError;
+  // 重なりの元データは上の Promise.all で取得済み
+  const spanRaw = spanRes.data;
 
   type SpanRaw = {
     guard_id: string;
@@ -479,20 +528,8 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       isPartner: companyById.get(g.company_id)?.kind === "partner",
     }));
 
-  // ── 「現場を追加」の候補 ────────────────────────────
-  // 🔴 その管轄の稼働中の現場だけ。管轄をまたぐ配置はできるが、
-  //   **枠を作る**のは自管轄の現場に限る（jurisdiction は shifts の NOT NULL 列で、
-  //   引き渡しが「日付 × 管轄」単位のため）。
-  const { data: siteRows, error: spError } = await supabase
-    .from("sites")
-    .select(
-      `id, name, short_name, plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
-       customer:customers ( name )`,
-    )
-    .eq("jurisdiction_id", jurisdiction.id)
-    .eq("status", "active")
-    .order("name");
-  if (spError) throw spError;
+  // ── 「現場を追加」の候補（取得は上の Promise.all 済み）──────
+  const siteRows = sitePickRes.data;
 
   const sitePicks: SitePick[] = (
     (siteRows ?? []) as unknown as (Omit<SitePick, "customerName"> & {
@@ -500,11 +537,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     })[]
   ).map(({ customer, ...rest }) => ({ ...rest, customerName: customer?.name ?? null }));
 
-  const { data: customerRows, error: cpError } = await supabase
-    .from("customers")
-    .select("id, name")
-    .order("name");
-  if (cpError) throw cpError;
+  const customerRows = customerPickRes.data;
 
   return {
     date: workDate,

@@ -11,6 +11,7 @@
 //   2. requireRole()   … 画面に入る前の関門（このファイル）
 //   3. proxy.ts        … 未認証をログインへ送る導線（認可ではない）
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -45,8 +46,20 @@ export type SessionProfile = {
  * ログインユーザーと profile を取得する。
  * 未ログインなら user=null、profile 未割当なら profile=null。
  * profile は RLS により自分の行しか取れない。
+ *
+ * 🔴 React の cache() で包む理由（2026-09-08）
+ *   1画面を描くのに requireStaff() が**複数回**呼ばれる。
+ *   例：/masters/sites は layout と page の両方が呼ぶ（関門を layout だけに
+ *   預けない方針のため、これは意図した重複）。
+ *   包まないと、そのたびに **getUser()（Auth サーバへの往復）と
+ *   profiles の SELECT** が走り、往復が2倍になる。
+ *
+ *   cache() は**同一リクエスト内**でのみ結果を使い回す。
+ *   リクエストをまたいだ共有はしないので、
+ *   「別の人のセッションが混ざる」ことは起きない。
+ *   ＝ 関門を減らさずに往復だけ減らせる。
  */
-export async function getSessionProfile(): Promise<{
+export const getSessionProfile = cache(async function getSessionProfile(): Promise<{
   user: { id: string; email?: string } | null;
   profile: SessionProfile | null;
 }> {
@@ -63,7 +76,7 @@ export async function getSessionProfile(): Promise<{
     .maybeSingle();
 
   return { user, profile: (profile as SessionProfile | null) ?? null };
-}
+});
 
 /**
  * ログイン済み かつ profile が割り当て済みであることを要求する。
