@@ -11,6 +11,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Vercel（vercel link が作る。プロジェクトID・組織IDが入るためコミットしない）
+.vercel
+
 # Python
 .venv/
 venv/
