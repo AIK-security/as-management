@@ -258,6 +258,15 @@ export default async function BoardPage({
             </>
           )}
 
+          {/* 🔴 マスタは全ロールが「見る」ことはできる（RLS も is_staff()）。
+              編集の可否は各マスタ画面の中で分ける（ここでは出し分けない）。 */}
+          <Link
+            href="/masters/sites"
+            className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
+          >
+            マスタ
+          </Link>
+
           <div className="ml-1 flex items-center gap-2 border-l-2 border-slate-200 pl-3">
             <div className="flex flex-col items-end leading-tight">
               <span className="text-[14px] font-semibold text-slate-800">
