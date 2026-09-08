@@ -15,6 +15,7 @@ import {
   BOARD_DATE,
   COMPANIES,
   CUSTOMERS,
+  DEPARTMENTS,
   GUARDS,
   JURISDICTIONS,
   NG_ENTRIES,
@@ -31,6 +32,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 // 参照が崩れない（手で書いた画面の URL などが生き続ける）。
 const PREFIX = {
   jurisdiction: "10000000",
+  department: "e0000000",
   company: "20000000",
   qualification: "30000000",
   customer: "40000000",
@@ -58,6 +60,9 @@ function idNum(id: string): number {
 
 const jurisdictionUuid = new Map(
   JURISDICTIONS.map((j, i) => [j.id, uuidOf("jurisdiction", i + 1)]),
+);
+const departmentUuid = new Map(
+  DEPARTMENTS.map((d, i) => [d.id, uuidOf("department", i + 1)]),
 );
 const companyUuid = new Map(COMPANIES.map((c, i) => [c.id, uuidOf("company", i + 1)]));
 const qualUuid = new Map(QUALIFICATIONS.map((q, i) => [q.id, uuidOf("qualification", i + 1)]));
@@ -211,6 +216,17 @@ w(
 );
 w();
 
+// 部署（現場・隊員の両方から参照されるので先に入れる）
+w("-- ── 部署 ────────────────────────");
+w("insert into public.departments (id, code, name, jurisdiction_id) values");
+w(
+  DEPARTMENTS.map(
+    (d) =>
+      `  ('${departmentUuid.get(d.id)}', ${q(d.code)}, ${q(d.name)}, '${jurisdictionUuid.get(d.jurisdictionId)}')`,
+  ).join(",\n") + ";",
+);
+w();
+
 // 会社
 w("-- ── 会社（自社／協力会社）──────────────────────────");
 w("insert into public.companies (id, name, kind) values");
@@ -232,10 +248,14 @@ w();
 
 // 得意先
 w("-- ── 得意先 ────────────────────────────────────────");
-w("insert into public.customers (id, staff_code, name) values");
+w(
+  "insert into public.customers (id, staff_code, name, name_kana, contact_name," +
+    " billing_no, billing_name, jurisdiction_id) values",
+);
 w(
   CUSTOMERS.map(
-    (c) => `  ('${customerUuid.get(c.id)}', ${q(`CU${String(idNum(c.id)).padStart(4, "0")}`)}, ${q(c.name)})`,
+    (c) =>
+      `  ('${customerUuid.get(c.id)}', ${q(`CU${String(idNum(c.id)).padStart(4, "0")}`)}, ${q(c.name)}, ${q(c.nameKana)}, ${q(c.contactName)}, ${q(c.billingNo)}, ${q(c.billingName)}, '${jurisdictionUuid.get(c.jurisdictionId)}')`,
   ).join(",\n") + ";",
 );
 w();
@@ -243,12 +263,14 @@ w();
 // 現場
 w("-- ── 現場（勤務マスタ）──────────────────────────────");
 w(
-  "insert into public.sites (id, site_code, guard_target_no, name, short_name, customer_id, jurisdiction_id) values",
+  "insert into public.sites (id, site_code, guard_target_no, name, short_name, name_kana," +
+    " address, band_name, billing_no, plan_start_h, plan_start_m, plan_end_h, plan_end_m," +
+    " plan_break, customer_id, jurisdiction_id, department_id) values",
 );
 w(
   SITES.map(
     (s) =>
-      `  ('${siteUuid.get(s.id)}', ${q(`ST${String(idNum(s.id)).padStart(4, "0")}`)}, ${q(s.guardPostNo)}, ${q(s.name)}, ${q(s.shortName)}, '${customerUuid.get(s.customerId)}', '${jurisdictionUuid.get(s.jurisdictionId)}')`,
+      `  ('${siteUuid.get(s.id)}', ${q(`ST${String(idNum(s.id)).padStart(4, "0")}`)}, ${q(s.guardPostNo)}, ${q(s.name)}, ${q(s.shortName)}, ${q(s.nameKana)}, ${q(s.address)}, ${q(s.bandName)}, ${q(s.billingNo)}, ${s.planStartH}, ${s.planStartM}, ${s.planEndH}, ${s.planEndM}, ${s.planBreak}, '${customerUuid.get(s.customerId)}', '${jurisdictionUuid.get(s.jurisdictionId)}', '${departmentUuid.get(s.departmentId)}')`,
   ).join(",\n") + ";",
 );
 w();
@@ -275,12 +297,13 @@ if (siteReq.length) {
 w("-- ── 隊員 ──────────────────────────────────────────");
 w("-- 🔴 協力会社の隊員は staff_code を持たない（ShiftMax に登録が無い）");
 w(
-  "insert into public.guards (id, staff_code, name, short_name, jurisdiction_id, company_id, employment_type) values",
+  "insert into public.guards (id, staff_code, guard_no, name, short_name, name_kana, email," +
+    " jurisdiction_id, department_id, company_id, employment_type) values",
 );
 w(
   GUARDS.map((g) => {
     const partner = COMPANIES.find((c) => c.id === g.companyId)?.kind === "partner";
-    return `  ('${guardUuid.get(g.id)}', ${q(g.personCode)}, ${q(g.name)}, ${q(g.shortName)}, '${jurisdictionUuid.get(g.jurisdictionId)}', '${companyUuid.get(g.companyId)}', ${q(partner ? "partner" : "employee")})`;
+    return `  ('${guardUuid.get(g.id)}', ${q(g.personCode)}, ${q(g.guardNo)}, ${q(g.name)}, ${q(g.shortName)}, ${q(g.nameKana)}, ${q(g.email)}, '${jurisdictionUuid.get(g.jurisdictionId)}', '${departmentUuid.get(g.departmentId)}', '${companyUuid.get(g.companyId)}', ${q(partner ? "partner" : "employee")})`;
   }).join(",\n") + ";",
 );
 w();
@@ -420,12 +443,14 @@ w("commit;");
 w();
 w("-- ── 投入後の確認 ──────────────────────────────────");
 w("select 'jurisdictions' as t, count(*) from public.jurisdictions");
+w("union all select 'departments', count(*) from public.departments");
 w("union all select 'companies', count(*) from public.companies");
 w("union all select 'qualifications', count(*) from public.qualifications");
 w("union all select 'customers', count(*) from public.customers");
 w("union all select 'sites', count(*) from public.sites");
 w("union all select 'guards', count(*) from public.guards");
 w("union all select 'guard_qualifications', count(*) from public.guard_qualifications");
+w("union all select 'site_required_qualifications', count(*) from public.site_required_qualifications");
 w("union all select 'shifts', count(*) from public.shifts");
 w("union all select 'assignments', count(*) from public.assignments");
 w("union all select 'ng_entries', count(*) from public.ng_entries");

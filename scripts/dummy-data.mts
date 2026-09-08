@@ -24,14 +24,25 @@ type Jurisdiction = {
 };
 type Company = { id: string; kind: "own" | "partner"; name: string };
 type Qualification = { id: string; shortLabel: string; name: string };
-type Customer = { id: string; name: string };
+type Department = { id: string; code: string; name: string; jurisdictionId: string };
+type Customer = {
+  id: string; name: string; nameKana: string; contactName: string;
+  billingNo: string; billingName: string; jurisdictionId: string;
+};
 type Site = {
   id: string; guardPostNo: string; name: string; shortName: string;
-  customerId: string; jurisdictionId: string; requiredQualificationIds: string[];
+  nameKana: string; address: string; bandName: string; billingNo: string;
+  // 🔴 予定のひな形。これが空だと「現場を選ぶと時刻・休憩が自動で入る」
+  //   という中核の体験（べんり君の引き継ぎ）が一度も発動しない。
+  planStartH: number; planStartM: number; planEndH: number; planEndM: number; planBreak: number;
+  customerId: string; jurisdictionId: string; departmentId: string;
+  requiredQualificationIds: string[];
 };
 type Guard = {
-  id: string; personCode: string | null; name: string; shortName: string;
-  companyId: string; jurisdictionId: string; qualificationIds: string[];
+  id: string; personCode: string | null; guardNo: string | null;
+  name: string; shortName: string; nameKana: string; email: string | null;
+  companyId: string; jurisdictionId: string; departmentId: string;
+  qualificationIds: string[];
 };
 type Shift = {
   id: string; siteId: string; workDate: string; jurisdictionId: string;
@@ -83,6 +94,34 @@ export const QUALIFICATIONS: Qualification[] = [
   { id: "q-s2", shortLabel: "施2", name: "施設警備業務検定 2級" },
 ];
 
+// 🔴 部署。ShiftMax のマスタにある区分で、A表・引き渡しの単位ではないが
+//   隊員と現場の両方に付く（data-model.md §3-2）。ダミーでも空にしない ─
+//   空のままだと一覧に「—」が並び、画面の検証にならない。
+export const DEPARTMENTS: Department[] = [
+  { id: "d-1", code: "101", name: "第一警備部", jurisdictionId: "j-10" },
+  { id: "d-2", code: "102", name: "第二警備部", jurisdictionId: "j-10" },
+  { id: "d-3", code: "201", name: "千葉営業所", jurisdictionId: "j-20" },
+];
+
+/** 苗字とフリガナの対。SURNAMES と同じ並びにする */
+const SURNAME_KANA = [
+  "サトウ", "スズキ", "タカハシ", "タナカ", "イトウ", "ワタナベ", "ヤマモト", "ナカムラ",
+  "コバヤシ", "カトウ", "ヨシダ", "ヤマダ", "ササキ", "ヤマグチ", "マツモト", "イノウエ",
+  "キムラ", "ハヤシ", "サイトウ", "シミズ",
+];
+
+/** 現場の接尾辞のフリガナ。SITE_SUFFIX と同じ並びにする */
+const SITE_SUFFIX_KANA = [
+  "エキマエコウク", "キタグチカイリョウ", "ダイニコウク", "コセンキョウ", "ジョウゲスイドウ",
+  "ホンセンキリカエ", "ミナミグチヒロバ", "チカマイセツ", "デンセンキョウドウコウ", "キョウリョウホシュウ",
+];
+
+/** 住所。架空の町名にする（実在の現場と取り違えないため） */
+const WARDS = [
+  "東京都千代田区", "東京都港区", "東京都江東区", "東京都大田区", "東京都足立区",
+  "千葉県船橋市", "千葉県市川市",
+];
+
 const SURNAMES = [
   "佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "山本", "中村", "小林", "加藤",
   "吉田", "山田", "佐々木", "山口", "松本", "井上", "木村", "林", "斎藤", "清水",
@@ -98,12 +137,35 @@ const SITE_SUFFIX = [
   "南口広場", "地下埋設", "電線共同溝", "橋梁補修",
 ];
 
+/** 得意先のフリガナ。CUSTOMER_NAMES と同じ並びにする */
+const CUSTOMER_KANA = [
+  "アルファケンセツ", "ブラボーコウギョウ", "チャーリーデンセツ", "デルタドボク", "エコーカイハツ",
+  "フォックスケンキ", "ゴルフドウロ", "ホテルセツビ", "インディアケンセツ", "ジュリエットコウギョウ",
+];
+
 export const CUSTOMERS: Customer[] = CUSTOMER_NAMES.map((name, i) => ({
   id: `cu-${i + 1}`,
   name,
+  nameKana: CUSTOMER_KANA[i],
+  // 得意先は「顧客名」より担当者で呼ばれることがあるため埋めておく
+  contactName: `${SURNAMES[(i * 3) % SURNAMES.length]} 様`,
+  billingNo: `B${String(9000 + i * 11)}`,
+  billingName: name,
+  jurisdictionId: i % 4 === 0 ? "j-20" : "j-10",
 }));
 
 const rng = makeRng(20260901);
+
+/** 管轄に属する部署から1つ選ぶ（決定的） */
+function departmentForJurisdiction(jurisdictionId: string, seed: number): string {
+  const list = DEPARTMENTS.filter((d) => d.jurisdictionId === jurisdictionId);
+  return list[seed % list.length].id;
+}
+
+/** "cu-3" → 3 */
+function idNumOf(id: string): number {
+  return Number(id.split("-").pop());
+}
 
 // 🔴 得意先の付き方は**均等ではない**（2026-09-02・管制の実感より）。
 //   「毎日たくさん現場をくれる会社が1社あり、残りは数社」。
@@ -116,19 +178,44 @@ function customerForSite(index: number, total: number) {
   return CUSTOMERS[1 + ((index - Math.floor(total * DOMINANT_SITE_RATIO)) % (CUSTOMERS.length - 1))];
 }
 
+/** 予定のひな形。現場ごとに固定で、枠を作るときの既定値になる。
+ *  🔴 全部を 8:00–17:00 にしない。同じ値ばかりだと
+ *     「現場を選ぶと時刻が入れ替わる」ことが画面で確かめられない。 */
+const PLAN_PATTERNS = [
+  { sh: 8, sm: 0, eh: 17, em: 0, br: 60 },
+  { sh: 8, sm: 30, eh: 17, em: 30, br: 60 },
+  { sh: 7, sm: 0, eh: 16, em: 0, br: 45 },
+  { sh: 9, sm: 0, eh: 18, em: 0, br: 90 },
+  { sh: 20, sm: 0, eh: 5, em: 0, br: 60 },
+];
+
 export const SITES: Site[] = Array.from({ length: 42 }, (_, i) => {
   const customer = customerForSite(i, 42);
-  const suffix = SITE_SUFFIX[Math.floor(rng() * SITE_SUFFIX.length)];
+  const suffixIndex = Math.floor(rng() * SITE_SUFFIX.length);
+  const suffix = SITE_SUFFIX[suffixIndex];
   // 現場の 1/4 ほどに必要資格を設定する（全部に付けると警告だらけで検証にならない）
   const required =
     rng() < 0.25 ? [rng() < 0.5 ? "q-k2" : "q-k1"] : [];
+  const jurisdictionId = i % 9 === 0 ? "j-20" : "j-10";
+  const plan = PLAN_PATTERNS[i % PLAN_PATTERNS.length];
   return {
     id: `s-${i + 1}`,
     guardPostNo: String(55000 + i * 7),
     name: `${customer.name.slice(0, 4)} ${suffix}`,
     shortName: suffix.slice(0, 4),
+    nameKana: `${CUSTOMER_KANA[idNumOf(customer.id) - 1].slice(0, 4)} ${SITE_SUFFIX_KANA[suffixIndex]}`,
+    address: `${WARDS[i % WARDS.length]}${1 + (i % 5)}-${1 + (i % 9)}-${1 + (i % 20)}`,
+    // 班名は A表のまとまりに出る（shifts 側にも持つが、現場の既定値をここに置く）
+    bandName: `${["A", "B", "C"][i % 3]}班`,
+    billingNo: `S${String(7000 + i * 3)}`,
+    planStartH: plan.sh,
+    planStartM: plan.sm,
+    planEndH: plan.eh,
+    planEndM: plan.em,
+    planBreak: plan.br,
     customerId: customer.id,
-    jurisdictionId: i % 9 === 0 ? "j-20" : "j-10",
+    jurisdictionId,
+    departmentId: departmentForJurisdiction(jurisdictionId, i),
     requiredQualificationIds: required,
   };
 });
@@ -142,14 +229,21 @@ export const GUARDS: Guard[] = Array.from({ length: 104 }, (_, i) => {
   if (rng() < 0.32) quals.push("q-k2");
   if (rng() < 0.12) quals.push("q-k1");
   if (rng() < 0.1) quals.push("q-z2");
+  const jurisdictionId = i % 11 === 0 ? "j-20" : "j-10";
   return {
     id: `g-${i + 1}`,
-    // 🔴 協力会社の隊員は ShiftMax の個人コードを持たない（shiftmax-api-analysis.md §10-3）
+    // 🔴 協力会社の隊員は ShiftMax の個人コード・隊員ナンバーを持たない
+    //   （shiftmax-api-analysis.md §10-3）。持たないことが正常な状態。
     personCode: isPartner ? null : String(30000 + i * 3),
+    guardNo: isPartner ? null : String(1000 + i),
     name: `${surname}${num}`,
     shortName: `${surname}${num}`,
+    nameKana: `${SURNAME_KANA[i % SURNAME_KANA.length]}${num}`,
+    // 🔴 ShiftMax にある唯一の連絡先がメール（電話・LINE は無い）
+    email: isPartner ? null : `guard${num}@example.invalid`,
     companyId: company.id,
-    jurisdictionId: i % 11 === 0 ? "j-20" : "j-10",
+    jurisdictionId,
+    departmentId: departmentForJurisdiction(jurisdictionId, i),
     qualificationIds: quals,
   };
 });
