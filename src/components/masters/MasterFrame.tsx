@@ -125,7 +125,12 @@ export function MasterTable({
   return (
     // 🔴 横方向は表自身の中でスクロールさせる。画面ごと横に伸ばさない
     <div className="flex-1 overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-      <table className="w-full border-collapse text-[13px]">
+      {/* 🔴 w-full にしない（2026-09-08）。
+          列が少ないときに w-full だと、余った幅が各列へ配られて
+          「情報は少ないのに列だけ異様に広い」表になる。
+          w-max + min-w-full にすると、**内容の幅で詰めたうえで**
+          足りなければ画面幅まで伸びる。 */}
+      <table className="w-max min-w-full border-collapse text-[13px]">
         <thead className="sticky top-0 z-10 bg-slate-50 text-left">
           <tr className="border-b border-slate-200">{head}</tr>
         </thead>
@@ -145,7 +150,7 @@ export function Th({
   return (
     <th
       scope="col"
-      className={`whitespace-nowrap px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${className}`}
+      className={`whitespace-nowrap px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 ${className}`}
     >
       {children}
     </th>
@@ -159,13 +164,62 @@ export function Td({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <td className={`px-3 py-2 align-middle text-slate-700 ${className}`}>{children}</td>;
+  // 🔴 既定で折り返さない（2026-09-08）。
+  //   1行が2段になると、行の高さが揃わず一覧として読めなくなる。
+  //   長い値は truncate させ、全文は title 属性で見せる（Cell 参照）。
+  return (
+    <td className={`whitespace-nowrap px-3 py-1.5 align-middle text-slate-700 ${className}`}>
+      {children}
+    </td>
+  );
 }
 
-export function Row({ children }: { children: React.ReactNode }) {
+/** 長い値（現場名・住所・メール）用。幅を決めて切り、全文は hover で出す。 */
+export function Ellipsis({
+  value,
+  width = "max-w-[220px]",
+}: {
+  value: string | null | undefined;
+  width?: string;
+}) {
+  if (!value) return <span className="text-slate-300">—</span>;
   return (
-    <tr className="border-b border-slate-100 transition-all duration-150 ease-in-out hover:bg-slate-50">
+    <span className={`block truncate ${width}`} title={value}>
+      {value}
+    </span>
+  );
+}
+
+export function Row({
+  children,
+  href,
+}: {
+  children: React.ReactNode;
+  /** 指定すると行全体が詳細へのリンクになる */
+  href?: string;
+}) {
+  return (
+    <tr
+      className={[
+        "border-b border-slate-100 transition-all duration-150 ease-in-out hover:bg-slate-50",
+        href ? "cursor-pointer" : "",
+      ].join(" ")}
+    >
       {children}
+      {/* 🔴 <tr> を <Link> で包めない（HTML として不正）。
+          行末に「開く」を1列だけ置き、そこをリンクにする。
+          行全体を JS のクリックで飛ばす手もあるが、
+          それだと**新しいタブで開けない**うえ hydration 前に反応しない。 */}
+      {href && (
+        <td className="whitespace-nowrap px-3 py-1.5 text-right">
+          <Link
+            href={href}
+            className="t-meta rounded border border-slate-300 px-1.5 py-0.5 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800"
+          >
+            開く
+          </Link>
+        </td>
+      )}
     </tr>
   );
 }

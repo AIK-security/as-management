@@ -82,8 +82,13 @@ export type SiteRow = {
   plan_end_h: number | null;
   plan_end_m: number | null;
   plan_break: number | null;
+  name_kana: string | null;
+  address: string | null;
+  band_name: string | null;
+  billing_no: string | null;
   customer: { name: string } | null;
   jurisdiction: { name: string } | null;
+  department: { name: string } | null;
 };
 
 export async function listSites({ q, page }: MasterQuery): Promise<MasterList<SiteRow>> {
@@ -95,8 +100,10 @@ export async function listSites({ q, page }: MasterQuery): Promise<MasterList<Si
     .select(
       `id, site_code, guard_target_no, name, short_name, status,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
+       name_kana, address, band_name, billing_no,
        customer:customers ( name ),
-       jurisdiction:jurisdictions ( name )`,
+       jurisdiction:jurisdictions ( name ),
+       department:departments ( name )`,
       { count: "exact" },
     )
     .order("name")
@@ -106,7 +113,7 @@ export async function listSites({ q, page }: MasterQuery): Promise<MasterList<Si
   //   現場名・略称のほか、**警備先番号**（べんり君の入力キー）で引けることが要る。
   if (q) {
     query = query.or(
-      `name.ilike.%${q}%,short_name.ilike.%${q}%,guard_target_no.ilike.%${q}%,site_code.ilike.%${q}%`,
+      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,guard_target_no.ilike.%${q}%,site_code.ilike.%${q}%,address.ilike.%${q}%`,
     );
   }
 
@@ -125,10 +132,14 @@ export type GuardRow = {
   staff_code: string | null;
   name: string;
   short_name: string;
+  guard_no: string | null;
   name_kana: string | null;
+  email: string | null;
+  employment_type: string;
   status: string;
   company: { name: string; kind: string } | null;
   jurisdiction: { name: string } | null;
+  department: { name: string } | null;
   guard_qualifications: {
     expires_on: string | null;
     qualification: { short_label: string; name: string } | null;
@@ -142,9 +153,10 @@ export async function listGuards({ q, page }: MasterQuery): Promise<MasterList<G
   let query = supabase
     .from("guards")
     .select(
-      `id, staff_code, name, short_name, name_kana, status,
+      `id, staff_code, guard_no, name, short_name, name_kana, email, employment_type, status,
        company:companies ( name, kind ),
        jurisdiction:jurisdictions ( name ),
+       department:departments ( name ),
        guard_qualifications ( expires_on, qualification:qualifications ( short_label, name ) )`,
       { count: "exact" },
     )
@@ -153,7 +165,7 @@ export async function listGuards({ q, page }: MasterQuery): Promise<MasterList<G
 
   if (q) {
     query = query.or(
-      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,staff_code.ilike.%${q}%`,
+      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,staff_code.ilike.%${q}%,guard_no.ilike.%${q}%`,
     );
   }
 
@@ -174,6 +186,9 @@ export type CustomerRow = {
   name_kana: string | null;
   /** 担当名。得意先は「顧客名」より担当で呼ばれることがある */
   contact_name: string | null;
+  billing_no: string | null;
+  billing_name: string | null;
+  jurisdiction: { name: string } | null;
   /** 🔴 customers に status 列は無い（2026-09-08 にマイグレーションで確認）。
    *   有効・無効の区別はこのマスタでは持っていない。 */
   /** 現場数。得意先の規模がひと目で分かる（「1社で20件超」＝管制の実感） */
@@ -186,7 +201,9 @@ export async function listCustomers({ q, page }: MasterQuery): Promise<MasterLis
 
   let query = supabase
     .from("customers")
-    .select(`id, staff_code, name, name_kana, contact_name, site_count:sites ( count )`, {
+    .select(`id, staff_code, name, name_kana, contact_name, billing_no, billing_name,
+       jurisdiction:jurisdictions ( name ),
+       site_count:sites ( count )`, {
       count: "exact",
     })
     .order("name")
@@ -337,5 +354,90 @@ export async function listNgPicks() {
   return {
     guards: (guardsRes.data ?? []) as { id: string; name: string }[],
     sites: (sitesRes.data ?? []) as { id: string; name: string; guard_target_no: string }[],
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// 現場の詳細（S-10 編集）
+// ─────────────────────────────────────────────────────────
+
+export type SiteDetail = {
+  id: string;
+  site_code: string;
+  guard_target_no: string;
+  name: string;
+  short_name: string;
+  name_kana: string | null;
+  address: string | null;
+  band_name: string | null;
+  billing_no: string | null;
+  plan_start_h: number | null;
+  plan_start_m: number | null;
+  plan_end_h: number | null;
+  plan_end_m: number | null;
+  plan_break: number | null;
+  has_plan: boolean;
+  customer_id: string | null;
+  jurisdiction_id: string;
+  department_id: string | null;
+  status: string;
+};
+
+export async function getSite(id: string): Promise<SiteDetail | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("sites")
+    .select(
+      `id, site_code, guard_target_no, name, short_name, name_kana, address, band_name,
+       billing_no, plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break, has_plan,
+       customer_id, jurisdiction_id, department_id, status`,
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`現場の取得に失敗しました: ${error.message}`);
+  return (data as SiteDetail | null) ?? null;
+}
+
+/** 編集フォームの選択肢。得意先・管轄・部署 */
+export async function getSiteFormOptions() {
+  const supabase = await createClient();
+  const [cus, jur, dep] = await Promise.all([
+    supabase.from("customers").select("id, name").order("name"),
+    supabase.from("jurisdictions").select("id, name").order("code"),
+    supabase.from("departments").select("id, name, jurisdiction_id").order("code"),
+  ]);
+  for (const r of [cus, jur, dep]) if (r.error) throw new Error(r.error.message);
+  return {
+    customers: (cus.data ?? []) as { id: string; name: string }[],
+    jurisdictions: (jur.data ?? []) as { id: string; name: string }[],
+    departments: (dep.data ?? []) as { id: string; name: string; jurisdiction_id: string }[],
+  };
+}
+
+/**
+ * 現場を消すと何が一緒に消えるか／何が邪魔をするかを数える。
+ *
+ * 🔴 消える前に見せる。9/7 に枠の削除で決めたのと同じ考え方
+ *   （「消えたことに後で気づく作りにしない」）。
+ *
+ * 🔴 shifts は **cascade ではない**（20260902000000_board_core.sql）。
+ *   枠が1件でもあると DB が削除を拒む（FK 違反）。これは安全側の仕様なので
+ *   アプリ側でも先に数え、**なぜ消せないか**を日本語で言う。
+ *   一方 site_required_qualifications と ng_entries は cascade で**黙って消える**。
+ */
+export async function countSiteRefs(siteId: string) {
+  const supabase = await createClient();
+  const [shifts, quals, ngs] = await Promise.all([
+    supabase.from("shifts").select("id", { count: "exact", head: true }).eq("site_id", siteId),
+    supabase
+      .from("site_required_qualifications")
+      .select("id", { count: "exact", head: true })
+      .eq("site_id", siteId),
+    supabase.from("ng_entries").select("id", { count: "exact", head: true }).eq("site_id", siteId),
+  ]);
+  return {
+    shifts: shifts.count ?? 0,
+    requiredQualifications: quals.count ?? 0,
+    ngEntries: ngs.count ?? 0,
   };
 }

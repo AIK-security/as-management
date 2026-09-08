@@ -12,6 +12,7 @@ import { requireStaff } from "@/lib/auth";
 import { listGuards, parseMasterQuery } from "@/lib/masters";
 import { todayInJst } from "@/lib/board";
 import {
+  Ellipsis,
   EmptyRow,
   MasterTable,
   Pager,
@@ -22,6 +23,13 @@ import {
 } from "@/components/masters/MasterFrame";
 
 const ACTION = "/masters/guards";
+
+/** 雇用区分。DB の値をそのまま出しても管制には通じない */
+const employmentLabel: Record<string, string> = {
+  employee: "社員",
+  part_time: "パート",
+  partner: "協力",
+};
 
 export default async function GuardsPage({
   searchParams,
@@ -46,24 +54,31 @@ export default async function GuardsPage({
       <MasterTable
         head={
           <>
-            <Th className="w-28">個人コード</Th>
+            <Th>個人コード</Th>
+            <Th>隊員No</Th>
             <Th>氏名</Th>
-            <Th className="w-40">フリガナ</Th>
-            <Th className="w-24">略称</Th>
-            <Th className="w-48">会社</Th>
-            <Th className="w-24">管轄</Th>
+            <Th>フリガナ</Th>
+            <Th>略称</Th>
+            <Th>会社</Th>
+            <Th>区分</Th>
+            <Th>管轄</Th>
+            <Th>部署</Th>
             <Th>資格</Th>
-            <Th className="w-16">状態</Th>
+            <Th>メール</Th>
+            <Th>状態</Th>
           </>
         }
       >
         {list.rows.length === 0 ? (
-          <EmptyRow colSpan={8} q={query.q} />
+          <EmptyRow colSpan={12} q={query.q} />
         ) : (
           list.rows.map((g) => (
             <Row key={g.id}>
               <Td className="font-mono tabular-nums text-slate-500">
                 {g.staff_code ?? <span className="text-slate-300">—</span>}
+              </Td>
+              <Td className="font-mono tabular-nums text-slate-500">
+                {g.guard_no ?? <span className="text-slate-300">—</span>}
               </Td>
               <Td className="font-semibold text-slate-900">{g.name}</Td>
               <Td className="text-slate-500">{g.name_kana ?? "—"}</Td>
@@ -79,9 +94,11 @@ export default async function GuardsPage({
                   {g.company?.name ?? "—"}
                 </span>
               </Td>
+              <Td className="text-slate-500">{employmentLabel[g.employment_type] ?? g.employment_type}</Td>
               <Td className="text-slate-500">{g.jurisdiction?.name ?? "—"}</Td>
+              <Td className="text-slate-500">{g.department?.name ?? "—"}</Td>
               <Td>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex gap-1">
                   {g.guard_qualifications.length === 0 ? (
                     <span className="text-slate-300">—</span>
                   ) : (
@@ -108,6 +125,9 @@ export default async function GuardsPage({
                     })
                   )}
                 </div>
+              </Td>
+              <Td className="text-slate-500">
+                <Ellipsis value={g.email} width="max-w-[200px]" />
               </Td>
               <Td>
                 {g.status === "active" ? (
