@@ -151,6 +151,10 @@ export default async function BoardPage({
         ]
       : [];
 
+  // 🔴 まだ中身が無い操作。押せないことと理由が見た目で分かるようにする
+  const PENDING_BTN =
+    "cursor-not-allowed rounded-md border-2 border-dashed border-slate-300 bg-slate-50 px-3 py-1.5 text-[14px] font-semibold text-slate-400";
+
   const navBtn =
     "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
 
@@ -242,17 +246,33 @@ export default async function BoardPage({
                 customerPicks={board.customerPicks}
               />
               <ConfirmAllButton shiftIds={draftShiftIdsOnScreen} />
+              {/* 🔴 中身が無いボタンは「準備中」と分かる形にする（2026-09-09 決定）。
+                  これまで onClick すら無い**押しても無反応のボタン**が2つ並んでいた。
+                  デモで押されれば「壊れている」と読まれる。消す案もあったが、
+                  **これから何ができるようになるかが見える**ほうがよいと判断し、
+                  押せない状態＋説明（title）で残す。
+                  🔴 実装したら disabled と「準備中」を外すこと。 */}
               <button
                 type="button"
-                className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
+                disabled
+                title="配置した隊員への一斉連絡（宛先と文面まで）。LINE 可／不可で宛先を分けて出す。送信そのものは第1弾では作らない（2026-08-27 決定）"
+                className={PENDING_BTN}
               >
                 連絡作成
+                <span className="t-badge ml-1.5 rounded bg-slate-200 px-1 py-0.5 text-slate-500">
+                  準備中
+                </span>
               </button>
               <button
                 type="button"
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700"
+                disabled
+                title="確定した枠を18列CSVで出し、べんり君のコピーから ShiftMax へ送る工程。要否そのものが未判定で、事務側ヒアリングの結果しだいで不要になる"
+                className={PENDING_BTN}
               >
                 べんり君へ引き渡し
+                <span className="t-badge ml-1.5 rounded bg-slate-200 px-1 py-0.5 text-slate-500">
+                  未着手
+                </span>
               </button>
             </>
           )}
