@@ -81,9 +81,26 @@ export default async function NoticesPage({
             </Link>
           ))}
         </div>
-        <span className="font-mono text-[15px] font-semibold tabular-nums text-slate-800">
-          {workDate}
-        </span>
+        {/* 🔴 日付を直接指定できるようにする（2026-09-09）。
+            「明日／今日」だけだと、それ以外の日の配置に連絡を出せない。
+            当日変更でも前日でもない日（週明けぶんをまとめて など）は普通にある。
+            form の GET なので JS が動かなくても効く。 */}
+        <form method="get" action="/notices" className="flex items-center gap-1">
+          <input type="hidden" name="j" value={jurisdiction.code} />
+          <input type="hidden" name="group" value={group} />
+          <input
+            type="date"
+            name="date"
+            defaultValue={workDate}
+            className="h-9 rounded-md border border-slate-300 px-2 font-mono text-[14px] tabular-nums text-slate-900 transition-all duration-150 ease-in-out focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          />
+          <button
+            type="submit"
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
+          >
+            表示
+          </button>
+        </form>
 
         {jurisdictions.length > 1 && (
           <div className="flex overflow-hidden rounded-md border border-slate-300">
