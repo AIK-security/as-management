@@ -8,6 +8,7 @@
 // 🔴 協力会社の隊員は個人コード（ShiftMax）を持たない。
 //   持っていないことが**異常ではない**と分かるように「—」で潰し、
 //   会社の欄で自社／協力会社を色分けする。
+import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { listGuards, parseMasterQuery } from "@/lib/masters";
 import { todayInJst } from "@/lib/board";
@@ -48,7 +49,15 @@ export default async function GuardsPage({
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SearchForm action={ACTION} q={query.q} placeholder="氏名・フリガナ・個人コードで検索" />
-        <Pager action={ACTION} q={query.q} list={list} />
+        <div className="flex items-center gap-2">
+          <Pager action={ACTION} q={query.q} list={list} />
+          {/* 🔴 新規登録の入口（2026-09-09）。これまで一覧に入口が無く、
+              現場は配置ボード経由の仮番号でしか作れず、隊員・得意先は作れなかった。
+              権限の出し分けはしない ─ 押した先の requireRole() と RLS で止める。 */}
+          <Link href="/masters/guards/new" className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700">
+            ＋ 隊員を新規登録
+          </Link>
+        </div>
       </div>
 
       <MasterTable
@@ -73,7 +82,7 @@ export default async function GuardsPage({
           <EmptyRow colSpan={12} q={query.q} />
         ) : (
           list.rows.map((g) => (
-            <Row key={g.id}>
+            <Row key={g.id} href={`/masters/guards/${g.id}`}>
               <Td className="font-mono tabular-nums text-slate-500">
                 {g.staff_code ?? <span className="text-slate-300">—</span>}
               </Td>

@@ -265,12 +265,12 @@ w("-- ── 現場（勤務マスタ）─────────────�
 w(
   "insert into public.sites (id, site_code, guard_target_no, name, short_name, name_kana," +
     " address, band_name, billing_no, plan_start_h, plan_start_m, plan_end_h, plan_end_m," +
-    " plan_break, customer_id, jurisdiction_id, department_id) values",
+    " plan_break, has_plan, customer_id, jurisdiction_id, department_id) values",
 );
 w(
   SITES.map(
     (s) =>
-      `  ('${siteUuid.get(s.id)}', ${q(`ST${String(idNum(s.id)).padStart(4, "0")}`)}, ${q(s.guardPostNo)}, ${q(s.name)}, ${q(s.shortName)}, ${q(s.nameKana)}, ${q(s.address)}, ${q(s.bandName)}, ${q(s.billingNo)}, ${s.planStartH}, ${s.planStartM}, ${s.planEndH}, ${s.planEndM}, ${s.planBreak}, '${customerUuid.get(s.customerId)}', '${jurisdictionUuid.get(s.jurisdictionId)}', '${departmentUuid.get(s.departmentId)}')`,
+      `  ('${siteUuid.get(s.id)}', ${q(`ST${String(idNum(s.id)).padStart(4, "0")}`)}, ${q(s.guardPostNo)}, ${q(s.name)}, ${q(s.shortName)}, ${q(s.nameKana)}, ${q(s.address)}, ${q(s.bandName)}, ${q(s.billingNo)}, ${n(s.planStartH)}, ${n(s.planStartM)}, ${n(s.planEndH)}, ${n(s.planEndM)}, ${n(s.planBreak)}, ${s.hasPlan}, '${customerUuid.get(s.customerId)}', '${jurisdictionUuid.get(s.jurisdictionId)}', '${departmentUuid.get(s.departmentId)}')`,
   ).join(",\n") + ";",
 );
 w();

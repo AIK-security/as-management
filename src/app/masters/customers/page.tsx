@@ -8,6 +8,7 @@
 // 🔴 得意先は新規作成しない（2026-09-07 決定）。
 //   ShiftMax 由来のマスタで、請求（第2弾）の突き合わせに使うため。
 //   ここは**閲覧だけ**で正しい。
+import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { listCustomers, parseMasterQuery } from "@/lib/masters";
 import {
@@ -37,7 +38,15 @@ export default async function CustomersPage({
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SearchForm action={ACTION} q={query.q} placeholder="得意先名・フリガナ・担当コードで検索" />
-        <Pager action={ACTION} q={query.q} list={list} />
+        <div className="flex items-center gap-2">
+          <Pager action={ACTION} q={query.q} list={list} />
+          {/* 🔴 新規登録の入口（2026-09-09）。これまで一覧に入口が無く、
+              現場は配置ボード経由の仮番号でしか作れず、隊員・得意先は作れなかった。
+              権限の出し分けはしない ─ 押した先の requireRole() と RLS で止める。 */}
+          <Link href="/masters/customers/new" className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700">
+            ＋ 得意先を新規登録
+          </Link>
+        </div>
       </div>
 
       <MasterTable
@@ -58,7 +67,7 @@ export default async function CustomersPage({
           <EmptyRow colSpan={8} q={query.q} />
         ) : (
           list.rows.map((c) => (
-            <Row key={c.id}>
+            <Row key={c.id} href={`/masters/customers/${c.id}`}>
               <Td className="font-mono tabular-nums text-slate-500">{c.staff_code}</Td>
               <Td className="font-semibold text-slate-900">
                 <Ellipsis value={c.name} width="max-w-[220px]" />

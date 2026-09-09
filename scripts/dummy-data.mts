@@ -34,7 +34,12 @@ type Site = {
   nameKana: string; address: string; bandName: string; billingNo: string;
   // 🔴 予定のひな形。これが空だと「現場を選ぶと時刻・休憩が自動で入る」
   //   という中核の体験（べんり君の引き継ぎ）が一度も発動しない。
-  planStartH: number; planStartM: number; planEndH: number; planEndM: number; planBreak: number;
+  // 🔴 ただし **null を許す**（2026-09-09）。実データには予定を持たない現場があり
+  //   （ShiftMax の勤務予定フラグ＝`has_plan` がその証拠）、全件を埋めたダミーでは
+  //   「予定が無い現場」の見え方も、そこで起きる不具合も検証できない。
+  planStartH: number | null; planStartM: number | null;
+  planEndH: number | null; planEndM: number | null; planBreak: number | null;
+  hasPlan: boolean;
   customerId: string; jurisdictionId: string; departmentId: string;
   requiredQualificationIds: string[];
 };
@@ -197,6 +202,10 @@ export const SITES: Site[] = Array.from({ length: 42 }, (_, i) => {
   const required =
     rng() < 0.25 ? [rng() < 0.5 ? "q-k2" : "q-k1"] : [];
   const jurisdictionId = i % 9 === 0 ? "j-20" : "j-10";
+  // 🔴 13件に1件を「予定を持たない現場」にする（i = 5, 18, 31 の3件）。
+  //   rng() を使わないのは、**既存のダミーの並びを1件もずらさない**ため
+  //   （乱数を1回余計に引くと、以降の資格・配置が全部変わる）。
+  const noPlan = i % 13 === 5;
   const plan = PLAN_PATTERNS[i % PLAN_PATTERNS.length];
   return {
     id: `s-${i + 1}`,
@@ -208,11 +217,12 @@ export const SITES: Site[] = Array.from({ length: 42 }, (_, i) => {
     // 班名は A表のまとまりに出る（shifts 側にも持つが、現場の既定値をここに置く）
     bandName: `${["A", "B", "C"][i % 3]}班`,
     billingNo: `S${String(7000 + i * 3)}`,
-    planStartH: plan.sh,
-    planStartM: plan.sm,
-    planEndH: plan.eh,
-    planEndM: plan.em,
-    planBreak: plan.br,
+    planStartH: noPlan ? null : plan.sh,
+    planStartM: noPlan ? null : plan.sm,
+    planEndH: noPlan ? null : plan.eh,
+    planEndM: noPlan ? null : plan.em,
+    planBreak: noPlan ? null : plan.br,
+    hasPlan: !noPlan,
     customerId: customer.id,
     jurisdictionId,
     departmentId: departmentForJurisdiction(jurisdictionId, i),

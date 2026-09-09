@@ -7,6 +7,7 @@
 //
 // 🔴 検索は警備先番号でも引ける。べんり君の入力キーがそれだから
 //   （要件は資産に合わせて曲げない）。
+import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { listSites, parseMasterQuery } from "@/lib/masters";
 import {
@@ -43,7 +44,15 @@ export default async function SitesPage({
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SearchForm action={ACTION} q={query.q} placeholder="現場名・略称・警備先番号で検索" />
-        <Pager action={ACTION} q={query.q} list={list} />
+        <div className="flex items-center gap-2">
+          <Pager action={ACTION} q={query.q} list={list} />
+          {/* 🔴 新規登録の入口（2026-09-09）。これまで一覧に入口が無く、
+              現場は配置ボード経由の仮番号でしか作れず、隊員・得意先は作れなかった。
+              権限の出し分けはしない ─ 押した先の requireRole() と RLS で止める。 */}
+          <Link href="/masters/sites/new" className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700">
+            ＋ 現場を新規登録
+          </Link>
+        </div>
       </div>
 
       <MasterTable

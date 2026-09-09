@@ -39,6 +39,8 @@ export type SiteInput = {
   address: string;
   bandName: string;
   billingNo: string;
+  customerCode: string;
+  customerNo: string;
   planStartH: number | null;
   planStartM: number | null;
   planEndH: number | null;
@@ -69,6 +71,14 @@ export async function updateSite(input: SiteInput): Promise<ActionResult> {
     return { ok: false, message: "警備先番号を入れてください。" };
   }
   if (!input.jurisdictionId) return { ok: false, message: "管轄を選んでください。" };
+  // 🔴 時と分は組。片方だけ入った状態を通さない。
+  //   Server Action は URL なので、画面側の検査だけに頼らない。
+  if (
+    (input.planStartH === null) !== (input.planStartM === null) ||
+    (input.planEndH === null) !== (input.planEndM === null)
+  ) {
+    return { ok: false, message: "開始・終了の時刻は、時と分の両方を入れてください。" };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -82,6 +92,8 @@ export async function updateSite(input: SiteInput): Promise<ActionResult> {
       address: orNull(input.address),
       band_name: orNull(input.bandName),
       billing_no: orNull(input.billingNo),
+      customer_code: orNull(input.customerCode),
+      customer_no: orNull(input.customerNo),
       plan_start_h: input.planStartH,
       plan_start_m: input.planStartM,
       plan_end_h: input.planEndH,
@@ -119,4 +131,106 @@ export async function deleteSite(input: { id: string }): Promise<ActionResult> {
 
   // 消した現場の詳細に留まっても見るものが無いので一覧へ戻す
   redirect("/masters/sites");
+}
+
+// ─────────────────────────────────────────────────────────
+// 現場が求める資格（2026-09-09 追加）
+//
+// 🔴 テーブルは最初からあったのに**貯める入口が無かった**。
+//   配置ボードの資格警告はこの表を見ているので、入口が無い＝警告が永久に出ない。
+//   NG リストで 9/8 に直したのと同じ穴が、資格でも空いていた。
+// ─────────────────────────────────────────────────────────
+
+export async function saveSiteRequiredQualification(input: {
+  siteId: string;
+  qualificationId: string;
+  requiredCount: number;
+}): Promise<ActionResult> {
+  await requireRole("control", "admin");
+  if (!input.qualificationId) return { ok: false, message: "資格を選んでください。" };
+  if (!Number.isFinite(input.requiredCount) || input.requiredCount < 1) {
+    return { ok: false, message: "必要人数は1以上で入れてください。" };
+  }
+
+  const supabase = await createClient();
+  // (site_id, qualification_id) が unique なので upsert。
+  // 「付ける」と「人数を直す」は管制から見れば同じ操作。
+  const { error } = await supabase.from("site_required_qualifications").upsert(
+    {
+      site_id: input.siteId,
+      qualification_id: input.qualificationId,
+      required_count: input.requiredCount,
+    },
+    { onConflict: "site_id,qualification_id" },
+  );
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+export async function removeSiteRequiredQualification(input: {
+  id: string;
+}): Promise<ActionResult> {
+  await requireRole("control", "admin");
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("site_required_qualifications")
+    .delete()
+    .eq("id", input.id);
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 現場を新しく作る（2026-09-09）
+//
+// 🔴 これまで現場を作れるのは配置ボードの「現場を追加」だけで、
+//   そこでは名前しか入れられず、必ず TMP- の仮番号になっていた。
+//   マスタ側に入口が無いのは「一般的な情報の入力と保存ができる」の穴。
+//
+// 🔴 入れるのは最小限だけにする。速さが要るのは**作るとき**であって、
+//   残りは作成後の詳細画面で埋める（詳細を項目全部出しにしてあるのはこのため）。
+// ─────────────────────────────────────────────────────────
+export async function createSite(input: {
+  name: string;
+  shortName: string;
+  guardTargetNo: string;
+  siteCode: string;
+  jurisdictionId: string;
+  customerId: string;
+}): Promise<ActionResult> {
+  await requireRole("control", "admin");
+
+  const name = input.name.trim();
+  if (!name) return { ok: false, message: "現場名を入れてください。" };
+  if (!input.jurisdictionId) return { ok: false, message: "管轄を選んでください。" };
+
+  // 🔴 番号が決まっていないなら仮番号で通す（2026-09-07 の判断を踏襲）。
+  //   決まるまで作れないと、当日の飛び込みで手が止まる。
+  //   仮番号のままでは引き渡せないことは詳細画面が警告で言う。
+  const tmp = `TMP-${Date.now().toString(36).toUpperCase()}`;
+  const guardTargetNo = input.guardTargetNo.trim() || tmp;
+  const siteCode = input.siteCode.trim() || tmp;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("sites")
+    .insert({
+      name,
+      short_name: input.shortName.trim() || name.slice(0, 8),
+      guard_target_no: guardTargetNo,
+      site_code: siteCode,
+      jurisdiction_id: input.jurisdictionId,
+      customer_id: input.customerId || null,
+    })
+    .select("id")
+    .single();
+  if (error) return { ok: false, message: toMessage(error) };
+
+  // 作ったら詳細へ。残りの項目はそこで埋める
+  redirect(`/masters/sites/${data.id}`);
 }

@@ -10,6 +10,7 @@
 //   ヘッダは bg-slate-50 / text-xs / uppercase、行間は詰め、
 //   セル間の縦線は入れず横線だけ。行ホバーでマウス位置を示す。
 import Link from "next/link";
+import { ClickableRow } from "@/components/masters/ClickableRow";
 import { PAGE_SIZE, type MasterList } from "@/lib/masters";
 
 /** 検索欄。GET フォームなので JS 不要。 */
@@ -198,13 +199,16 @@ export function Row({
   /** 指定すると行全体が詳細へのリンクになる */
   href?: string;
 }) {
-  return (
-    <tr
-      className={[
-        "border-b border-slate-100 transition-all duration-150 ease-in-out hover:bg-slate-50",
-        href ? "cursor-pointer" : "",
-      ].join(" ")}
-    >
+  const className = [
+    "border-b border-slate-100 transition-all duration-150 ease-in-out hover:bg-slate-50",
+    href ? "cursor-pointer" : "",
+  ].join(" ");
+
+  // 🔴 ダブルクリックで開けるようにする（2026-09-09・柴山の要望）。
+  //   ここだけクライアント側になる（onDoubleClick が要るため）。
+  //   行末の「開く」は**残す** ─ 新しいタブで開く手段と、JS 前の導線を消さない。
+  const body = (
+    <>
       {children}
       {/* 🔴 <tr> を <Link> で包めない（HTML として不正）。
           行末に「開く」を1列だけ置き、そこをリンクにする。
@@ -220,7 +224,14 @@ export function Row({
           </Link>
         </td>
       )}
-    </tr>
+    </>
+  );
+
+  if (!href) return <tr className={className}>{body}</tr>;
+  return (
+    <ClickableRow href={href} className={className}>
+      {body}
+    </ClickableRow>
   );
 }
 

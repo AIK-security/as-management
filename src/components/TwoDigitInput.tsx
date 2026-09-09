@@ -27,18 +27,20 @@ const FIELD =
  *   上限の丸めは**確定時（blur）だけ**行う ─ 打っている途中に丸めると
  *   「2」→「5」で 25 を打とうとした手が、23 に書き換えられて止まる。
  *
- * 親が持つ状態は今までどおり数値。呼び出し側の型は変えていない。
+ * 🔴 `allowEmpty` を付けたときだけ「未設定（null）」を持てる。
+ *   マスタの現場編集では、**予定を持たない現場**（`has_plan` が false）が実データに存在し、
+ *   0 で埋めると「触っていないのに 00:00 が入った」ことになる。→ 空欄のまま保つ。
+ *   配置ボードの「現場を追加」は必ず時刻を決める画面なので、そちらは従来どおり数値のまま。
  */
-export function TwoDigitInput({
-  value,
-  onChange,
-  max,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  /** 時なら 23、分なら 59 */
-  max: number;
-}) {
+type Props =
+  /** 既定：必ず数値を持つ（配置ボードの「現場を追加」） */
+  | { value: number; onChange: (v: number) => void; max: number; allowEmpty?: false }
+  /** 未設定を許す（マスタの現場編集） */
+  | { value: number | null; onChange: (v: number | null) => void; max: number; allowEmpty: true };
+
+export function TwoDigitInput({ value, onChange, max, allowEmpty }: Props) {
+  // 呼び出し側の型は union で分けてあるため、内側では1本にまとめて扱う
+  const emit = onChange as (v: number | null) => void;
   // null = 非編集中（＝ゼロ埋めして見せる）
   const [typing, setTyping] = useState<string | null>(null);
 
@@ -46,15 +48,15 @@ export function TwoDigitInput({
     <input
       type="text"
       inputMode="numeric"
-      value={typing ?? String(value).padStart(2, "0")}
-      onFocus={() => setTyping(String(value))}
+      value={typing ?? (value === null ? "" : String(value).padStart(2, "0"))}
+      onFocus={() => setTyping(value === null ? "" : String(value))}
       onChange={(e) => {
         const digits = e.target.value.replace(/[^0-9]/g, "").slice(0, 2);
         setTyping(digits);
-        onChange(digits === "" ? 0 : Number(digits));
+        emit(digits === "" ? (allowEmpty ? null : 0) : Number(digits));
       }}
       onBlur={() => {
-        onChange(Math.min(Math.max(value, 0), max));
+        emit(value === null ? null : Math.min(Math.max(value, 0), max));
         setTyping(null);
       }}
       className={FIELD + " w-14 text-right font-mono"}
