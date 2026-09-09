@@ -54,13 +54,33 @@ export type MessageTemplate = {
   body: string;
 };
 
-/** 差し込みの解釈。DB は文字列を持つだけで、記法はここでだけ決める */
+/**
+ * 差し込みの解釈。DB は文字列を持つだけで、記法はここでだけ決める。
+ *
+ * 🔴 値が空の差し込みは**行ごと落とす**（2026-09-09）。
+ *   集合場所が未入力の枠で「集合：」という行だけが残り、そのまま LINE に
+ *   貼られてしまっていた。実際に画面で見て気づいた。
+ *   ただし落とすのは「その行の差し込みが**すべて空**のとき」だけ。
+ *   値のあるものと同居している行を消すと、情報が黙って減る。
+ */
 export function fillTemplate(body: string, t: NoticeTarget): string {
+  const values: Record<string, string> = {
+    "{隊員名}": t.name,
+    "{現場名}": t.siteName,
+    "{開始}": t.startText,
+    "{終了}": t.endText,
+    "{班}": t.bandName ?? "",
+    "{集合}": t.planComment ?? "",
+  };
+  const keys = Object.keys(values);
+
   return body
-    .replaceAll("{隊員名}", t.name)
-    .replaceAll("{現場名}", t.siteName)
-    .replaceAll("{開始}", t.startText)
-    .replaceAll("{終了}", t.endText)
-    .replaceAll("{班}", t.bandName ?? "")
-    .replaceAll("{集合}", t.planComment ?? "");
+    .split("\n")
+    .filter((line) => {
+      const used = keys.filter((k) => line.includes(k));
+      if (used.length === 0) return true; // 差し込みの無い行はそのまま
+      return used.some((k) => values[k] !== "");
+    })
+    .map((line) => keys.reduce((acc, k) => acc.replaceAll(k, values[k]), line))
+    .join("\n");
 }

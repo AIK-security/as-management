@@ -440,7 +440,7 @@ function PrintPhoneList({
   group: string;
 }) {
   return (
-    <div className="hidden print:block">
+    <div data-print-area className="hidden print:block">
       <h1 className="mb-2 text-[18px] font-semibold">
         電話連絡リスト {workDate}（{group === "day" ? "日勤" : "夜勤"}）
       </h1>

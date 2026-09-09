@@ -63,3 +63,38 @@ body {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* ─────────────────────────────────────────────────────────
+   印刷（2026-09-09）
+
+   🔴 「電話リスト印刷」を押したら**電話連絡リストだけ**が出るようにする。
+   　 それまでは画面のまま刷られていた ─ サイドバー・宛先の一覧・文面・
+   　 ボタンまで紙に出て、肝心のリストは最後に付いてくるだけだった。
+
+   🔴 個々の要素に print:hidden を付けて回る方式はやめた。
+   　 画面が増えるたびに付け忘れが起き、**付け忘れは印刷するまで気づけない**。
+   　 「既定で全部隠し、印刷したいものだけ出す」ほうが、1名体制では安全。
+
+   visibility を使うのは、display:none だと祖先を消した時点で
+   子（印刷したい表）まで消えてしまうため。
+   ───────────────────────────────────────────────────────── */
+@media print {
+  body {
+    background: #fff;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  [data-print-area],
+  [data-print-area] * {
+    visibility: visible !important;
+  }
+  [data-print-area] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
