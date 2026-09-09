@@ -31,9 +31,20 @@ export type NoticeTarget = {
   endText: string;
   planComment: string | null;
   shiftId: string;
-  /** 🔴 確定後に枠が変更された。当日変更の連絡はここで絞る */
-  changedAfterConfirm: boolean;
   cancelled: boolean;
+  /** 仮組み（確定していない）。確定済みなら false */
+  isDraft: boolean;
+  /**
+   * 🔴 **今日この枠が動いたか**（JST）。当日変更の連絡はここで絞る。
+   *
+   * 🔴 「確定後に変更された」を直接は知れない。
+   *   2026-09-03 に `changed_after_confirm` 列を捨て、確定後に変わったら
+   *   **仮組みへ戻す（confirmed_at も null にする）**設計へ変えたため、
+   *   「一度も確定していない仮組み」と「確定後に戻された仮組み」が区別できない。
+   *   → 代わりに shifts.updated_at（トリガーで維持）を見て**近似**する。
+   *   正確に取るなら変更履歴のテーブルが要る（同マイグレーションも同じことを書いている）。
+   */
+  updatedToday: boolean;
 };
 
 export type MessageTemplate = {

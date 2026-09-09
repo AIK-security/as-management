@@ -547,7 +547,9 @@ export async function deleteShift(input: { shiftId: string }): Promise<ActionRes
 //   ここで現場を差し替えられるようにすると、配置済みの隊員が別現場へ黙って移る。
 //
 // ⚠️ 確定済みの枠を直しても止めない。当日変更は通常業務であり、
-//   代わりに `changed_after_confirm` が立って「引き渡し直しが要る」ことが分かる
+//   代わりに**枠が「仮組み」へ戻る**（確定し直しが要ることを状態そのもので表す）
+//   🔴 2026-09-09 訂正：以前ここに「changed_after_confirm が立つ」と書いていたが、
+//   その列は同じマイグレーションで**捨てられている**。元の migration だけ読んで書いた誤り。
 //   （トリガーは 20260903120000_revert_shift_to_draft_on_change.sql）。
 // ─────────────────────────────────────────────────────────
 export async function updateShift(input: {

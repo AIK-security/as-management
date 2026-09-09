@@ -10,6 +10,7 @@
 // ⚠️ 暫定方針であり確定ではない（screen-design.md §4-1）。9/16 の管制ヒアリングで詰める。
 import { createClient } from "@/lib/supabase/server";
 import type { BoardShiftGroup } from "@/lib/board";
+import { todayInJst } from "@/lib/board-format";
 // 🔴 型と差し込みは notice-format 側に置く（クライアントからも読むため）。
 //   ここで再輸出しておくと、サーバ側は "@/lib/notices" だけを見ればよい。
 import type { MessageTemplate, NoticeChannel, NoticeTarget } from "@/lib/notice-format";
@@ -21,6 +22,11 @@ const GROUP_WORK_KINDS: Record<BoardShiftGroup, string[]> = {
   day: ["day", "dayCancel"],
   night: ["nightA", "nightB", "nightCancel"],
 };
+
+/** timestamptz を JST の YYYY-MM-DD にする（Vercel は UTC で動くため素の Date に任せない） */
+function jstDay(ts: string): string {
+  return new Date(new Date(ts).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
 
 function hhmm(h: number, m: number) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -38,6 +44,7 @@ export async function getNoticeTargets(
   group: BoardShiftGroup,
 ): Promise<NoticeTarget[]> {
   const supabase = await createClient();
+  const jstToday = todayInJst();
 
   const { data, error } = await supabase
     .from("assignments")
@@ -50,7 +57,7 @@ export async function getNoticeTargets(
        ),
        shift:shifts!inner (
          id, work_date, jurisdiction_id, work_kind, band_name, plan_comment,
-         start_h, start_m, end_h, end_m, cancelled_at, changed_after_confirm,
+         start_h, start_m, end_h, end_m, cancelled_at, status, updated_at,
          site:sites ( name )
        )`,
     )
@@ -80,7 +87,8 @@ export async function getNoticeTargets(
       end_h: number;
       end_m: number;
       cancelled_at: string | null;
-      changed_after_confirm: boolean;
+      status: string;
+      updated_at: string;
       site: { name: string } | null;
     } | null;
   };
@@ -118,8 +126,10 @@ export async function getNoticeTargets(
       endText: hhmm(r.shift.end_h, r.shift.end_m),
       planComment: r.shift.plan_comment,
       shiftId: r.shift.id,
-      changedAfterConfirm: r.shift.changed_after_confirm,
       cancelled: r.shift.cancelled_at !== null,
+      isDraft: r.shift.status === "draft",
+      // updated_at は timestamptz。JST の「今日」と突き合わせる
+      updatedToday: jstDay(r.shift.updated_at) === jstToday,
     });
   }
 

@@ -46,6 +46,9 @@ export function NoticeComposer({
   const [body, setBody] = useState(templates[0]?.body ?? "");
   // 🔴 当日変更の連絡は「動いた人だけ」に出せる必要がある。
   //   漏れる原因は誰が動いたかを人が拾えないことなので、ここが自動で絞れるのが本体。
+  //
+  // ⚠️ ただし「確定後に変更された」は直接は知れない（notice-format.ts の注記）。
+  //   **今日この枠が動いたか（updated_at）**で近似している。
   const [changedOnly, setChangedOnly] = useState(false);
   const [siteFilter, setSiteFilter] = useState("");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
@@ -62,7 +65,7 @@ export function NoticeComposer({
 
   const visible = targets.filter(
     (t) =>
-      (!changedOnly || t.changedAfterConfirm || t.cancelled) &&
+      (!changedOnly || t.updatedToday || t.cancelled) &&
       (siteFilter === "" || t.siteName === siteFilter),
   );
   const selected = visible.filter((t) => !excluded.has(t.guardId));
@@ -213,7 +216,7 @@ export function NoticeComposer({
                 onChange={(e) => setChangedOnly(e.target.checked)}
                 className="h-4 w-4 rounded border-slate-300"
               />
-              変更・中止のみ
+              今日動いた枠のみ
             </label>
           </div>
         </div>
@@ -253,9 +256,14 @@ export function NoticeComposer({
                           中止
                         </span>
                       )}
-                      {t.changedAfterConfirm && !t.cancelled && (
+                      {t.updatedToday && !t.cancelled && (
                         <span className="t-badge rounded bg-amber-100 px-1 py-0.5 text-amber-800">
-                          変更
+                          本日更新
+                        </span>
+                      )}
+                      {t.isDraft && !t.cancelled && (
+                        <span className="t-badge rounded bg-slate-100 px-1 py-0.5 text-slate-600">
+                          仮組み
                         </span>
                       )}
                     </span>

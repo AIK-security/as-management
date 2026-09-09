@@ -95,10 +95,10 @@ export function ShiftEditDialog({
         </div>
 
         {shift.status === "confirmed" && (
-          // 🔴 止めはしない。当日変更は通常業務。ただし引き渡し直しが要ることは言う
+          // 🔴 止めはしない。当日変更は通常業務。ただし確定し直しが要ることは言う
           <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[13px] text-amber-900">
-            確定済みの枠です。直すと<span className="font-semibold">引き渡しをやり直す必要</span>
-            があります。
+            確定済みの枠です。直すと
+            <span className="font-semibold">仮組みに戻ります</span>（確定し直しが要ります）。
           </p>
         )}
 
