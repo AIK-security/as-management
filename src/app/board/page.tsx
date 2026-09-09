@@ -19,8 +19,7 @@
 //    ReactNode として BoardDnd に差し込む（クライアントに Link の生成を持ち込まない）。
 
 import Link from "next/link";
-import { requireStaff, canEdit, roleLabel } from "@/lib/auth";
-import { logout } from "@/app/login/actions";
+import { requireStaff, canEdit } from "@/lib/auth";
 import { WarningsPane } from "@/components/board/BoardPanes";
 import { BoardDnd } from "@/components/board/BoardDnd";
 import { ConfirmAllButton } from "@/components/board/ConfirmAllButton";
@@ -156,7 +155,7 @@ export default async function BoardPage({
     "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
 
   return (
-    <div className="flex h-screen flex-col bg-slate-100">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* ══ ヘッダ ═══════════════════════════════════════════ */}
       <header className="flex shrink-0 items-center gap-3 border-b-2 border-slate-300 bg-white px-4 py-2.5 shadow-sm">
         <div className="flex items-center gap-1">
@@ -258,31 +257,8 @@ export default async function BoardPage({
             </>
           )}
 
-          {/* 🔴 マスタは全ロールが「見る」ことはできる（RLS も is_staff()）。
-              編集の可否は各マスタ画面の中で分ける（ここでは出し分けない）。 */}
-          <Link
-            href="/masters/sites"
-            className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
-          >
-            マスタ
-          </Link>
-
-          <div className="ml-1 flex items-center gap-2 border-l-2 border-slate-200 pl-3">
-            <div className="flex flex-col items-end leading-tight">
-              <span className="text-[14px] font-semibold text-slate-800">
-                {profile.display_name ?? "（氏名未設定）"}
-              </span>
-              <span className="t-meta text-slate-500">{roleLabel[profile.role]}</span>
-            </div>
-            <form action={logout}>
-              <button
-                type="submit"
-                className="rounded-md border-2 border-slate-300 bg-white px-2.5 py-1.5 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
-              >
-                ログアウト
-              </button>
-            </form>
-          </div>
+          {/* 🔴 行き先（マスタ）・氏名・ログアウトは**左サイドバーへ移した**（2026-09-09）。
+              ここに残すのは「この画面の操作」だけ。 */}
         </div>
       </header>
 
