@@ -19,6 +19,7 @@
 //   見た目のコードは一切変えていない ─ **ドラッグの取っ手を外側に足しただけ**。
 "use client";
 
+import { useRouter } from "next/navigation";
 // 🔴 資格ラベルは board.ts で畳んである（qualLabels）。
 //   プレートを描くたびにマスタを引かせない（1日 約150枚 描く画面のため）。
 import { useDraggable } from "@dnd-kit/core";
@@ -58,12 +59,21 @@ function QualBadge({ label }: { label: string }) {
 }
 
 export function Plate({ plate }: { plate: PlateView }) {
+  const router = useRouter();
   const hasNg = plate.ngReasons.length > 0;
   const quals = plate.qualLabels;
 
   return (
     <div
-      title={hasNg ? plate.ngReasons.join(" / ") : undefined}
+      // 🔴 隊員マスタへはダブルクリックで飛ぶ（2026-09-09・柴山の要望）。
+      //   プレートは掴んで動かすものなので、<Link> やシングルクリックにすると
+      //   ドラッグの開始と取り合いになる。一覧のダブルクリックとも作法が揃う。
+      onDoubleClick={() => router.push(`/masters/guards/${plate.guard.id}`)}
+      title={
+        hasNg
+          ? plate.ngReasons.join(" / ") + "／ダブルクリックで隊員マスタ"
+          : "ダブルクリックで隊員マスタを開く"
+      }
       className={[
         PLATE_BOX,
         "cursor-grab select-none transition-all duration-150 ease-in-out hover:shadow-md",

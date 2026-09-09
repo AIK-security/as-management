@@ -35,6 +35,7 @@ import {
 } from "@dnd-kit/core";
 import { Plate, PoolPlate, DraggablePoolPlate } from "@/components/board/Plate";
 import { ShiftRowCard } from "@/components/board/ShiftRowCard";
+import { ShiftEditDialog } from "@/components/board/ShiftEditDialog";
 import { PoolPane } from "@/components/board/BoardPanes";
 import { PaneHeading } from "@/components/board/PaneHeading";
 import { useBoardKeys } from "@/components/board/useBoardKeys";
@@ -386,6 +387,13 @@ export function BoardDnd({
   // 🔴 「Enter で置かれる1名」を光らせるのは、検索欄に居るときだけ。
   //   常に光らせると、盤面を触っている間ずっと関係のない1枚が目立つ
   const [searchFocused, setSearchFocused] = useState(false);
+  // 🔴 開いている枠の編集ダイアログ（2026-09-09）。
+  //   楽観更新の state ではなく **サーバの値** を出したいので id だけ持ち、
+  //   中身は state.rows から引く（保存すると refresh() で描き直される）。
+  const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
+  // 🔴 rows は props（サーバの値）から引く。楽観 state ではないので、
+  //   保存後に refresh() が走れば正しい値で開き直る。
+  const editingShift = editingShiftId ? rows.find((r) => r.shift.id === editingShiftId) : null;
 
   // 🔴 マウスを少し動かすまでドラッグを始めない。
   //   0 にすると確定バッジのクリックがドラッグとして食われる。
@@ -592,6 +600,7 @@ export function BoardDnd({
                   onToggleStatus={handleToggleStatus}
                   onToggleCancel={handleToggleCancel}
                   onDelete={handleDeleteShift}
+                  onEdit={setEditingShiftId}
                   onSelect={handleSelect}
                   onSetRole={handleSetRole}
                 />
@@ -774,6 +783,17 @@ export function BoardDnd({
             閉じる
           </button>
         </div>
+      )}
+
+      {/* ── 枠の編集（2026-09-09） ─────────────────────────
+          🔴 「それぞれの枠から確認・編集」（柴山）への対応。
+             カードの「編集」から開く。現場そのものは差し替えない。 */}
+      {editingShift && (
+        <ShiftEditDialog
+          shift={editingShift.shift}
+          siteName={editingShift.site.name}
+          onClose={() => setEditingShiftId(null)}
+        />
       )}
     </DndContext>
   );

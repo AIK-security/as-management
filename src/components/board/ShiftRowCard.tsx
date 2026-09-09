@@ -49,6 +49,7 @@
 //   色も分ける ── ドロップ先は ring（掴んでいる間だけ）、選択は outline（居座る）。
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { DraggablePlate, EmptySlot } from "@/components/board/Plate";
@@ -64,6 +65,7 @@ export function ShiftRowCard({
   onToggleStatus,
   onToggleCancel,
   onDelete,
+  onEdit,
   onSelect,
   onSetRole,
 }: {
@@ -80,6 +82,9 @@ export function ShiftRowCard({
   onToggleCancel?: (shiftId: string, cancelled: boolean) => void;
   /** 枠そのものを消す（2026-09-07）。中止とは別 ─ 間違えて作った枠を片づけるため */
   onDelete?: (shiftId: string) => void;
+  /** 🔴 枠の中身を直す（2026-09-09）。時刻・人数・班名・コメントをここから開く。
+      これが無いと、5分ずらすだけでも枠を消して作り直すことになっていた */
+  onEdit?: (shiftId: string) => void;
   /** クリックでも選べるようにする。assignmentId が null なら枠だけの選択 */
   onSelect?: (shiftId: string, assignmentId: string | null) => void;
   onSetRole?: (assignmentId: string, role: AssignmentRole) => void;
@@ -144,9 +149,21 @@ export function ShiftRowCard({
       >
         {/* 得意先は現場名の**上**に小さく置く。
             会社 → 現場 の順で読め、主役（現場名）の大きさを譲らずに済む */}
+        {/* 🔴 枠からマスタ詳細へ飛べるようにする（2026-09-09・柴山の要望）。
+            配置中に「この現場の必要資格は？」「この得意先の請求番号は？」が出たとき、
+            一覧まで戻って探し直すことになっていた。 */}
         {showCustomer && (
           <div className="t-meta truncate text-slate-500" title={customer?.name ?? ""}>
-            {customer?.name ?? "（得意先が未設定）"}
+            {customer ? (
+              <Link
+                href={`/masters/customers/${customer.id}`}
+                className="transition-all duration-150 ease-in-out hover:text-indigo-700 hover:underline"
+              >
+                {customer.name}
+              </Link>
+            ) : (
+              "（得意先が未設定）"
+            )}
           </div>
         )}
 
@@ -154,14 +171,17 @@ export function ShiftRowCard({
           {/* 現場名は主役。狭い箱では2行まで折り返す（省略すると別現場と見分けがつかない） */}
           {/* 🔴 中止は現場名に取り消し線を引く。バッジだけだと流し見で拾えず、
               40枚並んだ画面では「中止なのに人を探し続ける」が起きる */}
-          <span
+          <Link
+            href={`/masters/sites/${site.id}`}
+            title="現場マスタを開く"
             className={[
               "t-site line-clamp-2 min-w-0 flex-1",
+              "transition-all duration-150 ease-in-out hover:text-indigo-700 hover:underline",
               cancelled ? "text-slate-400 line-through" : "text-slate-900",
             ].join(" ")}
           >
             {site.name}
-          </span>
+          </Link>
           {/* 🔴 状態バッジをそのまま押せるようにした（2026-09-03）。
               別にボタンを足すと、状態を見る場所と変える場所が離れる。
               確定は取り消せる（差し戻し・screen-design.md §2-6）。
@@ -215,6 +235,19 @@ export function ShiftRowCard({
               ].join(" ")}
             >
               中止
+            </button>
+          )}
+          {editable && onEdit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(shift.id);
+              }}
+              title="この枠の時刻・人数・班名・コメントを直す"
+              className="t-badge shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500 transition-all duration-150 ease-in-out hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+            >
+              編集
             </button>
           )}
           {editable && onDelete && (

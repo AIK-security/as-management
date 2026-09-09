@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { addShift } from "@/app/board/actions";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
+import { addDays } from "@/lib/board-format";
 import type { BoardShiftGroup, SitePick } from "@/lib/board";
 import type { WorkKind } from "@/lib/types";
 
@@ -58,6 +59,39 @@ export function AddShiftDialog({
   const [endM, setEndM] = useState(0);
   const [breakMin, setBreakMin] = useState(60);
   const [headcount, setHeadcount] = useState(1);
+  // 🔴 2026-09-09 追加。現行の入力UI（`管制雛形` D〜U列）にあって無かった項目。
+  //   これが無いと、作った枠を直すのにマスタまで行くしかなかった。
+  const [bandName, setBandName] = useState("");
+  const [planComment, setPlanComment] = useState("");
+  const [billingNote, setBillingNote] = useState("");
+
+  // 🔴 日付は「この日だけ」と「期間」を選べる（2026-09-09・柴山の指摘）。
+  //   毎日ある現場を1か月ぶん立てるのに、同じ入力を30回くり返していた。
+  //   A表が週表であることからも、枠は期間で立つほうが業務に近い。
+  const [range, setRange] = useState(false);
+  // 🔴 null = まだ触っていない。**表示している日から導く**。
+  //   state に初期値を焼き付けると、日付を送ってから開いたときに前の日が残る
+  //   （effect で上書きする手もあるが、描画のたびに state を書くことになる）。
+  const [dateFromInput, setDateFrom] = useState<string | null>(null);
+  const [dateToInput, setDateTo] = useState<string | null>(null);
+  const dateFrom = dateFromInput ?? workDate;
+  const dateTo = dateToInput ?? addDays(workDate, 6);
+  // 曜日の絞り込み。0=日 … 6=土。既定は全部
+  const [dows, setDows] = useState<boolean[]>([true, true, true, true, true, true, true]);
+
+  // 実際に作る日付。期間なら曜日で絞る
+  const targetDates = (() => {
+    if (!range) return [workDate];
+    if (dateTo < dateFrom) return [];
+    const out: string[] = [];
+    // 上限を切る。指定ミスで何百件も作らせない
+    for (let d = dateFrom, i = 0; d <= dateTo && i < 200; d = addDays(d, 1), i++) {
+      // 🔴 曜日は UTC で読む。`new Date("2026-09-09")` は UTC 0時なので、
+      //   getDay() だと JST では前日扱いになりうる（board 側と同じ落とし穴）。
+      if (dows[new Date(d + "T00:00:00Z").getUTCDay()]) out.push(d);
+    }
+    return out;
+  })();
   // 新規現場のときだけ使う。既存現場は現場マスタ側が得意先を持っている
   const [customerId, setCustomerId] = useState("");
 
@@ -85,6 +119,8 @@ export function AddShiftDialog({
     if (site.plan_end_h !== null) setEndH(site.plan_end_h);
     if (site.plan_end_m !== null) setEndM(site.plan_end_m);
     if (site.plan_break !== null) setBreakMin(site.plan_break);
+    // 班名も現場マスタの既定値を入れる（現行の入力UIと同じ挙動）
+    setBandName(site.band_name ?? "");
   }
 
   function reset() {
@@ -94,6 +130,8 @@ export function AddShiftDialog({
     setCursor(0);
     setCustomerId("");
     setError(null);
+    setDateFrom(null);
+    setDateTo(null);
   }
 
   async function submit() {
@@ -104,7 +142,7 @@ export function AddShiftDialog({
       newSiteName: picked ? undefined : query.trim(),
       newSiteCustomerId: picked ? undefined : customerId || undefined,
       jurisdictionId,
-      workDate,
+      workDates: targetDates,
       workKind,
       startH,
       startM,
@@ -112,10 +150,23 @@ export function AddShiftDialog({
       endM,
       breakMin,
       headcount,
+      bandName,
+      planComment,
+      billingNote,
     });
     setPending(false);
     if (!result.ok) {
       setError(result.message ?? "追加できませんでした。");
+      return;
+    }
+    // 🔴 1件も作られなかったときは画面を動かさずに理由を出す。
+    //   黙って閉じると「押したのに増えない」に見える。
+    if (result.created === 0) {
+      setError(
+        result.skipped > 0
+          ? `すでに同じ枠があるため、${result.skipped}件とも追加しませんでした。`
+          : "追加する日がありません。期間と曜日を見直してください。",
+      );
       return;
     }
 
@@ -144,7 +195,9 @@ export function AddShiftDialog({
     );
   }
 
-  const canSubmit = (picked !== null || query.trim().length > 0) && !pending;
+  // 🔴 作る日が0件のときは押させない（期間の指定ミス・全曜日オフ）
+  const canSubmit =
+    (picked !== null || query.trim().length > 0) && !pending && targetDates.length > 0;
 
   return (
     <div className="relative">
@@ -255,6 +308,89 @@ export function AddShiftDialog({
           </label>
         )}
 
+        {/* ── 日付（2026-09-09 追加） ────────────────────────
+            🔴 これまで「表示している日」に1件だけ作る作りだった。
+               毎日ある現場を月ぶん立てるのに同じ入力を30回くり返すことになる。 */}
+        <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-slate-500">日付</span>
+            <div className="flex overflow-hidden rounded-md border border-slate-300">
+              {[
+                { v: false, label: "この日だけ" },
+                { v: true, label: "期間で作る" },
+              ].map((o) => (
+                <button
+                  key={String(o.v)}
+                  type="button"
+                  onClick={() => setRange(o.v)}
+                  className={[
+                    "px-2.5 py-1 text-[13px] font-semibold transition-all duration-150 ease-in-out",
+                    range === o.v
+                      ? "bg-indigo-600 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {!range && (
+              <span className="font-mono text-[14px] tabular-nums text-slate-700">{workDate}</span>
+            )}
+          </div>
+
+          {range && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className={FIELD}
+              />
+              <span className="text-slate-400">〜</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className={FIELD}
+              />
+
+              {/* 曜日。休工日を外して立てるのに要る */}
+              <div className="flex overflow-hidden rounded-md border border-slate-300">
+                {["日", "月", "火", "水", "木", "金", "土"].map((label, i) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setDows(dows.map((d, j) => (i === j ? !d : d)))}
+                    className={[
+                      "w-8 py-1 text-[13px] font-semibold transition-all duration-150 ease-in-out",
+                      dows[i]
+                        ? "bg-slate-700 text-white"
+                        : "bg-white text-slate-400 hover:bg-slate-100",
+                      i === 0 && dows[i] ? "bg-rose-600" : "",
+                      i === 6 && dows[i] ? "bg-sky-600" : "",
+                    ].join(" ")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setDows([false, true, true, true, true, true, false])}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[12px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
+              >
+                平日だけ
+              </button>
+
+              {/* 🔴 何件できるのかを押す前に出す。数百件を黙って作らせない */}
+              <span className="ml-auto text-[13px] font-semibold text-slate-700">
+                {targetDates.length} 件ぶん
+              </span>
+            </div>
+          )}
+        </div>
+
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-0.5">
             <span className="text-[11px] font-medium text-slate-500">勤務区分</span>
@@ -309,6 +445,41 @@ export function AddShiftDialog({
               className={FIELD + " w-16 text-right font-mono"}
             />
           </label>
+
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-slate-500">班名</span>
+            <input
+              value={bandName}
+              onChange={(e) => setBandName(e.target.value)}
+              className={FIELD + " w-24"}
+            />
+          </label>
+        </div>
+
+        {/* 🔴 予定コメントと請求備考は手入力（現場マスタには無い）。
+            予定コメントは集合場所など、請求備考は第2弾（請求）で使う。
+            どちらも投入CSV 18列に含まれる（14・18列目）。 */}
+        <div className="mt-2 flex gap-2">
+          <label className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-slate-500">
+              予定コメント <span className="font-normal text-slate-400">集合場所など</span>
+            </span>
+            <input
+              value={planComment}
+              onChange={(e) => setPlanComment(e.target.value)}
+              className={FIELD + " w-full"}
+            />
+          </label>
+          <label className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-slate-500">
+              請求備考 <span className="font-normal text-slate-400">第2弾で使う</span>
+            </span>
+            <input
+              value={billingNote}
+              onChange={(e) => setBillingNote(e.target.value)}
+              className={FIELD + " w-full"}
+            />
+          </label>
         </div>
 
         {error && (
@@ -329,7 +500,11 @@ export function AddShiftDialog({
                 : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400",
             ].join(" ")}
           >
-            {pending ? "追加中…" : "追加する"}
+            {pending
+              ? "追加中…"
+              : range
+                ? `${targetDates.length}件を追加する`
+                : "追加する"}
           </button>
           <button
             type="button"

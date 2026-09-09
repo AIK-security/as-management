@@ -147,6 +147,12 @@ async function describeOverlaps(
   return [...messages];
 }
 
+/** 空文字は null にする。text 列に "" を入れると「空欄」と「未設定」が混ざる。 */
+function orNullText(v: string | undefined): string | null {
+  const t = (v ?? "").trim();
+  return t === "" ? null : t;
+}
+
 /** 配置を編集できるロールであることを確かめ、クライアントを返す */
 async function editorClient() {
   await requireRole("control", "admin");
@@ -390,6 +396,11 @@ export async function setShiftCancelled(input: {
 //   ⚠️ 仮番号のままでは ShiftMax へ渡せない（段3）。
 //      「番号は誰がいつ決めるのか」は管制・事務に要確認。
 // ─────────────────────────────────────────────────────────
+/** 枠の追加結果。**何件作って何件飛ばしたか**を画面で言うために持つ */
+export type AddShiftResult =
+  | { ok: true; created: number; skipped: number }
+  | { ok: false; message: string };
+
 export async function addShift(input: {
   /** 既存現場を選んだ場合 */
   siteId?: string;
@@ -398,7 +409,13 @@ export async function addShift(input: {
   /** 新規現場の得意先。ShiftMax 由来のマスタから選ぶ（ここで新規作成はしない） */
   newSiteCustomerId?: string;
   jurisdictionId: string;
-  workDate: string;
+  /**
+   * 🔴 作る日。**複数日をまとめて作れる**（2026-09-09）。
+   *   これまで1日1件しか作れず、「毎日ある現場」を1か月ぶん立てるのに
+   *   同じ入力を30回くり返すことになっていた（柴山の指摘）。
+   *   A表が週表であることからも、枠は**期間で立つのが自然**。
+   */
+  workDates: string[];
   workKind: WorkKind;
   startH: number;
   startM: number;
@@ -406,9 +423,19 @@ export async function addShift(input: {
   endM: number;
   breakMin: number;
   headcount: number;
-}): Promise<ActionResult> {
+  // 🔴 2026-09-09 追加。現行の入力UI（`管制雛形` D〜U列）にあって、こちらに無かった項目。
+  //   班名は現場マスタの既定値がベース、予定コメント・請求備考は手入力（§8-2）。
+  //   投入CSV 18列のうち 5:班名 / 14:予定コメント / 18:請求備考 に対応する。
+  bandName?: string;
+  planComment?: string;
+  billingNote?: string;
+}): Promise<AddShiftResult> {
   await requireRole("control", "admin");
   const supabase = await createClient();
+
+  // 重複を防ぐため日付は正規化して重複を落とす
+  const dates = [...new Set(input.workDates)].filter((d) => d).sort();
+  if (dates.length === 0) return { ok: false, message: "日付を選んでください。" };
 
   let siteId = input.siteId;
 
@@ -440,23 +467,45 @@ export async function addShift(input: {
     siteId = created.id;
   }
 
-  const { error } = await supabase.from("shifts").insert({
-    site_id: siteId,
-    work_date: input.workDate,
-    jurisdiction_id: input.jurisdictionId,
-    work_kind: input.workKind,
-    headcount: input.headcount,
-    start_h: input.startH,
-    start_m: input.startM,
-    end_h: input.endH,
-    end_m: input.endM,
-    break_min: input.breakMin,
-    status: "draft",
-  });
-  if (error) return { ok: false, message: toMessage(error) };
+  // 🔴 同じ現場・同じ日・同じ区分の枠が既にあれば**作らない**。
+  //   期間を延ばして作り直すたびに枠が二重に増えると、盤面が壊れる。
+  //   DB に一意制約は無いので（board_core.sql）、ここで見る。
+  const { data: existing, error: exErr } = await supabase
+    .from("shifts")
+    .select("work_date")
+    .eq("site_id", siteId)
+    .eq("work_kind", input.workKind)
+    .in("work_date", dates);
+  if (exErr) return { ok: false, message: toMessage(exErr) };
+  const already = new Set((existing ?? []).map((r) => r.work_date as string));
+
+  const rows = dates
+    .filter((d) => !already.has(d))
+    .map((d) => ({
+      site_id: siteId,
+      work_date: d,
+      jurisdiction_id: input.jurisdictionId,
+      work_kind: input.workKind,
+      headcount: input.headcount,
+      start_h: input.startH,
+      start_m: input.startM,
+      end_h: input.endH,
+      end_m: input.endM,
+      break_min: input.breakMin,
+      band_name: orNullText(input.bandName),
+      plan_comment: orNullText(input.planComment),
+      billing_note: orNullText(input.billingNote),
+      status: "draft",
+    }));
+
+  if (rows.length > 0) {
+    const { error } = await supabase.from("shifts").insert(rows);
+    if (error) return { ok: false, message: toMessage(error) };
+  }
 
   refresh();
-  return { ok: true };
+  // 🔴 何件作って何件飛ばしたかを返す。黙って飛ばすと「作ったのに出ない」に見える
+  return { ok: true, created: rows.length, skipped: dates.length - rows.length };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -479,6 +528,62 @@ export async function deleteShift(input: { shiftId: string }): Promise<ActionRes
   const supabase = await editorClient();
 
   const { error } = await supabase.from("shifts").delete().eq("id", input.shiftId);
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 枠を直す（2026-09-09）
+//
+// 🔴 なぜ要るのか（柴山・2026-09-09）
+//   「情報をそれぞれの枠から確認や編集ができないと使えたもんじゃない」。
+//   これまで枠は**作る・中止する・消す**しかできず、時刻や人数を1つ直すために
+//   枠を消して作り直すしかなかった。当日変更は通常業務（screen-design.md §2-7）なので、
+//   そこが直せないのは致命的だった。
+//
+// 🔴 現場そのものは変えない。枠の付け替え（別現場へ移す）は「消して作る」でよい。
+//   ここで現場を差し替えられるようにすると、配置済みの隊員が別現場へ黙って移る。
+//
+// ⚠️ 確定済みの枠を直しても止めない。当日変更は通常業務であり、
+//   代わりに `changed_after_confirm` が立って「引き渡し直しが要る」ことが分かる
+//   （トリガーは 20260903120000_revert_shift_to_draft_on_change.sql）。
+// ─────────────────────────────────────────────────────────
+export async function updateShift(input: {
+  shiftId: string;
+  workKind: WorkKind;
+  headcount: number;
+  startH: number;
+  startM: number;
+  endH: number;
+  endM: number;
+  breakMin: number;
+  bandName: string;
+  planComment: string;
+  billingNote: string;
+}): Promise<ActionResult> {
+  const supabase = await editorClient();
+
+  if (!Number.isFinite(input.headcount) || input.headcount < 1) {
+    return { ok: false, message: "必要人数は1以上で入れてください。" };
+  }
+
+  const { error } = await supabase
+    .from("shifts")
+    .update({
+      work_kind: input.workKind,
+      headcount: input.headcount,
+      start_h: input.startH,
+      start_m: input.startM,
+      end_h: input.endH,
+      end_m: input.endM,
+      break_min: input.breakMin,
+      band_name: orNullText(input.bandName),
+      plan_comment: orNullText(input.planComment),
+      billing_note: orNullText(input.billingNote),
+    })
+    .eq("id", input.shiftId);
   if (error) return { ok: false, message: toMessage(error) };
 
   refresh();
