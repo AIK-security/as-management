@@ -252,17 +252,14 @@ export default async function BoardPage({
                   **これから何ができるようになるかが見える**ほうがよいと判断し、
                   押せない状態＋説明（title）で残す。
                   🔴 実装したら disabled と「準備中」を外すこと。 */}
-              <button
-                type="button"
-                disabled
-                title="配置した隊員への一斉連絡（宛先と文面まで）。LINE 可／不可で宛先を分けて出す。送信そのものは第1弾では作らない（2026-08-27 決定）"
-                className={PENDING_BTN}
+              {/* 🔴 いま見ている日・管轄・日勤夜勤をそのまま引き継ぐ。
+                  連絡は「この盤面の人たちへ」出すものなので、条件を選び直させない */}
+              <Link
+                href={`/notices?date=${board.date}&j=${board.jurisdiction.code}&group=${board.group}`}
+                className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
               >
                 連絡作成
-                <span className="t-badge ml-1.5 rounded bg-slate-200 px-1 py-0.5 text-slate-500">
-                  準備中
-                </span>
-              </button>
+              </Link>
               <button
                 type="button"
                 disabled

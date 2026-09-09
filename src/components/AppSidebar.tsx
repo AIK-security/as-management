@@ -22,7 +22,10 @@ type Item = { href: string; label: string; match: string };
 const NAV: { heading: string; items: Item[] }[] = [
   {
     heading: "配置",
-    items: [{ href: "/board", label: "配置ボード", match: "/board" }],
+    items: [
+      { href: "/board", label: "配置ボード", match: "/board" },
+      { href: "/notices", label: "連絡作成", match: "/notices" },
+    ],
   },
   {
     heading: "マスタ",

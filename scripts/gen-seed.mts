@@ -14,6 +14,7 @@ import {
   ASSIGNMENTS,
   BOARD_DATE,
   COMPANIES,
+  GUARD_CONTACTS,
   CUSTOMERS,
   DEPARTMENTS,
   GUARDS,
@@ -43,6 +44,7 @@ const PREFIX = {
   ng: "90000000",
   guardQual: "a0000000",
   siteReqQual: "b0000000",
+  contact: "f0000000",
   pastShift: "c0000000",
   pastAssignment: "d0000000",
 } as const;
@@ -229,9 +231,16 @@ w();
 
 // 会社
 w("-- ── 会社（自社／協力会社）──────────────────────────");
-w("insert into public.companies (id, name, kind) values");
+w("insert into public.companies (id, name, kind, contact_email) values");
 w(
-  COMPANIES.map((c) => `  ('${companyUuid.get(c.id)}', ${q(c.name)}, ${q(c.kind)})`).join(",\n") +
+  // 🔴 協力会社の隊員へは所属会社経由で連絡する（2026-09-09 決定）。
+  //   会社にメールが無いと、その経路が画面で成立しない。自社には置かない。
+  COMPANIES.map(
+    (c) =>
+      `  ('${companyUuid.get(c.id)}', ${q(c.name)}, ${q(c.kind)}, ${
+        c.kind === "partner" ? q(`${c.id}@example.invalid`) : "null"
+      })`,
+  ).join(",\n") +
     ";",
 );
 w();
@@ -415,6 +424,25 @@ w("alter table public.assignments enable trigger assignments_revert_shift_to_dra
 w("alter table public.assignments enable trigger assignments_revert_shift_to_draft_upd;");
 w();
 
+// 隊員の連絡先
+// 🔴 これが空だと一斉連絡（S-03）の LINE 可／不可の振り分けが一度も発動しない。
+//   比率は実測に寄せてある（LINE が繋がらない隊員が約4割）。
+if (GUARD_CONTACTS.length) {
+  w("-- ── 隊員の連絡先 ────────────────────────────────────");
+  w(
+    "insert into public.guard_contacts (id, guard_id, kind, value, reachable, is_primary) values",
+  );
+  w(
+    GUARD_CONTACTS.map(
+      (c, i) =>
+        `  ('${uuidOf("contact", i + 1)}', '${guardUuid.get(c.guardId)}', ${q(c.kind)}, ${q(
+          c.value,
+        )}, ${c.reachable}, ${c.isPrimary})`,
+    ).join(",\n") + ";",
+  );
+  w();
+}
+
 // NG
 w("-- ── NG リスト ─────────────────────────────────────");
 w("-- 🔴 実データが存在しない（誰も仕様を持っていない・§8-3）。器の確認用");
@@ -454,6 +482,7 @@ w("union all select 'site_required_qualifications', count(*) from public.site_re
 w("union all select 'shifts', count(*) from public.shifts");
 w("union all select 'assignments', count(*) from public.assignments");
 w("union all select 'ng_entries', count(*) from public.ng_entries");
+w("union all select 'guard_contacts', count(*) from public.guard_contacts");
 w("order by 1;");
 
 mkdirSync("supabase/seed", { recursive: true });
@@ -463,7 +492,7 @@ console.log(`生成: supabase/seed/20260902_dummy_board.sql`);
 console.log(`  管轄 ${JURISDICTIONS.length} / 会社 ${COMPANIES.length} / 資格 ${QUALIFICATIONS.length}`);
 console.log(`  得意先 ${CUSTOMERS.length} / 現場 ${SITES.length} / 隊員 ${GUARDS.length}`);
 console.log(`  枠 ${SHIFTS.length}（＋過去 ${pastSiteIds.length}）/ 稼働 ${assignments.length}（＋過去 ${experiencePairs.length}）`);
-console.log(`  NG ${NG_ENTRIES.length}`);
+console.log(`  NG ${NG_ENTRIES.length} / 連絡先 ${GUARD_CONTACTS.length}`);
 if (droppedAssignmentIds.size) {
   console.log(
     `  🔴 確定どうしの時間帯が重なるため ${droppedAssignmentIds.size} 件を落とした（枠が1名不足になる）`,

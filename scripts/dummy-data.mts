@@ -508,3 +508,63 @@ export const SITE_EXPERIENCE: ReadonlySet<string> = new Set(
 );
 
 export const BOARD_DATE = WORK_DATE;
+
+/**
+ * 隊員の連絡先（2026-09-09 追加）。
+ *
+ * 🔴 これが空だと一斉連絡（S-03）の中核 ─ LINE 可／不可の振り分け ─ が
+ *   一度も発動しない。全員が「連絡先未登録」になり、画面の検証にならない。
+ *   9/8 に「情報が少ない原因は画面ではなくデータだった」を踏んだので、同じ轍を踏まない。
+ *
+ * 🔴 比率は実測に寄せる：**LINE が繋がらない隊員が約4割**（2026-08-27 管制ヒアリング）。
+ *   ここでは 5人に2人（i % 5 が 0 または 1）を LINE 不可にしている。
+ *
+ * 🔴 rng() を使わない。乱数を1回でも余計に引くと、既存のダミー（資格・配置）が
+ *   すべてずれる。並びを1件も動かさないため、添字だけで決める。
+ */
+export type GuardContact = {
+  guardId: string;
+  kind: "phone" | "line";
+  value: string;
+  reachable: boolean;
+  isPrimary: boolean;
+};
+
+export const GUARD_CONTACTS: GuardContact[] = GUARDS.flatMap((g, i) => {
+  // 17人に1人は連絡先そのものが無い ─ 取りこぼしが画面で見えるようにする
+  if (i % 17 === 3) return [];
+
+  const tail = String(1000 + i).slice(-4);
+  const rows: GuardContact[] = [
+    {
+      guardId: g.id,
+      kind: "phone",
+      value: `090-${String(1000 + i * 7).slice(-4)}-${tail}`,
+      reachable: true,
+      isPrimary: true,
+    },
+  ];
+
+  const mod = i % 5;
+  if (mod === 0) {
+    // LINE は登録してあるが繋がらない（機種変・未設定など）。これが4割の片方
+    rows.push({
+      guardId: g.id,
+      kind: "line",
+      value: `line-${g.id}`,
+      reachable: false,
+      isPrimary: false,
+    });
+  } else if (mod >= 2) {
+    // LINE が繋がる
+    rows.push({
+      guardId: g.id,
+      kind: "line",
+      value: `line-${g.id}`,
+      reachable: true,
+      isPrimary: false,
+    });
+  }
+  // mod === 1 は LINE を持たない（電話のみ）。4割のもう片方
+  return rows;
+});
