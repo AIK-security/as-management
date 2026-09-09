@@ -17,6 +17,8 @@ begin;
 
 -- 依存の順に消す。cascade は使わない（消える範囲を明示する）
 truncate table
+  public.notice_targets,
+  public.notices,
   public.assignments,
   public.ng_entries,
   public.board_reviews,

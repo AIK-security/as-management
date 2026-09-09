@@ -191,6 +191,11 @@ w("begin;");
 w();
 w("-- 依存の順に消す。cascade は使わない（消える範囲を明示する）");
 w("truncate table");
+// 🔴 連絡（S-03・20260909120000）は guards / jurisdictions を参照する。
+//   ここに並べないと "cannot truncate a table referenced in a foreign key" で止まる。
+//   ⚠️ message_templates は消さない。マイグレーションが投入した文面が失われるため。
+w("  public.notice_targets,");
+w("  public.notices,");
 w("  public.assignments,");
 w("  public.ng_entries,");
 w("  public.board_reviews,");
