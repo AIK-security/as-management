@@ -96,6 +96,22 @@
 > 依頼文 A-【3】(b) への回答は「参照先の教示」ではなく
 > **「これらの内部ライブラリを自社が使い続ける／改変する権利があるか」**の確認に読み替えるべき。
 
+> 🔴 **【2026-09-11 訂正】上表の所在は `Cargo.lock`（解決済みソース）の値である。**
+> 同日、新保守会社の回答および手元クローンの全数走査により、
+> **`Cargo.toml`（宣言）は GitHub `inv-devops`（イノベーチャー）を向いている**ことが判明した。
+>
+> ```
+> Cargo.toml : ssh://git@github.com/inv-devops/AIK-assign-netsmile-util-rs.git
+> Cargo.lock : git+ssh://git@bitbucket.org/netsmile1/netsmile-util-rs.git#0d6fb61…
+> ```
+>
+> **両方とも事実**であり、参照先が Netsmile → イノベーチャーへ移管された痕跡と解される。
+> **権利者が1社とは限らない**点が重要。
+>
+> さらに同日、`package.json` 側にも同種の私有リポジトリ参照があり、
+> **`inv-devops` 配下は計6本**（`auth-module` が7サービスで使われる＝**認証の中核**）
+> であることを確認した。→ **`ip-rights-20260911.md`**
+
 ---
 
 ## 3-2. 結果：PHP（9件）─ 2026-09-07 追補
