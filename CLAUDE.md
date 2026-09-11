@@ -299,9 +299,11 @@
 | **`docs/shiftmax-api-analysis.md`** | **ShiftMax 連携方式の解析結果（べんり君 VBA）。投入API仕様・CSV18項目・<br>マスタ構造・現行入力UI。第1弾の設計に直結** |
 | **`docs/vendor/` 以下** | **既存 AIK assign・ベンダ対応の系統（6本）** |
 | `docs/vendor/aik-assign-analysis.md` | AIK assign ソースコード分析レポート（構成・EOL・データモデル・方式判断） |
+| 🔴 **`docs/vendor/ip-rights-20260911.md`** | 🔴 **ソースコードの権利関係の整理（2026-09-11）。**<br>**開発委託契約書が存在しない**（口約束で開始）ことが判明。<br>ソースの著作権は開発元にあると推定され、**改変権が最も弱い**。<br>あわせて **`inv-devops`（イノベーチャー）配下の私有リポジトリ6本**への依存が判明<br>（`auth-module` は7サービスで使用＝**認証の中核**。Dockerfile 9本が `id_rsa` を要求）。<br>**取るべき手は覚書1枚。移管中の今しか巻けない。経営マター** |
+| **`docs/vendor/issue-tracker-review-20260911.md`** | **NSK 受領物のレビュー（課題管理表・機能一覧）。**<br>今後の確認事項は**課題管理表に一本化**される＝**ここが起点**。<br>🔴 機能一覧が **`main` ベース**（参照 167 対 51）／ISS005 は**越境なし・書き込みが未確定**／<br>ISS010 の抜け画面4件。**K列への回答案とメール文面つき** |
 | `docs/vendor/inhouse-maintenance-plan.md` | 旧目的（AIK assign 保守内製化）の検討メモ。**②案を検討する際の参照資料** |
 | **`docs/vendor/received-materials-inventory.md`** | **受領資料の全目録**（新ベンダ調査3ファイル／2023-07-31 納品物／2026-09-02 Terraform） |
-| **`docs/vendor/additional-request-20260904.md`** | **追加依頼・確認事項。A章は 2026-09-04 送付版。返信が来たらここを起点にする** |
+| **`docs/vendor/additional-request-20260904.md`** | **追加依頼・確認事項。A章は 2026-09-04 送付版。**<br>🔴 **起点は `issue-tracker-review-20260911.md` へ移った**（確認事項は課題管理表に一本化）。<br>🟠 **C章（イノベーチャー宛）は保留・送付しない**（ベンダ間は当事者同士に任せる方針） |
 | `docs/vendor/license-audit-20260904.md` | ライセンス全数監査（npm 4,508／Rust 257）。**コピーレフト系の義務なしを確認済み** |
 | 🔴 `docs/管制_別紙/` | AS 受領の管制業務資料（WB写真・A表・べんり君）**※Git 除外対象** |
 | 🔴 `docs/請求関係　業務棚卸/` | AS 受領の請求業務資料（別紙帳票①〜⑧）**※Git 除外対象** |
