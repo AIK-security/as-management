@@ -20,6 +20,7 @@
 
 import { useState, useTransition } from "react";
 import { confirmShifts } from "@/app/board/actions";
+import { callAction } from "@/lib/action-call";
 
 const BTN = "rounded-md border-2 px-3 py-1.5 text-[14px] font-semibold transition-all duration-150 ease-in-out";
 
@@ -32,8 +33,13 @@ export function ConfirmAllButton({ shiftIds }: { shiftIds: string[] }) {
   function handleConfirm() {
     setAsking(false);
     startTransition(async () => {
-      const result = await confirmShifts({ shiftIds });
-      setError(result.ok ? null : { message: result.message, details: result.details ?? [] });
+      const result = await callAction(() => confirmShifts({ shiftIds }));
+      // 🔴 通信断のときは callAction が details を持たない失敗を返す（`in` で見る）
+      setError(
+        result.ok
+          ? null
+          : { message: result.message, details: "details" in result ? (result.details ?? []) : [] },
+      );
     });
   }
 

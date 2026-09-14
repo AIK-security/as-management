@@ -18,6 +18,7 @@ import {
 } from "@/app/masters/guards/actions";
 import type { GuardQualificationRow } from "@/lib/masters";
 import { Notice, Section } from "@/components/masters/FormBits";
+import { callAction } from "@/lib/action-call";
 
 type Option = { id: string; short_label: string; name: string; has_expiry: boolean };
 
@@ -52,7 +53,7 @@ export function GuardQualificationList({
   async function run(fn: () => Promise<{ ok: true } | { ok: false; message: string }>) {
     setPending(true);
     setError(null);
-    const r = await fn();
+    const r = await callAction(fn);
     setPending(false);
     if (!r.ok) setError(r.message);
     return r.ok;

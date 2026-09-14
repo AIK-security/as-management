@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
 import { updateShift } from "@/app/board/actions";
 import type { Shift, WorkKind } from "@/lib/types";
+import { callAction } from "@/lib/action-call";
 
 const FIELD =
   "h-9 rounded-md border border-slate-300 px-2 text-[14px] text-slate-900 transition-all duration-150 ease-in-out focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
@@ -58,7 +59,7 @@ export function ShiftEditDialog({
   async function save() {
     setPending(true);
     setError(null);
-    const r = await updateShift({
+    const r = await callAction(() => updateShift({
       shiftId: shift.id,
       workKind,
       headcount,
@@ -70,7 +71,7 @@ export function ShiftEditDialog({
       bandName,
       planComment,
       billingNote,
-    });
+    }));
     setPending(false);
     if (!r.ok) {
       setError(r.message);

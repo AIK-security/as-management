@@ -9,11 +9,21 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult = { ok: true } | { ok: false; message: string };
+
+/**
+ * 作成系の戻り値。**作った行の id を返す。**
+ *
+ * 🔴 以前はここで `redirect()` していたが、Next 16 は Server Action の
+ *   内部リダイレクトを「クライアント側の Promise の reject」で返すだけで、
+ *   素の `onClick` から `await` している呼び出しには**どこにも届かない**
+ *   （＝作成はできるのに画面が動かず、ボタンが固まる）。
+ *   遷移は画面側が `useRouter()` で行う。詳細は `src/lib/action-call.ts`。
+ */
+export type CreatedResult = { ok: true; id: string } | { ok: false; message: string };
 
 function toMessage(error: { code?: string; message: string }): string {
   if (error.code === "42501") return "この操作の権限がありません。";
@@ -87,7 +97,8 @@ export async function deleteCustomer(input: { id: string }): Promise<ActionResul
   const { error } = await supabase.from("customers").delete().eq("id", input.id);
   if (error) return { ok: false, message: toMessage(error) };
 
-  redirect("/masters/customers");
+  refresh();
+  return { ok: true };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -107,7 +118,7 @@ export async function createCustomer(input: {
   staffCode: string;
   nameKana: string;
   contactName: string;
-}): Promise<ActionResult> {
+}): Promise<CreatedResult> {
   await requireRole("control", "admin");
 
   const name = input.name.trim();
@@ -129,5 +140,6 @@ export async function createCustomer(input: {
     .single();
   if (error) return { ok: false, message: toMessage(error) };
 
-  redirect(`/masters/customers/${data.id}`);
+  refresh();
+  return { ok: true, id: data.id as string };
 }

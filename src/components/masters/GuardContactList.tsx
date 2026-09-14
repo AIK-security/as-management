@@ -12,6 +12,7 @@ import { useState } from "react";
 import { deleteGuardContact, saveGuardContact } from "@/app/masters/guards/actions";
 import type { GuardContactRow } from "@/lib/masters";
 import { Notice, Section } from "@/components/masters/FormBits";
+import { callAction } from "@/lib/action-call";
 
 const KINDS: { value: string; label: string }[] = [
   { value: "phone", label: "電話" },
@@ -39,7 +40,7 @@ export function GuardContactList({
   async function run(fn: () => Promise<{ ok: true } | { ok: false; message: string }>) {
     setPending(true);
     setError(null);
-    const r = await fn();
+    const r = await callAction(fn);
     setPending(false);
     if (!r.ok) setError(r.message);
     return r.ok;

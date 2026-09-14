@@ -19,6 +19,7 @@ import {
 } from "@/app/masters/sites/actions";
 import type { SiteNgRow, SiteQualificationRow, SiteShiftRow } from "@/lib/masters";
 import { Notice, Section } from "@/components/masters/FormBits";
+import { callAction } from "@/lib/action-call";
 
 const CELL = "h-8 w-full rounded border border-slate-300 px-1.5 text-[13px] text-slate-900";
 const TH =
@@ -153,7 +154,7 @@ export function SiteQualificationList({
   async function run(fn: () => Promise<Result>) {
     setPending(true);
     setError(null);
-    const r = await fn();
+    const r = await callAction(fn);
     setPending(false);
     if (!r.ok) setError(r.message);
     return r.ok;
@@ -343,7 +344,7 @@ export function SiteNgList({
   async function run(fn: () => Promise<Result>) {
     setPending(true);
     setError(null);
-    const r = await fn();
+    const r = await callAction(fn);
     setPending(false);
     if (!r.ok) setError(r.message);
     return r.ok;

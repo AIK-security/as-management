@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { deleteNgEntry } from "@/app/masters/ng/actions";
+import { callAction } from "@/lib/action-call";
 
 export function NgDeleteButton({ id }: { id: string }) {
   const [asking, setAsking] = useState(false);
@@ -35,7 +36,7 @@ export function NgDeleteButton({ id }: { id: string }) {
         disabled={pending}
         onClick={async () => {
           setPending(true);
-          const r = await deleteNgEntry({ id });
+          const r = await callAction(() => deleteNgEntry({ id }));
           setPending(false);
           if (!r.ok) setError(r.message);
         }}

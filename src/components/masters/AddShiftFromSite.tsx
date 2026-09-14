@@ -19,6 +19,7 @@ import { TwoDigitInput } from "@/components/TwoDigitInput";
 import type { SiteDetail } from "@/lib/masters";
 import type { WorkKind } from "@/lib/types";
 import { Notice, Section } from "@/components/masters/FormBits";
+import { callAction } from "@/lib/action-call";
 
 const FIELD =
   "h-9 rounded-md border border-slate-300 px-2 text-[14px] text-slate-900 transition-all duration-150 ease-in-out focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
@@ -64,7 +65,7 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
     setPending(true);
     setError(null);
     setDone(null);
-    const r = await addShift({
+    const r = await callAction(() => addShift({
       siteId: site.id,
       jurisdictionId: site.jurisdiction_id,
       workDates: targetDates,
@@ -78,7 +79,7 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
       bandName,
       planComment,
       billingNote,
-    });
+    }));
     setPending(false);
     if (!r.ok) {
       setError(r.message);

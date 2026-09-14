@@ -20,6 +20,7 @@ import { TwoDigitInput } from "@/components/TwoDigitInput";
 import { addDays } from "@/lib/board-format";
 import type { BoardShiftGroup, SitePick } from "@/lib/board";
 import type { WorkKind } from "@/lib/types";
+import { callAction } from "@/lib/action-call";
 
 const BTN =
   "rounded-md border-2 px-3 py-1.5 text-[14px] font-semibold transition-all duration-150 ease-in-out";
@@ -137,7 +138,7 @@ export function AddShiftDialog({
   async function submit() {
     setPending(true);
     setError(null);
-    const result = await addShift({
+    const result = await callAction(() => addShift({
       siteId: picked?.id,
       newSiteName: picked ? undefined : query.trim(),
       newSiteCustomerId: picked ? undefined : customerId || undefined,
@@ -153,7 +154,7 @@ export function AddShiftDialog({
       bandName,
       planComment,
       billingNote,
-    });
+    }));
     setPending(false);
     if (!result.ok) {
       setError(result.message ?? "追加できませんでした。");

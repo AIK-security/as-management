@@ -5,32 +5,43 @@
 //   全項目を並べると、当日の飛び込みで手が止まる。
 //   足りないぶんは、作成後に飛ばされる詳細画面で埋める。
 //
-// 🔴 成功時の遷移は Server Action 側の redirect() が行う。
-//   ここに来るのは失敗のときだけ。
+// 🔴 成功時の遷移は**この画面側**が `useRouter()` で行う（2026-09-14 変更）。
+//   以前は Server Action の `redirect()` に任せていたが、Next 16 は内部リダイレクトを
+//   クライアント側の Promise の reject で返すだけで、素の `onClick` から `await` している
+//   呼び出しには届かない。＝**現場や隊員は作られるのに画面が動かず、
+//   ボタンが「作成中…」のまま固まる**。経緯は `src/lib/action-call.ts`。
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { createSite } from "@/app/masters/sites/actions";
 import { createGuard } from "@/app/masters/guards/actions";
 import { createCustomer } from "@/app/masters/customers/actions";
 import { FIELD, Field, Notice, Section } from "@/components/masters/FormBits";
+import { callAction } from "@/lib/action-call";
 
-type Result = { ok: true } | { ok: false; message: string };
+type Created = { ok: true; id: string } | { ok: false; message: string };
 
 const SUBMIT =
   "rounded-md bg-indigo-600 px-4 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700 disabled:opacity-50";
 
-/** 3本で共通の「送信して、失敗したら理由を出す」 */
-function useSubmit() {
+/** 3本で共通の「送信して、作れたら詳細へ、失敗したら理由を出す」 */
+function useCreate(basePath: string) {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  async function run(fn: () => Promise<Result>) {
+  async function run(fn: () => Promise<Created>) {
     setPending(true);
     setError(null);
-    const r = await fn();
-    // 成功時は redirect() で抜けるので、ここに来る時点で失敗
-    setPending(false);
-    if (r && !r.ok) setError(r.message);
+    const r = await callAction(fn);
+    if (!r.ok) {
+      setPending(false);
+      setError(r.message);
+      return;
+    }
+    // 🔴 成功しても pending は戻さない。**二重に作らせないため。**
+    //   ここから詳細画面へ切り替わるので、押せないままで困らない。
+    router.push(`${basePath}/${r.id}`);
   }
   return { pending, error, run };
 }
@@ -47,7 +58,7 @@ export function SiteCreateForm({
     jurisdictions: { id: string; name: string }[];
   };
 }) {
-  const { pending, error, run } = useSubmit();
+  const { pending, error, run } = useCreate("/masters/sites");
   const [name, setName] = useState("");
   const [shortName, setShortName] = useState("");
   const [guardTargetNo, setGuardTargetNo] = useState("");
@@ -157,7 +168,7 @@ export function GuardCreateForm({
     jurisdictions: { id: string; name: string }[];
   };
 }) {
-  const { pending, error, run } = useSubmit();
+  const { pending, error, run } = useCreate("/masters/guards");
   const [name, setName] = useState("");
   const [shortName, setShortName] = useState("");
   const [nameKana, setNameKana] = useState("");
@@ -281,7 +292,7 @@ export function GuardCreateForm({
 // ─────────────────────────────────────────────────────────
 
 export function CustomerCreateForm() {
-  const { pending, error, run } = useSubmit();
+  const { pending, error, run } = useCreate("/masters/customers");
   const [name, setName] = useState("");
   const [staffCode, setStaffCode] = useState("");
   const [nameKana, setNameKana] = useState("");

@@ -50,6 +50,7 @@ import {
   type ActionResult,
 } from "@/app/board/actions";
 import type { AssignmentRole, GuardView, PlateView, ShiftRow } from "@/lib/types";
+import { callAction } from "@/lib/action-call";
 
 // ─────────────────────────────────────────────────────────
 // 楽観更新
@@ -406,11 +407,16 @@ export function BoardDnd({
   function run(move: Move, action: () => Promise<ActionResult>) {
     startTransition(async () => {
       applyMove(move);
-      const result = await action();
+      const result = await callAction(action);
       // 🔴 失敗しても画面を戻す処理は書かない。
       //   useOptimistic は transition が終わるとサーバの値に戻る＝
       //   置けなかったプレートは自動で元の場所へ帰る（§2-5「プレートが戻る」）
-      setError(result.ok ? null : { message: result.message, details: result.details ?? [] });
+      // 🔴 通信断のときは callAction が details を持たない失敗を返す（`in` で見る）
+      setError(
+        result.ok
+          ? null
+          : { message: result.message, details: "details" in result ? (result.details ?? []) : [] },
+      );
     });
   }
 

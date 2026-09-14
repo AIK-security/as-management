@@ -17,6 +17,7 @@ import { recordNotice } from "@/app/notices/actions";
 // 🔴 "@/lib/notices" ではなく notice-format から読む。
 //   あちらは next/headers に依存しており、client から import するとビルドが落ちる。
 import { fillTemplate, type MessageTemplate, type NoticeTarget } from "@/lib/notice-format";
+import { callAction } from "@/lib/action-call";
 
 const FIELD =
   "h-9 rounded-md border border-slate-300 px-2 text-[14px] text-slate-900 transition-all duration-150 ease-in-out focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
@@ -155,7 +156,7 @@ export function NoticeComposer({
   async function markSent() {
     setPending(true);
     setError(null);
-    const r = await recordNotice({
+    const r = await callAction(() => recordNotice({
       workDate,
       jurisdictionId,
       shiftGroup,
@@ -167,7 +168,7 @@ export function NoticeComposer({
         channel: t.channel,
         companyId: t.companyId,
       })),
-    });
+    }));
     setPending(false);
     if (!r.ok) {
       setError(r.message);

@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { addNgEntry } from "@/app/masters/ng/actions";
 import type { NgKind, NgReasonKind, NgSeverity } from "@/lib/masters";
+import { callAction } from "@/lib/action-call";
 
 const FIELD =
   "h-9 rounded-md border border-slate-300 px-2 text-[14px] text-slate-900 transition-all duration-150 ease-in-out focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
@@ -57,7 +58,7 @@ export function NgAddDialog({
   async function submit() {
     setPending(true);
     setError(null);
-    const result = await addNgEntry({
+    const result = await callAction(() => addNgEntry({
       kind,
       guardId,
       siteId: siteId || undefined,
@@ -65,7 +66,7 @@ export function NgAddDialog({
       reasonKind,
       reason,
       severity,
-    });
+    }));
     setPending(false);
     if (!result.ok) {
       setError(result.message);

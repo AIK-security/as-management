@@ -8,9 +8,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { deleteCustomer, updateCustomer } from "@/app/masters/customers/actions";
 import type { CustomerDetail, CustomerRefs } from "@/lib/masters";
 import { FIELD, Field, Section } from "@/components/masters/FormBits";
+import { callAction } from "@/lib/action-call";
 
 export function CustomerEditForm({
   customer,
@@ -33,6 +35,7 @@ export function CustomerEditForm({
   const [jurisdictionId, setJurisdictionId] = useState(customer.jurisdiction_id ?? "");
   const [departmentId, setDepartmentId] = useState(customer.department_id ?? "");
 
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -51,7 +54,7 @@ export function CustomerEditForm({
     setPending(true);
     setError(null);
     setSaved(false);
-    const r = await updateCustomer({
+    const r = await callAction(() => updateCustomer({
       id: customer.id,
       staffCode,
       name,
@@ -61,7 +64,7 @@ export function CustomerEditForm({
       billingName,
       jurisdictionId,
       departmentId,
-    });
+    }));
     setPending(false);
     if (!r.ok) {
       setError(r.message);
@@ -123,7 +126,13 @@ export function CustomerEditForm({
                   disabled={pending}
                   onClick={async () => {
                     setPending(true);
-                    const r = await deleteCustomer({ id: customer.id });
+                    const r = await callAction(() => deleteCustomer({ id: customer.id }));
+                    if (r.ok) {
+                      // 🔴 消したこの画面に留まっても見るものが無いので一覧へ。
+                      //   遷移は画面側で行う（`src/lib/action-call.ts`）。pending は戻さない
+                      router.push("/masters/customers");
+                      return;
+                    }
                     setPending(false);
                     // 成功時は Server Action 側で一覧へ戻すため、ここに来るのは失敗のとき
                     if (r && !r.ok) setError(r.message);

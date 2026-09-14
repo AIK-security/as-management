@@ -9,10 +9,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
 import { deleteSite, updateSite } from "@/app/masters/sites/actions";
 import type { SiteDetail, SiteRefs } from "@/lib/masters";
 import { FIELD, Field, Section } from "@/components/masters/FormBits";
+import { callAction } from "@/lib/action-call";
 
 export function SiteEditForm({
   site,
@@ -55,6 +57,7 @@ export function SiteEditForm({
   const [departmentId, setDepartmentId] = useState(site.department_id ?? "");
   const [status, setStatus] = useState(site.status);
 
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -98,7 +101,7 @@ export function SiteEditForm({
     setPending(true);
     setError(null);
     setSaved(false);
-    const r = await updateSite({
+    const r = await callAction(() => updateSite({
       id: site.id,
       siteCode,
       guardTargetNo,
@@ -120,7 +123,7 @@ export function SiteEditForm({
       jurisdictionId,
       departmentId,
       status,
-    });
+    }));
     setPending(false);
     if (!r.ok) {
       setError(r.message);
@@ -188,7 +191,13 @@ export function SiteEditForm({
                   disabled={pending}
                   onClick={async () => {
                     setPending(true);
-                    const r = await deleteSite({ id: site.id });
+                    const r = await callAction(() => deleteSite({ id: site.id }));
+                    if (r.ok) {
+                      // 🔴 消したこの画面に留まっても見るものが無いので一覧へ。
+                      //   遷移は画面側で行う（`src/lib/action-call.ts`）。pending は戻さない
+                      router.push("/masters/sites");
+                      return;
+                    }
                     setPending(false);
                     // 成功時は Server Action 側で一覧へ戻すため、ここに来るのは失敗のとき
                     if (r && !r.ok) setError(r.message);
