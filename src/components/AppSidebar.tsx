@@ -34,6 +34,7 @@ const NAV: { heading: string; items: Item[] }[] = [
       { href: "/masters/guards", label: "隊員", match: "/masters/guards" },
       { href: "/masters/customers", label: "得意先", match: "/masters/customers" },
       { href: "/masters/ng", label: "NG", match: "/masters/ng" },
+      { href: "/masters/import", label: "取込", match: "/masters/import" },
     ],
   },
 ];
