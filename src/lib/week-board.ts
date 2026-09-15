@@ -27,6 +27,7 @@ import {
   todayInJst,
   type BoardShiftGroup,
 } from "@/lib/board-format";
+import { findOverlaps } from "@/lib/overlap";
 import type {
   Assignment,
   AssignmentRole,
@@ -47,6 +48,13 @@ export type WeekPlate = {
   qualLabels: string[];
   role: AssignmentRole;
   isPartner: boolean;
+  /**
+   * 🔴 同じ隊員が同じ時間帯の別の枠にもいる。
+   *   仮組みのうちは DB が止めない（assignments_no_overlap は `is_confirmed` 付き）。
+   *   止めない代わりに**画面が必ず見せる**、が設計（board_core.sql 384行）。
+   *   週表は日をまたいで人を動かせる＝重複を作りやすいので、日別より効く。
+   */
+  overlapping: boolean;
 };
 
 /** セルの中の枠。同じ日・同じ現場に班違いで複数あることがある */
@@ -106,7 +114,7 @@ export type WeekBoardData = {
   groups: WeekGroup[];
   offRows: WeekOffRow[];
   pool: WeekPoolGuard[];
-  counts: { draft: number; confirmed: number; shortage: number };
+  counts: { draft: number; confirmed: number; shortage: number; overlap: number };
 };
 
 export type WeekBoardParams = {
@@ -116,6 +124,16 @@ export type WeekBoardParams = {
   baseDate?: string;
   jurisdictionCode?: string;
   group?: BoardShiftGroup;
+};
+
+/**
+ * 重なりを見るために planned_* まで引いた配置。
+ * 🔴 `Assignment` はこの2列を持たない（画面が使ってこなかったため）。
+ *   board.ts の `SpanRaw` と同じ作法で、必要な側がローカルに広げる。
+ */
+type AssignmentWithSpan = Assignment & {
+  planned_start_at: string | null;
+  planned_end_at: string | null;
 };
 
 /** supabase-js の埋め込み select が返す形 */
@@ -180,10 +198,14 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         .from("assignments")
         .select(
           `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
-         off_kind, lent_to_company_id, external_site_name, status`,
+         off_kind, lent_to_company_id, external_site_name, status,
+         planned_start_at, planned_end_at`,
         )
-        .gte("work_date", startDate)
-        .lte("work_date", endDate)
+        // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
+        //   20:00–06:00 の枠は隣の日の枠と重なりうる（board.ts と同じ理由）。
+        //   セルに並べるのは週の中だけで、広く取るのは重なりを見るため。
+        .gte("work_date", addDays(startDate, -1))
+        .lte("work_date", addDays(endDate, 1))
         .eq("status", "planned")
         .order("position"),
 
@@ -202,7 +224,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   }
 
   const shifts = (shiftRes.data ?? []) as unknown as WeekShiftRaw[];
-  const assignments = (assignRes.data ?? []) as Assignment[];
+  const assignments = (assignRes.data ?? []) as AssignmentWithSpan[];
   const guards = (guardsRes.data ?? []) as Guard[];
   const companies = (companiesRes.data ?? []) as Company[];
   const qualifications = (qualsRes.data ?? []) as Qualification[];
@@ -228,6 +250,24 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
       .filter((v): v is string => Boolean(v));
 
   const isPartnerOf = (g: Guard) => companyById.get(g.company_id)?.kind === "partner";
+
+  // 🔴 時間帯の重なり。**判定ではなく写し**（判定は DB の assignments_no_overlap）。
+  //   仮組みのうちは DB が止めないので、ここで見せないと誰も気づけないまま
+  //   一括確定でまとめて弾かれる。
+  const overlapIds = new Set<string>();
+  for (const [a, b] of findOverlaps(
+    assignments
+      .filter((a) => a.planned_start_at !== null && a.planned_end_at !== null)
+      .map((a) => ({
+        key: a.guard_id,
+        start: a.planned_start_at as string,
+        end: a.planned_end_at as string,
+        id: a.id,
+      })),
+  )) {
+    overlapIds.add(a.id);
+    overlapIds.add(b.id);
+  }
 
   // 枠 → 配置
   const assignsByShift = new Map<string, Assignment[]>();
@@ -273,6 +313,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
           qualLabels: qualLabelsOf(guard.id),
           role: a.role,
           isPartner: isPartnerOf(guard),
+          overlapping: overlapIds.has(a.id),
         };
       })
       .filter((p): p is WeekPlate => p !== null);
@@ -332,6 +373,8 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   const weekDaysByGuard = new Map<string, Set<string>>();
   for (const a of assignments) {
     if (a.kind === "off") continue;
+    // 🔴 取得は前後1日ぶん広い。日数は週の中だけで数える
+    if (!dateIndex.has(a.work_date)) continue;
     const set = weekDaysByGuard.get(a.guard_id) ?? new Set<string>();
     set.add(a.work_date);
     weekDaysByGuard.set(a.guard_id, set);
@@ -350,6 +393,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   let draft = 0;
   let confirmed = 0;
   let shortage = 0;
+  let overlap = 0;
   for (const row of rowBySite.values()) {
     for (const cell of row.cells) {
       for (const s of cell.shifts) {
@@ -357,6 +401,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         else draft += 1;
       }
       if (cell.shifts.length > 0 && cell.placed < cell.headcount) shortage += 1;
+      for (const s2 of cell.shifts) overlap += s2.plates.filter((p) => p.overlapping).length;
     }
   }
 
@@ -370,7 +415,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     groups,
     offRows,
     pool,
-    counts: { draft, confirmed, shortage },
+    counts: { draft, confirmed, shortage, overlap },
   };
 }
 
@@ -390,6 +435,6 @@ function emptyWeek(
     groups: [],
     offRows: [],
     pool: [],
-    counts: { draft: 0, confirmed: 0, shortage: 0 },
+    counts: { draft: 0, confirmed: 0, shortage: 0, overlap: 0 },
   };
 }

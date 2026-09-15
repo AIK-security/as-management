@@ -1,18 +1,21 @@
 // S-07 A表（週表）の表そのもの。設計は docs/screen-design.md §7-2-3。
 //
-// 🔴 第1段階は**表示だけ**。D&D はこの次（§7-2-9 の2）。
-//   いまはクライアント JS を一切使わないので、サーバコンポーネントのまま置く。
-//
 // 🔴 縦の罫線を入れる（ワークスペース共通ルールの「セル間の縦線は入れない」から外れる）。
 //   あちらは1行が1件の一覧を想定した規則で、週表は**縦も横も意味を持つ格子**である。
 //   縦線が無いと「どの日の列か」を目で追えない。A表の実物も罫線の表。
 //
 // 🔴 左端の現場列と上端の日付行は sticky で固定する。
 //   現場が縦に長く、7日が横に伸びるため、どちらかを見失うと読めなくなる。
+//
+// 🔴 D&D の受け口はここだが、DndContext は親（WeekDnd）が持つ。
+//   表とプールを**同じ context** に入れないと、プールからセルへ落とせない。
+"use client";
+
 import { Fragment } from "react";
 import Link from "next/link";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { formatTime, formatWeekDay } from "@/lib/board-format";
-import type { WeekBoardData, WeekCell } from "@/lib/week-board";
+import type { WeekBoardData, WeekCell, WeekCellShift, WeekPlate } from "@/lib/week-board";
 
 /**
  * A表の書式に合わせた丸囲み数字（①②③…）。
@@ -25,12 +28,120 @@ function circled(n: number): string {
 const TH_BASE =
   "border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-[11px] font-semibold text-slate-500";
 
-function Cell({ cell, dayHref }: { cell: WeekCell; dayHref: string }) {
-  const shortage = cell.shifts.length > 0 ? cell.headcount - cell.placed : 0;
+// ─────────────────────────────────────────────────────────
+// 配置された隊員1名（つかんで動かせる）
+// ─────────────────────────────────────────────────────────
+function PlateChip({ plate, editable }: { plate: WeekPlate; editable: boolean }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: plate.assignmentId,
+    data: { type: "plate", plate },
+    disabled: !editable,
+  });
 
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      title={
+        plate.overlapping
+          ? `${plate.guard.name}：同じ時間帯の別の枠にも入っています（このままでは確定できません）`
+          : plate.guard.name
+      }
+      className={[
+        "mt-0.5 truncate rounded px-1 text-[13px] leading-snug",
+        editable ? "cursor-grab active:cursor-grabbing" : "",
+        // 🔴 つかんでいる間は薄くする。DragOverlay 側に実体が出ているので、
+        //   ここに濃いまま残すと同じ人が2人いるように見える
+        isDragging ? "opacity-30" : "",
+        // 🔴 rose＝足りない／入れてはいけない（1色1意味・§2-4b）。
+        //   重なりは警告の中で唯一「確定を丸ごと止める」条件なので、
+        //   他の警告より強く出す（overlap.ts の冒頭コメント）
+        plate.overlapping
+          ? "bg-rose-50 font-semibold text-rose-700"
+          : plate.isPartner
+            ? "bg-slate-100 text-slate-700"
+            : "text-slate-900",
+      ].join(" ")}
+    >
+      {plate.overlapping && <span className="mr-0.5 text-[10px] font-bold">重複</span>}
+      {plate.role === "leader" && (
+        <span className="mr-0.5 rounded bg-slate-700 px-1 text-[10px] font-bold text-white">L</span>
+      )}
+      {plate.guard.short_name || plate.guard.name}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// セルの中の枠1つ（ここが落とし先）
+// ─────────────────────────────────────────────────────────
+function ShiftBlock({
+  cellShift,
+  dayHref,
+  editable,
+}: {
+  cellShift: WeekCellShift;
+  dayHref: string;
+  editable: boolean;
+}) {
+  const { shift, plates } = cellShift;
+  const { setNodeRef, isOver } = useDroppable({
+    id: shift.id,
+    data: { type: "shift", shiftId: shift.id, plateCount: plates.length },
+    disabled: !editable,
+  });
+
+  const short = shift.headcount - plates.length;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        "mb-1 rounded last:mb-0",
+        // 🔴 落とせる場所であることを、落とす前に見せる
+        isOver ? "outline outline-2 outline-indigo-500 outline-offset-1" : "",
+      ].join(" ")}
+    >
+      <Link
+        href={dayHref}
+        title="この日の配置ボードを開く"
+        className={[
+          "inline-flex items-baseline gap-1 rounded px-1 py-0.5 text-[12px] font-semibold tabular-nums",
+          "transition-all duration-150 ease-in-out hover:bg-slate-100",
+          // amber＝まだ終わっていない（1色1意味・§2-4b）
+          shift.status === "draft" ? "bg-amber-50 text-amber-800" : "text-slate-600",
+        ].join(" ")}
+      >
+        <span>{circled(shift.headcount)}</span>
+        <span>{formatTime(shift.start_h, shift.start_m)}</span>
+        {shift.cancelled_at !== null && <span className="font-normal text-rose-600">中止</span>}
+      </Link>
+
+      {plates.map((p) => (
+        <PlateChip key={p.assignmentId} plate={p} editable={editable} />
+      ))}
+
+      {short > 0 && (
+        <div className="mt-0.5 text-[11px] font-semibold text-rose-600">⚠ {short}名不足</div>
+      )}
+    </div>
+  );
+}
+
+function Cell({
+  cell,
+  dayHref,
+  editable,
+}: {
+  cell: WeekCell;
+  dayHref: string;
+  editable: boolean;
+}) {
   if (cell.shifts.length === 0) {
     // 🔴 空欄は「—」で埋める。何も置かないと、その日に枠が無いのか
-    //   画面が壊れているのか区別がつかない
+    //   画面が壊れているのか区別がつかない。
+    // 🟠 枠が無い日は落とし先にしない。枠を作る操作はまだ無い（§7-2-10）
     return (
       <td className="border border-slate-200 px-1.5 py-1 align-top text-center text-[13px] text-slate-300">
         —
@@ -41,48 +152,8 @@ function Cell({ cell, dayHref }: { cell: WeekCell; dayHref: string }) {
   return (
     <td className="border border-slate-200 px-1.5 py-1 align-top">
       {cell.shifts.map((s) => (
-        <div key={s.shift.id} className="mb-1 last:mb-0">
-          <Link
-            href={dayHref}
-            title="この日の配置ボードを開く"
-            className={[
-              "inline-flex items-baseline gap-1 rounded px-1 py-0.5 text-[12px] font-semibold tabular-nums",
-              "transition-all duration-150 ease-in-out hover:bg-slate-100",
-              // amber＝まだ終わっていない（1色1意味・§2-4b）
-              s.shift.status === "draft" ? "bg-amber-50 text-amber-800" : "text-slate-600",
-            ].join(" ")}
-          >
-            <span>{circled(s.shift.headcount)}</span>
-            <span>{formatTime(s.shift.start_h, s.shift.start_m)}</span>
-            {s.shift.cancelled_at !== null && (
-              <span className="font-normal text-rose-600">中止</span>
-            )}
-          </Link>
-
-          {s.plates.map((p) => (
-            <div
-              key={p.assignmentId}
-              className={[
-                "mt-0.5 truncate rounded px-1 text-[13px] leading-snug",
-                // 薄灰＝協力会社（プレートと同じ約束・§2-4b）
-                p.isPartner ? "bg-slate-100 text-slate-700" : "text-slate-900",
-              ].join(" ")}
-              title={p.guard.name}
-            >
-              {p.role === "leader" && (
-                <span className="mr-0.5 rounded bg-slate-700 px-1 text-[10px] font-bold text-white">
-                  L
-                </span>
-              )}
-              {p.guard.short_name || p.guard.name}
-            </div>
-          ))}
-        </div>
+        <ShiftBlock key={s.shift.id} cellShift={s} dayHref={dayHref} editable={editable} />
       ))}
-
-      {shortage > 0 && (
-        <div className="mt-0.5 text-[11px] font-semibold text-rose-600">⚠ {shortage}名不足</div>
-      )}
     </td>
   );
 }
@@ -91,12 +162,14 @@ export function WeekGrid({
   data,
   baseHrefs,
   dayHrefs,
+  editable,
 }: {
   data: WeekBoardData;
   /** 列ヘッダのクリック＝基準日の移動（§7-2-4） */
   baseHrefs: string[];
   /** セルのクリック＝その日の配置ボードへ */
   dayHrefs: string[];
+  editable: boolean;
 }) {
   const hasRows = data.groups.length > 0 || data.offRows.length > 0;
 
@@ -113,7 +186,6 @@ export function WeekGrid({
     //   flex アイテムの既定は min-width:auto ＝「中身より小さくならない」。
     //   表が大きいと**この div 自体が画面より広くなり**、中の w-full が
     //   その広がった幅を指すため、table-fixed でも列が縮まない。
-    //   min-w-0 で初めて「親の幅に収める」が成立する。
     <div className="min-h-0 min-w-0 flex-1 overflow-auto">
       {/*
         🔴 table-fixed が要る（2026-09-15）。
@@ -121,9 +193,6 @@ export function WeekGrid({
           隊員名や得意先名が長いと w-[150px] の指定を押しのけて横に伸び、
           7日が1画面に入らなくなる。`truncate` も効かない
           （幅が確定していない列では省略記号にする基準が無い）。
-        🔴 min-w を付けない。付けた瞬間に「画面に収まる」保証が消える。
-          w-full と組み合わせることで、**余った幅は列へ配分され**、
-          1920px なら1列あたり 200px 前後まで自然に広がる。
       */}
       <table className="w-full table-fixed border-separate border-spacing-0 text-[13px]">
         <thead>
@@ -165,7 +234,7 @@ export function WeekGrid({
                 </th>
               </tr>
               {g.rows.map((row) => (
-                <tr key={row.site.id} className="transition-all duration-150 ease-in-out hover:bg-slate-50">
+                <tr key={row.site.id}>
                   <th
                     scope="row"
                     className="sticky left-0 z-10 border border-slate-200 bg-white px-2 py-1 text-left align-top text-[13px] font-medium text-slate-900"
@@ -175,7 +244,7 @@ export function WeekGrid({
                     </span>
                   </th>
                   {row.cells.map((cell, i) => (
-                    <Cell key={cell.date} cell={cell} dayHref={dayHrefs[i]} />
+                    <Cell key={cell.date} cell={cell} dayHref={dayHrefs[i]} editable={editable} />
                   ))}
                 </tr>
               ))}
@@ -183,7 +252,8 @@ export function WeekGrid({
           ))}
 
           {/* ── 業務外（研修・有給 など）─────────────────────
-              A表の実物にも下部にこの区画がある（2026-09-09 実物解析） */}
+              A表の実物にも下部にこの区画がある（2026-09-09 実物解析）。
+              🟠 ここは D&D の対象にしない（有給の付け外しは別の操作） */}
           {data.offRows.length > 0 && (
             <>
               <tr>
@@ -195,7 +265,7 @@ export function WeekGrid({
                 </th>
               </tr>
               {data.offRows.map((row) => (
-                <tr key={row.offKind} className="transition-all duration-150 ease-in-out hover:bg-slate-50">
+                <tr key={row.offKind}>
                   <th
                     scope="row"
                     className="sticky left-0 z-10 border border-slate-200 bg-white px-2 py-1 text-left align-top text-[13px] font-medium text-slate-600"
@@ -211,7 +281,11 @@ export function WeekGrid({
                         <span className="block text-center text-slate-300">—</span>
                       ) : (
                         c.guards.map((g) => (
-                          <div key={g.id} className="truncate leading-snug text-slate-700" title={g.name}>
+                          <div
+                            key={g.id}
+                            className="truncate leading-snug text-slate-700"
+                            title={g.name}
+                          >
                             {g.short_name || g.name}
                           </div>
                         ))
