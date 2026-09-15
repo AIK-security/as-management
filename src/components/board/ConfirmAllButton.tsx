@@ -16,6 +16,14 @@
 //   いちばん追いにくい壊れ方をする。
 //   → **確認は画面の中に出す。** ブラウザの設定で消えうるものに、
 //     業務の関門を預けない。
+//
+// 🔴 その確認を**画面中央のダイアログにする**（2026-09-15 変更）。
+//   以前はヘッダの「押した場所」に展開していた（何に対する確認かが離れないように）。
+//   ところがヘッダは横一列に詰めてあるため、確認の文と2つのボタンが割り込むと
+//   **日付と 東京/千葉 のタブが押し出されて一瞬崩れる**。
+//   一括確定は毎日押すものなので、そのたびに画面が動くのは不自然に見える。
+//   → **ヘッダのボタンは出したまま動かさず、確認は中央に重ねる。**
+//     作法は `ShiftEditDialog` に合わせる（画面ごとに違うと 1名体制では覚えていられない）。
 "use client";
 
 import { useState, useTransition } from "react";
@@ -45,45 +53,74 @@ export function ConfirmAllButton({ shiftIds }: { shiftIds: string[] }) {
 
   return (
     <>
-      {asking ? (
-        // 🔴 確認は「押した場所」に出す。別の場所に出すと、何に対する
-        //   確認なのかが離れる。件数をもう一度書いて範囲を示す
-        <div className="flex items-center gap-2 rounded-md border-2 border-amber-400 bg-amber-50 px-2.5 py-1">
-          <span className="text-[14px] font-semibold text-amber-900">
-            表示中の仮組み {shiftIds.length} 件を確定します
-          </span>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            className={`${BTN} cursor-pointer border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700`}
-          >
-            確定する
-          </button>
-          <button
-            type="button"
-            onClick={() => setAsking(false)}
-            className={`${BTN} cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100`}
-          >
-            やめる
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setAsking(true)}
-          disabled={none || pending}
-          title={
-            none ? "確定できる仮組みの枠がありません" : `仮組み ${shiftIds.length} 件を確定`
-          }
-          className={[
-            BTN,
-            none || pending
-              ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-              : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
-          ].join(" ")}
+      {/* 🔴 ボタンはダイアログを開いても**差し替えない**。
+          ここが入れ替わるとヘッダの横幅の取り合いが起き、隣の日付とタブが動く */}
+      <button
+        type="button"
+        onClick={() => setAsking(true)}
+        disabled={none || pending}
+        title={none ? "確定できる仮組みの枠がありません" : `仮組み ${shiftIds.length} 件を確定`}
+        className={[
+          BTN,
+          none || pending
+            ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+            : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
+        ].join(" ")}
+      >
+        {pending ? "確定中…" : `一括確定${none ? "" : `（${shiftIds.length}）`}`}
+      </button>
+
+      {asking && (
+        // 作法は ShiftEditDialog に合わせる。あちらは背が高いので上寄せだが、
+        // これは短いので中央に置く
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-all-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-8"
+          onClick={() => setAsking(false)}
         >
-          {pending ? "確定中…" : `一括確定${none ? "" : `（${shiftIds.length}）`}`}
-        </button>
+          <div
+            className="w-[420px] rounded-lg border border-slate-200 bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2
+              id="confirm-all-title"
+              className="text-[16px] font-semibold tracking-tight text-slate-900"
+            >
+              仮組みを確定します
+            </h2>
+
+            {/* 🔴 件数をここでもう一度言う。押す前に範囲が分かるようにするのが確認の目的 */}
+            <p className="mt-2 text-[14px] leading-snug text-slate-700">
+              表示中の
+              <span className="font-semibold">仮組み {shiftIds.length} 件</span>
+              を確定します。
+            </p>
+            <p className="mt-1 text-[13px] leading-snug text-slate-500">
+              画面に出ていない枠は変わりません。
+              <br />
+              確定すると時間帯の重複が弾かれるようになります。
+            </p>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAsking(false)}
+                className={`${BTN} cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100`}
+              >
+                やめる
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirm}
+                className={`${BTN} cursor-pointer border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700`}
+              >
+                確定する
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 🔴 一括確定が落ちる原因はほぼ「時間帯の重複」。
