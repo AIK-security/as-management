@@ -16,7 +16,11 @@ export function PaneHeading({
 }) {
   return (
     <div className="flex items-baseline gap-2 border-b-2 border-slate-300 bg-slate-100 px-3 py-1.5">
-      <h2 className="text-[15px] font-semibold tracking-tight text-slate-800">{title}</h2>
+      {/* 🔴 折り返させない。週表のプールは 260px と狭く、
+          放っておくと「隊員プ／ール」と割れる（2026-09-15） */}
+      <h2 className="shrink-0 whitespace-nowrap text-[15px] font-semibold tracking-tight text-slate-800">
+        {title}
+      </h2>
       <span className="t-meta ml-auto text-slate-600">{sub}</span>
       {action}
     </div>

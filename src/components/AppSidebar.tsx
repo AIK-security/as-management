@@ -24,6 +24,8 @@ const NAV: { heading: string; items: Item[] }[] = [
     heading: "配置",
     items: [
       { href: "/board", label: "配置ボード", match: "/board" },
+      // 🔴 管制は「A表」と呼ぶ。画面名も業務の呼び名に合わせる（2026-09-15）
+      { href: "/week", label: "A表（週）", match: "/week" },
       { href: "/notices", label: "連絡作成", match: "/notices" },
     ],
   },

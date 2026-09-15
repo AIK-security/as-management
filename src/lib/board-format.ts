@@ -16,6 +16,20 @@
 
 import type { OffKind, WorkKind } from "@/lib/types";
 
+export type BoardShiftGroup = "day" | "night";
+
+/**
+ * 日勤／夜勤の切り替えが拾う勤務区分。「現中」も元の時間帯側に含める。
+ *
+ * 🔴 board.ts からここへ移した（2026-09-15・週表 S-07 の追加時）。
+ *   週表も同じ切り替えを持つため、向こうに複製すると
+ *   「日勤に現中を含めるか」の判断が2か所に散る。
+ */
+export const GROUP_WORK_KINDS: Record<BoardShiftGroup, WorkKind[]> = {
+  day: ["day", "dayCancel"],
+  night: ["nightA", "nightB", "nightCancel"],
+};
+
 export const OFF_KIND_LABEL: Record<OffKind, string> = {
   paid_leave: "有給",
   training: "研修・講習",
@@ -60,6 +74,24 @@ export function daysBetween(from: string, to: string): number {
   const [y1, m1, d1] = from.split("-").map(Number);
   const [y2, m2, d2] = to.split("-").map(Number);
   return Math.abs(Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000;
+}
+
+/**
+ * その日を含む週の初日。🟠 **月曜始まり**（screen-design.md §7-2-10 の暫定）。
+ * A表の実物からは週の起点が読み取れなかったため、管制に確認するまでこれで置く。
+ */
+export function startOfWeek(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  // getUTCDay: 0=日 … 6=土。月曜を 0 にずらす
+  const back = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  return addDays(iso, -back);
+}
+
+/** 週表の列見出し。「火 9/16」 */
+export function formatWeekDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const week = "日月火水木金土"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${week} ${m}/${d}`;
 }
 
 /** 09:00 のような表示にする */

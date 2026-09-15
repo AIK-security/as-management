@@ -11,11 +11,13 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 // 🔴 内部でも使う。再エクスポートしただけでは同一モジュール内から参照できない
 import {
+  GROUP_WORK_KINDS,
   OFF_KIND_LABEL,
   addDays,
   daysBetween,
   formatSpanPlace,
   todayInJst,
+  type BoardShiftGroup,
 } from "@/lib/board-format";
 import { findOverlaps } from "@/lib/overlap";
 import type {
@@ -42,20 +44,20 @@ import type {
 export {
   OFF_KIND_LABEL,
   WORK_KIND_LABEL,
+  GROUP_WORK_KINDS,
   todayInJst,
   addDays,
+  startOfWeek,
   formatTime,
+  formatWeekDay,
   toShiftMaxDate,
   formatBoardDate,
 } from "@/lib/board-format";
+export type { BoardShiftGroup } from "@/lib/board-format";
 
-export type BoardShiftGroup = "day" | "night";
-
-/** 日勤／夜勤の切り替えが拾う勤務区分。「現中」も元の時間帯側に含める */
-const GROUP_WORK_KINDS: Record<BoardShiftGroup, WorkKind[]> = {
-  day: ["day", "dayCancel"],
-  night: ["nightA", "nightB", "nightCancel"],
-};
+// 🔴 BoardShiftGroup と GROUP_WORK_KINDS は board-format.ts へ移した（2026-09-15）。
+//   週表（S-07）が同じ切り替えを持つため。上で再エクスポートしているので
+//   `from "@/lib/board"` の既存 import は変わらない。
 
 /** 「現場を追加」の候補。予定のひな形（plan_*）を持つので、選ぶだけで時刻が埋まる */
 export type SitePick = {

@@ -84,12 +84,21 @@ const TOGGLE_BTN =
 // ─────────────────────────────────────────────────────────
 export function PoolPane({
   poolCount,
+  storageKey = "board.pool.collapsed",
+  widthClass = "w-[420px]",
+  sub,
   children,
 }: {
   poolCount: number;
+  /** 🔴 週表（S-07）は日別と開閉を共有しない。画面ごとに広げたい理由が違う */
+  storageKey?: string;
+  /** 週表は2列で足りるので日別より狭い */
+  widthClass?: string;
+  /** 見出しの補足。週表は「どの日のプールか」を必ず出す（§7-2-4） */
+  sub?: string;
   children: React.ReactNode;
 }) {
-  const { collapsed, toggle } = useCollapsed("board.pool.collapsed");
+  const { collapsed, toggle } = useCollapsed(storageKey);
 
   if (collapsed) {
     // 🔴 帯**全体**を1つのボタンにする。細い帯の中の小さなアイコンを狙わせない。
@@ -118,12 +127,14 @@ export function PoolPane({
   }
 
   return (
-    <aside className="thin-scroll flex w-[420px] shrink-0 flex-col overflow-y-auto border-l-2 border-slate-300 bg-white">
+    <aside
+      className={`thin-scroll flex ${widthClass} shrink-0 flex-col overflow-y-auto border-l-2 border-slate-300 bg-white`}
+    >
       {/* 見出しは貼り付けておく。中を下までスクロールしても閉じられるように */}
       <div className="sticky top-0 z-10">
         <PaneHeading
           title="隊員プール"
-          sub={`未配置 ${poolCount} 名`}
+          sub={sub ?? `未配置 ${poolCount} 名`}
           action={
             <button
               type="button"
