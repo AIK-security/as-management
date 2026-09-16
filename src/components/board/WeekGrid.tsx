@@ -14,7 +14,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { formatTime, formatWeekDay } from "@/lib/board-format";
+import { dayTone, formatTime, formatWeekDay } from "@/lib/board-format";
 import type { WeekBoardData, WeekCell, WeekCellShift, WeekPlate } from "@/lib/week-board";
 
 /**
@@ -26,7 +26,7 @@ function circled(n: number): string {
 }
 
 const TH_BASE =
-  "border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-[11px] font-semibold text-slate-500";
+  "border border-slate-200 px-2 py-1.5 text-left text-[11px] font-semibold text-slate-500";
 
 // ─────────────────────────────────────────────────────────
 // 配置された隊員1名（つかんで動かせる）
@@ -138,19 +138,25 @@ function Cell({
   dayHref: string;
   editable: boolean;
 }) {
+  // 🔴 土日は地色を変える（2026-09-16）。7列が同じ白のままだと、
+  //   横に目を走らせたときに何曜日の列を見ているのか分からなくなる。
+  const tone = dayTone(cell.date);
+
   if (cell.shifts.length === 0) {
     // 🔴 空欄は「—」で埋める。何も置かないと、その日に枠が無いのか
     //   画面が壊れているのか区別がつかない。
     // 🟠 枠が無い日は落とし先にしない。枠を作る操作はまだ無い（§7-2-10）
     return (
-      <td className="border border-slate-200 px-1.5 py-1 align-top text-center text-[13px] text-slate-300">
+      <td
+        className={`border border-slate-200 px-1.5 py-1 text-center align-top text-[13px] text-slate-300 ${tone}`}
+      >
         —
       </td>
     );
   }
 
   return (
-    <td className="border border-slate-200 px-1.5 py-1 align-top">
+    <td className={`border border-slate-200 px-1.5 py-1 align-top ${tone}`}>
       {cell.shifts.map((s) => (
         <ShiftBlock key={s.shift.id} cellShift={s} dayHref={dayHref} editable={editable} />
       ))}
@@ -198,14 +204,17 @@ export function WeekGrid({
         <thead>
           <tr>
             {/* 左上の角。縦横どちらの固定にも属するので z を一段高くする */}
-            <th className={`${TH_BASE} sticky top-0 left-0 z-30 w-[176px]`}>現場</th>
+            <th className={`${TH_BASE} sticky top-0 left-0 z-30 w-[176px] bg-white`}>現場</th>
             {data.dates.map((d, i) => (
               <th
                 key={d}
                 className={[
                   TH_BASE,
                   "sticky top-0 z-20 w-[150px] text-center",
-                  d === data.baseDate ? "bg-indigo-50 text-indigo-700" : "",
+                  // 🔴 基準日の藍を優先する。曜日は毎週同じだが、基準日は
+                  //   いま選んでいる列＝右のプールが何日ぶんかを示すため
+                  // 🔴 見出しは曜日で変えない。色が付くのは基準日（いま選んでいる列）だけ
+                  d === data.baseDate ? "bg-indigo-100 text-indigo-800" : "bg-white",
                 ].join(" ")}
               >
                 <Link
@@ -265,7 +274,9 @@ export function WeekGrid({
                 </th>
               </tr>
               {data.offRows.map((row) => (
-                <tr key={row.offKind}>
+                // 🔴 key は label。offKind だけだと、一部勤務可を入れた 2026-09-16 以降
+                //   「有給」と「有給（夜A）」が同じ key になって行が入れ替わる
+                <tr key={row.label}>
                   <th
                     scope="row"
                     className="sticky left-0 z-10 border border-slate-200 bg-white px-2 py-1 text-left align-top text-[13px] font-medium text-slate-600"
@@ -275,7 +286,7 @@ export function WeekGrid({
                   {row.cells.map((c) => (
                     <td
                       key={c.date}
-                      className="border border-slate-200 px-1.5 py-1 align-top text-[13px]"
+                      className={`border border-slate-200 px-1.5 py-1 align-top text-[13px] ${dayTone(c.date)}`}
                     >
                       {c.guards.length === 0 ? (
                         <span className="block text-center text-slate-300">—</span>

@@ -22,6 +22,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { setOff } from "@/app/offs/actions";
 import { callAction } from "@/lib/action-call";
+import { dayOfWeek, dayTone } from "@/lib/board-format";
 import type { OffEntry, OffMonthRow } from "@/lib/offs";
 import type { OffKind, OffWorkKind } from "@/lib/types";
 
@@ -93,8 +94,9 @@ export function OffGrid({
   const [busyCell, setBusyCell] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 🔴 曜日は日付文字列から UTC で出す。素の Date に任せると環境で1日ずれる
-  const dows = useMemo(() => dates.map((d) => new Date(`${d}T00:00:00Z`).getUTCDay()), [dates]);
+  // 🔴 曜日と地色は board-format.ts の共通ヘルパを使う（2026-09-16）。
+  //   週表（S-07）と同じ色でないと、同じ週を見ているのに別物に見える。
+  const dows = useMemo(() => dates.map(dayOfWeek), [dates]);
 
   const visible = useMemo(() => {
     const q = query.trim();
@@ -180,19 +182,14 @@ export function OffGrid({
         <table className="border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="sticky top-0 left-0 z-30 w-[150px] min-w-[150px] border-r border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+              <th className="sticky top-0 left-0 z-30 w-[150px] min-w-[150px] border-r border-b border-slate-200 bg-white px-2 py-1.5 text-left text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
                 隊員 <span className="font-normal">（{visible.length}）</span>
               </th>
               {dates.map((d, i) => (
                 <th
                   key={d}
                   className={[
-                    "sticky top-0 z-20 w-[26px] min-w-[26px] border-r border-b border-slate-200 px-0 py-1 text-center text-[11px] font-semibold",
-                    dows[i] === 0
-                      ? "bg-rose-50 text-rose-600"
-                      : dows[i] === 6
-                        ? "bg-slate-100 text-slate-600"
-                        : "bg-slate-50 text-slate-500",
+                    "sticky top-0 z-20 w-[26px] min-w-[26px] border-r border-b border-slate-200 bg-white px-0 py-1 text-center text-[11px] font-semibold text-slate-500",
                   ].join(" ")}
                 >
                   <div className="tabular-nums">{Number(d.slice(8, 10))}</div>
@@ -219,7 +216,7 @@ export function OffGrid({
                     </Link>
                     {r.isPartner && <span className="t-meta text-slate-400">協力</span>}
                   </th>
-                  {dates.map((d, i) => {
+                  {dates.map((d) => {
                     const entries = r.byDate[d] ?? [];
                     const { text, full } = cellMark(entries);
                     const key = r.guardId + ":" + d;
@@ -237,7 +234,7 @@ export function OffGrid({
                         key={d}
                         className={[
                           "w-[26px] min-w-[26px] border-r border-b border-slate-100 p-0 text-center",
-                          dows[i] === 0 ? "bg-rose-50/40" : dows[i] === 6 ? "bg-slate-50" : "",
+                          dayTone(d),
                         ].join(" ")}
                       >
                         <button

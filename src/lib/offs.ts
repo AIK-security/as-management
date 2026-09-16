@@ -62,11 +62,6 @@ export function daysInMonth(month: string): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
-/** 曜日（0=日）。🔴 こちらも UTC。日付文字列から素の Date を作るとタイムゾーンで動く */
-export function dayOfWeek(date: string): number {
-  return new Date(`${date}T00:00:00Z`).getUTCDay();
-}
-
 export async function getOffMonth(month: string): Promise<OffMonth> {
   const supabase = await createClient();
   const first = `${month}-01`;
