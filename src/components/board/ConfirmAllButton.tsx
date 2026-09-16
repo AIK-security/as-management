@@ -29,6 +29,7 @@
 import { useState, useTransition } from "react";
 import { confirmShifts } from "@/app/board/actions";
 import { callAction } from "@/lib/action-call";
+import { HEADER_BTN } from "@/components/board/header-ui";
 
 const BTN = "rounded-md border-2 px-3 py-1.5 text-[14px] font-semibold transition-all duration-150 ease-in-out";
 
@@ -61,7 +62,7 @@ export function ConfirmAllButton({ shiftIds }: { shiftIds: string[] }) {
         disabled={none || pending}
         title={none ? "確定できる仮組みの枠がありません" : `仮組み ${shiftIds.length} 件を確定`}
         className={[
-          BTN,
+          HEADER_BTN,
           none || pending
             ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
             : "cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100",

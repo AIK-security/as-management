@@ -352,7 +352,8 @@ export type BoardDndProps = {
   /** 枠が0件のときに出す案内 */
   empty: EmptyBoardView;
   /** 非現場ステータス（有給・研修 …）。人数だけあればよい */
-  offCounts: { label: string; count: number }[];
+  /** 🔴 非現場（休み・内勤など）。氏名まで出す（2026-09-16） */
+  offGroups: { label: string; names: string[] }[];
   /** 協力会社への貸出 */
   lentGroups: { companyName: string; siteName: string; count: number }[];
 };
@@ -371,7 +372,7 @@ export function BoardDnd({
   totalPlaced,
   filtered,
   empty,
-  offCounts,
+  offGroups,
   lentGroups,
 }: BoardDndProps) {
   const [state, applyMove] = useOptimistic<BoardState, Move>({ rows, pool }, reduce);
@@ -700,20 +701,33 @@ export function BoardDnd({
             </div>
 
             {/* 非現場ステータス */}
+            {/* 🔴 氏名まで出す（2026-09-16・管制の要望）。
+                休みの隊員はプールから消えるので、**消えた人を確かめる場所**がここになる。
+                件数だけだと「誰が休みか」を別の画面へ探しに行くことになっていた。
+                区分を指定した休み（一部勤務可）は見出しに「有給（夜A）」のように出る。 */}
             <PaneHeading
               title="非現場"
-              sub={`${offCounts.reduce((n, g) => n + g.count, 0)} 名`}
+              sub={`${offGroups.reduce((n, g) => n + g.names.length, 0)} 名`}
             />
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2">
-              {offCounts.map((g) => (
-                <div
-                  key={g.label}
-                  className="flex items-baseline justify-between border-b border-slate-200 pb-1"
-                >
-                  <span className="text-[14px] text-slate-700">{g.label}</span>
-                  <span className="text-[15px] font-bold tabular-nums text-slate-800">
-                    {g.count}
-                  </span>
+            <div className="px-3 py-2">
+              {offGroups.length === 0 && (
+                <p className="t-meta text-slate-400">この日は居ません</p>
+              )}
+              {offGroups.map((g) => (
+                <div key={g.label} className="border-b border-slate-200 py-1.5 last:border-b-0">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[13px] font-semibold text-slate-700">{g.label}</span>
+                    <span className="text-[14px] font-bold tabular-nums text-slate-800">
+                      {g.names.length}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                    {g.names.map((n, i) => (
+                      <span key={`${n}-${i}`} className="t-meta text-slate-500">
+                        {n}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

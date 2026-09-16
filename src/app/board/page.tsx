@@ -24,6 +24,7 @@ import { WarningsPane } from "@/components/board/BoardPanes";
 import { BoardDnd } from "@/components/board/BoardDnd";
 import { ConfirmAllButton } from "@/components/board/ConfirmAllButton";
 import { AddShiftDialog } from "@/components/board/AddShiftDialog";
+import { HEADER_BTN } from "@/components/board/header-ui";
 import {
   addDays,
   formatBoardDate,
@@ -54,9 +55,11 @@ function CountChip({
   }[tone];
 
   return (
-    <div className={`flex items-baseline gap-1.5 rounded-md border px-2.5 py-1 ${toneClass}`}>
+    <div
+      className={`flex shrink-0 items-baseline gap-1.5 rounded-md border px-2 py-1 whitespace-nowrap ${toneClass}`}
+    >
       <span className="t-meta">{label}</span>
-      <span className="text-[18px] font-bold tabular-nums">{value}</span>
+      <span className="text-[16px] font-bold tabular-nums">{value}</span>
     </div>
   );
 }
@@ -152,8 +155,7 @@ export default async function BoardPage({
       : [];
 
   // 🔴 まだ中身が無い操作。押せないことと理由が見た目で分かるようにする
-  const PENDING_BTN =
-    "cursor-not-allowed rounded-md border-2 border-dashed border-slate-300 bg-slate-50 px-3 py-1.5 text-[14px] font-semibold text-slate-400";
+  const PENDING_BTN = `${HEADER_BTN} cursor-not-allowed border-dashed border-slate-300 bg-slate-50 text-slate-400`;
 
   const navBtn =
     "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
@@ -161,12 +163,17 @@ export default async function BoardPage({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* ══ ヘッダ ═══════════════════════════════════════════ */}
-      <header className="flex shrink-0 items-center gap-3 border-b-2 border-slate-300 bg-white px-4 py-2.5 shadow-sm">
-        <div className="flex items-center gap-1">
+      {/* 🔴 flex-wrap にした（2026-09-16）。110% 表示で幅が足りなくなると、
+          これまでは**ボタンの中で文字が折り返して**ヘッダ全体が崩れていた。
+          各要素に whitespace-nowrap / shrink-0 を付けたうえで折り返しを許すと、
+          溢れたぶんは**要素まるごと次の行へ**落ちる。
+          50インチのモニタを離れて見る以上、拡大表示は例外ではなく通常の使い方 */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b-2 border-slate-300 bg-white px-4 py-2.5 shadow-sm">
+        <div className="flex shrink-0 items-center gap-1">
           <Link href={hrefWith({ date: addDays(workDate, -1) })} className={navBtn} aria-label="前日">
             ◀
           </Link>
-          <span className="px-1 text-[20px] font-bold tracking-tight text-slate-900 tabular-nums">
+          <span className="px-1 text-[18px] font-bold tracking-tight whitespace-nowrap text-slate-900 tabular-nums">
             {formatBoardDate(board.date)}
           </span>
           <Link href={hrefWith({ date: addDays(workDate, 1) })} className={navBtn} aria-label="翌日">
@@ -182,38 +189,22 @@ export default async function BoardPage({
           )}
         </div>
 
-        {/* 管轄。1画面 = 1管轄 なので切り替えが要る */}
-        {board.jurisdictions.length > 1 ? (
-          <div className="flex overflow-hidden rounded-md border-2 border-slate-300">
-            {board.jurisdictions.map((j) => (
-              <Link
-                key={j.id}
-                href={hrefWith({ j: j.code })}
-                className={[
-                  "px-3 py-1 text-[15px] font-semibold transition-all duration-150 ease-in-out",
-                  j.id === board.jurisdiction.id
-                    ? "bg-slate-700 text-white"
-                    : "bg-white text-slate-600 hover:bg-slate-100",
-                ].join(" ")}
-              >
-                {j.name}
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <span className="rounded-md border-2 border-slate-300 bg-slate-50 px-2.5 py-1 text-[15px] font-semibold text-slate-800">
-            {board.jurisdiction.name}
-          </span>
-        )}
+        {/* 🔴 管轄（東京／千葉）の切り替えは**画面から外した**（2026-09-16・管制の要望）。
+            「東京だけでよい」。タブが常に出ていたぶんヘッダの幅を約120px 使っていた。
+
+            🔴 外したのは**表示だけ**。`jurisdiction` は DB にも URL（?j=）にも残してある：
+              ・`shifts.jurisdiction_id` は NOT NULL で、べんり君へ渡す18列CSVにも管轄が要る
+              ・取得は今も管轄で絞っている（board.ts の `.eq("jurisdiction_id", …)`）
+            消すと ShiftMax へ渡すデータが壊れる。**戻すのはこの塊を書き戻すだけ**にしてある。 */}
 
         {/* 日勤 / 夜勤 */}
-        <div className="flex overflow-hidden rounded-md border-2 border-slate-300">
+        <div className="flex shrink-0 overflow-hidden rounded-md border-2 border-slate-300">
           {(["day", "night"] as const).map((g) => (
             <Link
               key={g}
               href={hrefWith({ group: g })}
               className={[
-                "px-4 py-1 text-[15px] font-semibold transition-all duration-150 ease-in-out",
+                "px-3 py-1 text-[14px] font-semibold whitespace-nowrap transition-all duration-150 ease-in-out",
                 group === g
                   ? "bg-indigo-600 text-white"
                   : "bg-white text-slate-600 hover:bg-slate-100",
@@ -224,13 +215,13 @@ export default async function BoardPage({
           ))}
         </div>
 
-        <div className="ml-3 flex items-center gap-2">
+        <div className="ml-1 flex shrink-0 items-center gap-1.5">
           <CountChip label="仮組み" value={board.counts.draft} tone="draft" />
           <CountChip label="確定" value={board.counts.confirmed} tone="confirmed" />
           <CountChip label="未充足" value={board.counts.shortage} tone="shortage" />
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {/* 編集系は管制・管理者のみ。事務には出さない（requirements.md §3 決定 #2）。
               ⚠️ 出し分けは見た目の話。実際の防御は RLS と Server Action 側で行う。 */}
           {editable && (
@@ -256,7 +247,7 @@ export default async function BoardPage({
                   連絡は「この盤面の人たちへ」出すものなので、条件を選び直させない */}
               <Link
                 href={`/notices?date=${board.date}&j=${board.jurisdiction.code}&group=${board.group}`}
-                className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
+                className={`${HEADER_BTN} border-slate-300 bg-white text-slate-700 hover:bg-slate-100`}
               >
                 連絡作成
               </Link>
@@ -304,7 +295,14 @@ export default async function BoardPage({
               }
             : null,
         }}
-        offCounts={board.offGroups.map((g) => ({ label: g.label, count: g.guards.length }))}
+        offGroups={
+          // 🔴 件数だけでなく**氏名**を渡す（2026-09-16・管制の要望）。
+          //   休みの隊員はプールから消えるため、「居ない理由」を確かめる場所がここしかない。
+          board.offGroups.map((g) => ({
+            label: g.label,
+            names: g.guards.map((x) => x.short_name),
+          }))
+        }
         lentGroups={board.lentGroups.map((g) => ({
           companyName: g.companyName,
           siteName: g.siteName,
