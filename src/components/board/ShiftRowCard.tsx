@@ -167,21 +167,34 @@ export function ShiftRowCard({
           </div>
         )}
 
-        <div className="flex items-start gap-1.5">
-          {/* 現場名は主役。狭い箱では2行まで折り返す（省略すると別現場と見分けがつかない） */}
-          {/* 🔴 中止は現場名に取り消し線を引く。バッジだけだと流し見で拾えず、
-              40枚並んだ画面では「中止なのに人を探し続ける」が起きる */}
-          <Link
-            href={`/masters/sites/${site.id}`}
-            title="現場マスタを開く"
-            className={[
-              "t-site line-clamp-2 min-w-0 flex-1",
-              "transition-all duration-150 ease-in-out hover:text-indigo-700 hover:underline",
-              cancelled ? "text-slate-400 line-through" : "text-slate-900",
-            ].join(" ")}
-          >
-            {site.name}
-          </Link>
+        {/* 🔴 現場名は**行を丸ごと使う**（2026-09-16・柴山の要望）。
+            それまで現場名とボタン4つを同じ行に並べていたため、
+            ボタン群が約186px を固定で占有し、現場名に残る幅は全角10文字弱だった。
+            結果、ほぼ全ての現場名が2行に折り返していた（「アルファ 上下／水道」）。
+            ボタンを下の行へ落とすと折り返しは消え、**高さはほぼ変わらない** ──
+            「名前2行」が「名前1行＋ボタン1行」に置き換わるだけだから。
+
+            🔴 line-clamp-2 は残す。極端に長い現場名を省略で消すと、
+               別の現場と見分けがつかなくなる（幅が広がった今も同じ）。
+            🔴 中止は現場名に取り消し線を引く。バッジだけだと流し見で拾えず、
+               40枚並んだ画面では「中止なのに人を探し続ける」が起きる */}
+        <Link
+          href={`/masters/sites/${site.id}`}
+          title="現場マスタを開く"
+          className={[
+            "t-site line-clamp-2 block",
+            "transition-all duration-150 ease-in-out hover:text-indigo-700 hover:underline",
+            cancelled ? "text-slate-400 line-through" : "text-slate-900",
+          ].join(" ")}
+        >
+          {site.name}
+        </Link>
+
+        {/* ── 2行目：状態（左）と操作（右） ──
+            🔴 「今どうなっているか」と「何をするか」を左右に分ける（2026-09-16）。
+               同じ列に混ぜて並べると、状態を読みに行った目が操作を押しに行く。
+               色の 1色1意味（状態＝橙/緑・操作＝藍）と同じ切り分け。 */}
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
           {/* 🔴 状態バッジをそのまま押せるようにした（2026-09-03）。
               別にボタンを足すと、状態を見る場所と変える場所が離れる。
               確定は取り消せる（差し戻し・screen-design.md §2-6）。
@@ -213,60 +226,70 @@ export function ShiftRowCard({
               {isDraft ? "仮組み" : "確定"}
             </span>
           )}
-          {/* ── 中止（2026-09-07） ──
-              🔴 「取り消す」ではなく「中止になったと分かる表示に変わる」。
-                 枠も配置も残す。空いた隊員をどこへ回すかの判断材料になるため。
-              🔴 中止のときは仮組み／確定のバッジを**隠す**。
-                 「中止」と「仮組み」が並ぶと、どちらが今の状態か読めない。 */}
-          {editable && onToggleCancel && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleCancel(shift.id, !cancelled);
-              }}
-              title={cancelled ? "中止をやめて元に戻す" : "この枠を中止にする"}
-              className={[
-                "t-badge shrink-0 cursor-pointer rounded border px-1.5 py-0.5",
-                "transition-all duration-150 ease-in-out",
-                cancelled
-                  ? "border-slate-500 bg-slate-600 text-white hover:bg-slate-700"
-                  : "border-slate-300 bg-white text-slate-500 hover:bg-slate-100",
-              ].join(" ")}
-            >
-              中止
-            </button>
-          )}
-          {editable && onEdit && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(shift.id);
-              }}
-              title="この枠の時刻・人数・班名・コメントを直す"
-              className="t-badge shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500 transition-all duration-150 ease-in-out hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
-            >
-              編集
-            </button>
-          )}
-          {editable && onDelete && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setConfirmingDelete(true);
-              }}
-              title="この枠を削除する（配置も消えます）"
-              className="t-badge shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500 transition-all duration-150 ease-in-out hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
-            >
-              削除
-            </button>
-          )}
+          {/* 🔴 中止のときは仮組み／確定のバッジを**隠す**（2026-09-07）。
+              「中止」と「仮組み」が並ぶと、どちらが今の状態か読めない。
+              閲覧だけの事務ロールにも状態は見せる必要があるため、
+              押せないバッジをここに置く */}
           {!editable && cancelled && (
             <span className="t-badge shrink-0 rounded border border-slate-500 bg-slate-600 px-1.5 py-0.5 text-white">
               中止
             </span>
+          )}
+
+          {/* 操作は右端へ寄せる。ml-auto は**まとめた箱**に付ける ──
+              個々のボタンに付けると、中止で状態バッジが消えたとき
+              寄せ先を失って操作が左に飛ぶ */}
+          {editable && (onToggleCancel || onEdit || onDelete) && (
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {/* ── 中止（2026-09-07） ──
+                  🔴 「取り消す」ではなく「中止になったと分かる表示に変わる」。
+                     枠も配置も残す。空いた隊員をどこへ回すかの判断材料になるため。 */}
+              {onToggleCancel && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleCancel(shift.id, !cancelled);
+                  }}
+                  title={cancelled ? "中止をやめて元に戻す" : "この枠を中止にする"}
+                  className={[
+                    "t-badge shrink-0 cursor-pointer rounded border px-1.5 py-0.5",
+                    "transition-all duration-150 ease-in-out",
+                    cancelled
+                      ? "border-slate-500 bg-slate-600 text-white hover:bg-slate-700"
+                      : "border-slate-300 bg-white text-slate-500 hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  中止
+                </button>
+              )}
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(shift.id);
+                  }}
+                  title="この枠の時刻・人数・班名・コメントを直す"
+                  className="t-badge shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500 transition-all duration-150 ease-in-out hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  編集
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmingDelete(true);
+                  }}
+                  title="この枠を削除する（配置も消えます）"
+                  className="t-badge shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500 transition-all duration-150 ease-in-out hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
+                >
+                  削除
+                </button>
+              )}
+            </div>
           )}
         </div>
 
