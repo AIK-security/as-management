@@ -59,6 +59,7 @@ export type GuardInput = {
   shortName: string;
   nameKana: string;
   email: string;
+  nearestStation: string;
   companyId: string;
   jurisdictionId: string;
   departmentId: string;
@@ -90,6 +91,7 @@ export async function updateGuard(input: GuardInput): Promise<ActionResult> {
       short_name: input.shortName.trim(),
       name_kana: orNull(input.nameKana),
       email: orNull(input.email),
+      nearest_station: orNull(input.nearestStation),
       company_id: input.companyId,
       jurisdiction_id: input.jurisdictionId,
       department_id: input.departmentId || null,

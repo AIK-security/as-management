@@ -40,6 +40,7 @@ export function GuardEditForm({
   const [shortName, setShortName] = useState(guard.short_name);
   const [nameKana, setNameKana] = useState(guard.name_kana ?? "");
   const [email, setEmail] = useState(guard.email ?? "");
+  const [nearestStation, setNearestStation] = useState(guard.nearest_station ?? "");
   const [companyId, setCompanyId] = useState(guard.company_id);
   const [jurisdictionId, setJurisdictionId] = useState(guard.jurisdiction_id);
   const [departmentId, setDepartmentId] = useState(guard.department_id ?? "");
@@ -78,6 +79,7 @@ export function GuardEditForm({
       shortName,
       nameKana,
       email,
+      nearestStation,
       companyId,
       jurisdictionId,
       departmentId,
@@ -265,6 +267,15 @@ export function GuardEditForm({
               <input
                 value={email}
                 onChange={(e) => edit(setEmail)(e.target.value)}
+                className={FIELD}
+              />
+            </Field>
+            {/* 🔴 最寄り駅（2026-09-16・管制の要望）。配置の判断材料。
+                ShiftMax には無い列なので、取込では埋まらず AS が入れていくことになる */}
+            <Field label="最寄り駅" hint="配置の判断に使う。取込では埋まらない">
+              <input
+                value={nearestStation}
+                onChange={(e) => edit(setNearestStation)(e.target.value)}
                 className={FIELD}
               />
             </Field>

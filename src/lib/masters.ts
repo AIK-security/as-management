@@ -475,6 +475,8 @@ export type GuardDetail = {
   short_name: string;
   name_kana: string | null;
   email: string | null;
+  /** 🔴 最寄り駅（2026-09-16）。ShiftMax には無い列なので取込では埋まらない */
+  nearest_station: string | null;
   jurisdiction_id: string;
   department_id: string | null;
   company_id: string;
@@ -507,7 +509,7 @@ export async function getGuard(id: string): Promise<GuardDetail | null> {
   const { data, error } = await supabase
     .from("guards")
     .select(
-      `id, staff_code, guard_no, name, short_name, name_kana, email,
+      `id, staff_code, guard_no, name, short_name, name_kana, email, nearest_station,
        jurisdiction_id, department_id, company_id, employment_type, status, note`,
     )
     .eq("id", id)
