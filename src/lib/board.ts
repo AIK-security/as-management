@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   GROUP_WORK_KINDS,
   OFF_KIND_LABEL,
+  WORK_KIND_LABEL,
   addDays,
   daysBetween,
   formatSpanPlace,
@@ -205,7 +206,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .from("assignments")
       .select(
         `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
-       off_kind, lent_to_company_id, external_site_name, status`,
+       off_kind, off_work_kind, lent_to_company_id, external_site_name, status`,
       )
       .eq("work_date", workDate)
       .eq("status", "planned")
@@ -496,14 +497,50 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   //   → **管制に確認する**（requirements.md §8-7）。実際に掛け持ちを組むなら、
   //     「その時間帯に空いているか」で出し分ける形に変える。
   //     いまは「同じ人が二重に見える」ほうが事故が大きいと判断して閉じる。
-  const workingGuardIds = allAssignments.map((a) => a.guard_id);
-  const busy = new Set(workingGuardIds);
+  // 🔴 休みは**いま見ている区分にかかるものだけ**プールから外す（2026-09-16）。
+  //   「一部勤務可」── 日勤なら出られる／A夜勤なら出られる、という休み方が実在する。
+  //   全部まとめて外していると、夜勤だけ休む隊員が日勤の盤面からも消える。
+  //
+  //   🔴 夜勤は A と B の**両方を休むときだけ**外す。
+  //     この盤面の「夜勤」は nightA と nightB を1つにまとめた表示なので、
+  //     片方だけ休む人はもう片方に出られる。
+  //     ⚠️ そのぶん「A を休む人が A の枠に置けてしまう」は残る。
+  //        枠単位で止めるかは未決（screen-design.md §10）。
+  const nightOff = new Map<string, Set<string>>();
+  const busy = new Set<string>();
+  for (const a of allAssignments) {
+    if (a.kind !== "off") {
+      busy.add(a.guard_id);
+      continue;
+    }
+    // 終日の休み（区分の指定なし）は、どの盤面からも外す
+    if (!a.off_work_kind) {
+      busy.add(a.guard_id);
+      continue;
+    }
+    if (a.off_work_kind === "day") {
+      if (group === "day") busy.add(a.guard_id);
+      continue;
+    }
+    const set = nightOff.get(a.guard_id) ?? new Set<string>();
+    set.add(a.off_work_kind);
+    nightOff.set(a.guard_id, set);
+  }
+  if (group === "night") {
+    for (const [guardId, kinds] of nightOff) {
+      if (kinds.has("nightA") && kinds.has("nightB")) busy.add(guardId);
+    }
+  }
 
+  // 🔴 ラベルは「有給」ではなく「有給（夜A）」まで出す（2026-09-16）。
+  //   一部勤務可を入れた以上、**終日休みなのか一部なのか**が分からないと、
+  //   プールに居ないことの理由が読めない。
   const offMap = new Map<string, Guard[]>();
   for (const a of offAssignments) {
     const guard = guardById.get(a.guard_id);
     if (!guard || !a.off_kind) continue;
-    const label = OFF_KIND_LABEL[a.off_kind];
+    const base = OFF_KIND_LABEL[a.off_kind];
+    const label = a.off_work_kind ? `${base}（${WORK_KIND_LABEL[a.off_work_kind]}）` : base;
     const list = offMap.get(label) ?? [];
     list.push(guard);
     offMap.set(label, list);

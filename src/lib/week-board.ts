@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   GROUP_WORK_KINDS,
   OFF_KIND_LABEL,
+  WORK_KIND_LABEL,
   addDays,
   startOfWeek,
   todayInJst,
@@ -198,7 +199,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         .from("assignments")
         .select(
           `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
-         off_kind, lent_to_company_id, external_site_name, status,
+         off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
          planned_start_at, planned_end_at`,
         )
         // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
@@ -343,21 +344,33 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     }));
 
   // ── 業務外の行（研修・有給 など）────────────────────
-  const offMap = new Map<OffKind, Map<string, Guard[]>>();
+  // 🔴 一部勤務可（2026-09-16）は行を分ける。
+  //   「有給」と「有給（夜A）」を同じ行に混ぜると、
+  //   その日その隊員が**出られるのか出られないのか**が週表から読めなくなる。
+  //   キーは区分まで含める（offKind だけだと一部と終日が同じ行に落ちる）。
+  const offMap = new Map<string, { offKind: OffKind; label: string; byDate: Map<string, Guard[]> }>();
   for (const a of assignments) {
     if (a.kind !== "off" || !a.off_kind) continue;
     const guard = guardById.get(a.guard_id);
     if (!guard) continue;
-    const byDate = offMap.get(a.off_kind) ?? new Map<string, Guard[]>();
-    const list = byDate.get(a.work_date) ?? [];
+    const key = `${a.off_kind}:${a.off_work_kind ?? ""}`;
+    const base = OFF_KIND_LABEL[a.off_kind];
+    const entry =
+      offMap.get(key) ??
+      {
+        offKind: a.off_kind,
+        label: a.off_work_kind ? `${base}（${WORK_KIND_LABEL[a.off_work_kind]}）` : base,
+        byDate: new Map<string, Guard[]>(),
+      };
+    const list = entry.byDate.get(a.work_date) ?? [];
     list.push(guard);
-    byDate.set(a.work_date, list);
-    offMap.set(a.off_kind, byDate);
+    entry.byDate.set(a.work_date, list);
+    offMap.set(key, entry);
   }
-  const offRows: WeekOffRow[] = [...offMap.entries()]
-    .map(([offKind, byDate]) => ({
+  const offRows: WeekOffRow[] = [...offMap.values()]
+    .map(({ offKind, label, byDate }) => ({
       offKind,
-      label: OFF_KIND_LABEL[offKind],
+      label,
       cells: dates.map((d) => ({ date: d, guards: byDate.get(d) ?? [] })),
     }))
     .sort((a, b) => a.label.localeCompare(b.label, "ja"));
@@ -366,8 +379,17 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   //
   // 🔴 「未配置」は日が決まって初めて意味を持つ（設計 §7-2-4）。
   //   週表には日が7つあるので、基準日で絞る。
+  // 🔴 一部勤務可（2026-09-16）はプールに残す。
+  //   週表は日勤・夜勤を分けずに1枚で見る画面なので、
+  //   「日勤だけ休み」の隊員はその日の夜勤には出られる。
+  //   外すのは**終日の休み**と、実際の稼働（配置・貸出）だけ。
+  //   ⚠️ そのぶん「日勤を休む人を日勤の枠に置ける」は残る。
+  //      区分まで見て止めるかは未決（screen-design.md §10）。
   const busyOnBase = new Set(
-    assignments.filter((a) => a.work_date === baseDate).map((a) => a.guard_id),
+    assignments
+      .filter((a) => a.work_date === baseDate)
+      .filter((a) => a.kind !== "off" || !a.off_work_kind)
+      .map((a) => a.guard_id),
   );
   // 週の稼働日数（現場に出る日だけ数える。有給・研修は稼働ではない）
   const weekDaysByGuard = new Map<string, Set<string>>();

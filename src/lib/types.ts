@@ -74,6 +74,10 @@ export type Site = {
  *  🟠 「現中」（現着中止）の扱いは未決（requirements.md §8-7 ①） */
 export type WorkKind = "day" | "nightA" | "nightB" | "dayCancel" | "nightCancel";
 
+/** 🔴 休む区分（2026-09-16）。WorkKind から「現中」を除いたもの ──
+    現着中止は**枠の状態**であって、隊員の休み方ではない */
+export type OffWorkKind = "day" | "nightA" | "nightB";
+
 /** 配置枠 = A表の1行。仮組みと確定を status 1列で表す */
 export type ShiftStatus = "draft" | "confirmed";
 
@@ -117,6 +121,9 @@ export type AssignmentRole = "leader" | "member";
 
 export type OffKind =
   | "paid_leave"
+  /** 🔴 公休（2026-09-16 追加）。有給でも欠勤でもない「ただの休み」。
+      隊員は固定給ではないため、休んでも欠勤にはならず勤務日数が減るだけ */
+  | "day_off"
   | "training"
   | "medical"
   | "absent_self"
@@ -139,6 +146,8 @@ export type Assignment = {
   /** プレートの並び順 */
   position: number;
   off_kind: OffKind | null;
+  /** 🔴 どの区分を休むか（2026-09-16）。null=終日。「一部勤務可」を表す */
+  off_work_kind: OffWorkKind | null;
   /** 貸出先の協力会社（kind === "lent_out"） */
   lent_to_company_id: string | null;
   external_site_name: string | null;

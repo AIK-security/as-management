@@ -27,6 +27,9 @@ const NAV: { heading: string; items: Item[] }[] = [
       // 🔴 管制は「A表」と呼ぶ。画面名も業務の呼び名に合わせる（2026-09-15）
       { href: "/week", label: "A表（週）", match: "/week" },
       { href: "/notices", label: "連絡作成", match: "/notices" },
+      // 🔴 休みは配置の一部（2026-09-16）。マスタではなくここに置く ──
+      //   「今日誰が出られるか」を決める作業そのものだから
+      { href: "/offs", label: "休み", match: "/offs" },
     ],
   },
   {

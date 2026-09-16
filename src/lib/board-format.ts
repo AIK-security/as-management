@@ -32,6 +32,7 @@ export const GROUP_WORK_KINDS: Record<BoardShiftGroup, WorkKind[]> = {
 
 export const OFF_KIND_LABEL: Record<OffKind, string> = {
   paid_leave: "有給",
+  day_off: "休み",
   training: "研修・講習",
   medical: "健診",
   absent_self: "自欠",
