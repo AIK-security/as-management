@@ -220,7 +220,8 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
         <label className="flex flex-col gap-0.5">
           <span className="text-[11px] font-medium text-slate-500">開始</span>
           <div className="flex items-center gap-1">
-            <TwoDigitInput value={startH} onChange={setStartH} max={23} />
+            {/* 🔴 24時以降を許す（2026-09-16）。理由は AddShiftDialog の同じ箇所に書いた */}
+            <TwoDigitInput value={startH} onChange={setStartH} max={29} />
             <span className="text-slate-400">:</span>
             <TwoDigitInput value={startM} onChange={setStartM} max={59} />
           </div>
@@ -229,7 +230,7 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
         <label className="flex flex-col gap-0.5">
           <span className="text-[11px] font-medium text-slate-500">終了</span>
           <div className="flex items-center gap-1">
-            <TwoDigitInput value={endH} onChange={setEndH} max={23} />
+            <TwoDigitInput value={endH} onChange={setEndH} max={29} />
             <span className="text-slate-400">:</span>
             <TwoDigitInput value={endM} onChange={setEndM} max={59} />
           </div>

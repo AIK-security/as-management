@@ -119,10 +119,20 @@ export function ShiftEditDialog({
             </select>
           </label>
 
+            {/* 🔴 24時以降を入力できる（2026-09-16・管制の要望）。
+                「16日 24:30 〜 翌 6:30」は**16日に実施した案件**として扱う。
+                DB 側は元から日跨ぎを織り込んであり（assignments_fill_planned_times が
+                work_date + 開始分 で timestamp を組む）、止めていたのはこの入力欄の上限だけだった。
+
+                🔴 24:30 と 00:30 は**別の日を指す**。
+                  ・24:30 → その日の深夜（＝翌日の 0:30）
+                  ・00:30 → その日の未明（＝前の晩から続く勤務）
+                上限は 29:59。終了が開始より前なら翌日と解釈されるので、
+                終了は「06:30」と普通に書けばよい（30:30 と書く必要はない）。 */}
           <label className="flex flex-col gap-0.5">
             <span className="text-[11px] font-medium text-slate-500">開始</span>
             <div className="flex items-center gap-1">
-              <TwoDigitInput value={startH} onChange={setStartH} max={23} />
+              <TwoDigitInput value={startH} onChange={setStartH} max={29} />
               <span className="text-slate-400">:</span>
               <TwoDigitInput value={startM} onChange={setStartM} max={59} />
             </div>
@@ -131,7 +141,7 @@ export function ShiftEditDialog({
           <label className="flex flex-col gap-0.5">
             <span className="text-[11px] font-medium text-slate-500">終了</span>
             <div className="flex items-center gap-1">
-              <TwoDigitInput value={endH} onChange={setEndH} max={23} />
+              <TwoDigitInput value={endH} onChange={setEndH} max={29} />
               <span className="text-slate-400">:</span>
               <TwoDigitInput value={endM} onChange={setEndM} max={59} />
             </div>

@@ -393,14 +393,15 @@ export function SiteEditForm({
           <div className="flex flex-wrap items-end gap-2">
             <Field label="開始">
               <div className="flex items-center gap-1">
-                <TwoDigitInput value={startH} onChange={edit(setStartH)} max={23} allowEmpty />
+                {/* 🔴 24時以降を許す（2026-09-16）。理由は AddShiftDialog の同じ箇所に書いた */}
+                <TwoDigitInput value={startH} onChange={edit(setStartH)} max={29} allowEmpty />
                 <span className="text-slate-400">:</span>
                 <TwoDigitInput value={startM} onChange={edit(setStartM)} max={59} allowEmpty />
               </div>
             </Field>
             <Field label="終了">
               <div className="flex items-center gap-1">
-                <TwoDigitInput value={endH} onChange={edit(setEndH)} max={23} allowEmpty />
+                <TwoDigitInput value={endH} onChange={edit(setEndH)} max={29} allowEmpty />
                 <span className="text-slate-400">:</span>
                 <TwoDigitInput value={endM} onChange={edit(setEndM)} max={59} allowEmpty />
               </div>
