@@ -37,7 +37,9 @@ type Supa = Awaited<ReturnType<typeof createClient>>;
 function toMessage(error: { code?: string; message: string }): string {
   if (error.code === "42501") return "この操作の権限がありません。";
   if (error.code === "23505") return `同じコードの行が重複しています（${error.message}）`;
-  return `取り込めませんでした（${error.message}）`;
+  // 🔴 コードも出す。2026-09-17 に勤務マスターの1回目が落ちたとき、
+  //   メッセージが残っておらず原因を追えなかった。診断の手がかりを画面に残す。
+  return `取り込めませんでした（${error.code ?? "?"}: ${error.message}）`;
 }
 
 /** 1回の書き込みで送る行数。1,593 行を4回に割る程度。 */
