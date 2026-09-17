@@ -229,6 +229,13 @@
     アプリは fixtures を読まない。**投入するのは `supabase/seed/20260902_dummy_board.sql`**（README §4-2）
   - ダミーの定義は `scripts/dummy-data.mts`、SQL 生成は `scripts/gen-seed.mts`。
     **どちらも開発ツールであってシステムではない**ため `src/` の外に置き、`tsconfig.json` の型検査からも外してある
+- 🔴 **現場マスタの初期データは実データから起こす**（2026-09-17）。
+  ShiftMax 側に**現場が存在しない**ため（`docs/data-gap-20260917.md` §2）、
+  7月実データの手入力テキストから **154件**を抽出する：`python scripts/extract-sites.py`
+  - 出力 `local/sites-extracted.csv` は 🔴 **Git に入れない**（`local/` を `.gitignore` 済み）。
+    取引先実名・現場名が入るため、受領資料と同じ扱いにする
+  - **一度きりの初期データ作成**であり、`dummy-data.mts` と同じ「開発ツール」。稼働後は使わない
+  - 🟠 **管制の確認待ち**（10/1）。7月1か月ぶんしか見ていないため、年に数回の現場は漏れる
 - 🔴 **型の命名で出どころを分ける**（`src/lib/types.ts`）。
   `snake_case`＝DB の列と一対一（変換層を作らない）／`camelCase`＝画面のために組み立てた形
 - **セッションログ**：`logs/YYYY-MM-DD.md`（同日は追記）
