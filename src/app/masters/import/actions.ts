@@ -76,6 +76,36 @@ async function codeToId(supabase: Supa, table: string, col: string) {
 }
 
 /**
+ * 既存の隊員を `staff_code` から引く（id と **company_id** の両方）。
+ *
+ * 🔴 なぜ company_id まで読むのか（2026-09-17・実際に取り込んで発覚）
+ *   更新は `upsert(..., { onConflict: "id" })` で行っているが、PostgREST の upsert は
+ *   **INSERT ... ON CONFLICT DO UPDATE** であり、**まず INSERT が試みられる**。
+ *   `ON CONFLICT` が拾うのは一意制約違反だけで、**NOT NULL 違反はその前に落ちる**。
+ *   → `company_id`（NOT NULL）を省いて送ると、2回目の取込が
+ *     `null value in column "company_id" ... violates not-null constraint` で必ず失敗する。
+ *
+ *   意図は「**ShiftMax 由来でない列は触らない**」ことなので、
+ *   **いま入っている値をそのまま送り返す**。結果として上書きは起きない。
+ */
+async function guardsByStaffCode(supabase: Supa) {
+  const map = new Map<string, { id: string; companyId: string }>();
+  const size = 1000;
+  for (let from = 0; ; from += size) {
+    const { data, error } = await supabase
+      .from("guards")
+      .select("id, staff_code, company_id")
+      .range(from, from + size - 1);
+    if (error) return { ok: false as const, message: toMessage(error) };
+    for (const r of data ?? []) {
+      if (r.staff_code) map.set(r.staff_code, { id: r.id, companyId: r.company_id });
+    }
+    if ((data?.length ?? 0) < size) break;
+  }
+  return { ok: true as const, map };
+}
+
+/**
  * 管轄・部署を、CSV に出てきたぶんだけ用意する。
  *
  * 🔴 自動で作る。CSV が**コードと名前の両方**を持っているため、
@@ -173,7 +203,7 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
   // 隊員
   // ─────────────────────────────────────────────────────
   if (input.kind === "guards") {
-    const existing = await codeToId(supabase, "guards", "staff_code");
+    const existing = await guardsByStaffCode(supabase);
     if (!existing.ok) return existing;
 
     // 🔴 会社は ShiftMax に無い概念。社員マスターに載る隊員は全員自社。
@@ -222,12 +252,16 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
       if (error) return { ok: false, message: toMessage(error) };
     }
     for (const part of chunk(olds)) {
-      const { error } = await supabase
-        .from("guards")
-        .upsert(
-          part.map((r) => ({ id: existing.map.get(r.staff_code) as string, ...shiftmaxCols(r) })),
-          { onConflict: "id" },
-        );
+      const { error } = await supabase.from("guards").upsert(
+        part.map((r) => {
+          const cur = existing.map.get(r.staff_code) as { id: string; companyId: string };
+          // 🔴 `company_id` は ShiftMax 由来ではないので**変えない**。
+          //   ただし upsert は INSERT を試みるため、省くと NOT NULL 違反で落ちる。
+          //   いまの値をそのまま戻すことで「触らない」を満たす（`guardsByStaffCode` の注記）。
+          return { id: cur.id, company_id: cur.companyId, ...shiftmaxCols(r) };
+        }),
+        { onConflict: "id" },
+      );
       if (error) return { ok: false, message: toMessage(error) };
     }
 
