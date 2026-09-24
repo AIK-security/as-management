@@ -91,11 +91,14 @@ export function WeekDnd({
   baseHrefs,
   dayHrefs,
   editable,
+  printHeading,
 }: {
   data: WeekBoardData;
   baseHrefs: string[];
   dayHrefs: string[];
   editable: boolean;
+  /** 紙にだけ出す見出し（画面には出ない） */
+  printHeading: { title: string; asOf: string };
 }) {
   const [pending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<{ label: string } | null>(null);
@@ -185,6 +188,7 @@ export function WeekDnd({
           baseHrefs={baseHrefs}
           dayHrefs={dayHrefs}
           editable={editable}
+          printHeading={printHeading}
         />
 
         {/* ── 隊員プール（基準日で絞る・§7-2-4）──────────────

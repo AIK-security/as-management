@@ -9,6 +9,14 @@
 //
 // 🔴 D&D の受け口はここだが、DndContext は親（WeekDnd）が持つ。
 //   表とプールを**同じ context** に入れないと、プールからセルへ落とせない。
+//
+// 🔴 印刷（2026-09-24・screen-design.md §7-2-8）。**同じ表を紙用にもう1つ作らない。**
+//   別に作ると、画面を直したときに紙だけ古い形で残る（写しがずれるのと同じ）。
+//   紙の都合は `print:` の上書きだけで表す：
+//   ・A3 縦（297mm − 余白16mm ≒ 281mm）に 現場36mm ＋ 7日×34.5mm で収める
+//   ・sticky は紙では外す（ページをまたぐと見出しが本文に重なる）
+//   ・セルに最低 12mm の高さ ─ 紙は**手で書き込んで記録として残す**（柴山）
+//   ・背景色は紙に出ない前提で、仮組みは文字「仮」で示す
 "use client";
 
 import { Fragment } from "react";
@@ -113,6 +121,7 @@ function ShiftBlock({
           shift.status === "draft" ? "bg-amber-50 text-amber-800" : "text-slate-600",
         ].join(" ")}
       >
+        {shift.status === "draft" && <span className="hidden print:inline">仮</span>}
         <span>{circled(shift.headcount)}</span>
         <span>{formatTime(shift.start_h, shift.start_m)}</span>
         {shift.cancelled_at !== null && <span className="font-normal text-rose-600">中止</span>}
@@ -148,7 +157,7 @@ function Cell({
     // 🟠 枠が無い日は落とし先にしない。枠を作る操作はまだ無い（§7-2-10）
     return (
       <td
-        className={`border border-slate-200 px-1.5 py-1 text-center align-top text-[13px] text-slate-300 ${tone}`}
+        className={`border border-slate-200 px-1.5 py-1 text-center align-top text-[13px] text-slate-300 print:h-[12mm] ${tone}`}
       >
         —
       </td>
@@ -156,7 +165,7 @@ function Cell({
   }
 
   return (
-    <td className={`border border-slate-200 px-1.5 py-1 align-top ${tone}`}>
+    <td className={`border border-slate-200 px-1.5 py-1 align-top print:h-[12mm] ${tone}`}>
       {cell.shifts.map((s) => (
         <ShiftBlock key={s.shift.id} cellShift={s} dayHref={dayHref} editable={editable} />
       ))}
@@ -169,8 +178,11 @@ export function WeekGrid({
   baseHrefs,
   dayHrefs,
   editable,
+  printHeading,
 }: {
   data: WeekBoardData;
+  /** 紙にだけ出す見出し（画面には出ない） */
+  printHeading: { title: string; asOf: string };
   /** 列ヘッダのクリック＝基準日の移動（§7-2-4） */
   baseHrefs: string[];
   /** セルのクリック＝その日の配置ボードへ */
@@ -192,7 +204,12 @@ export function WeekGrid({
     //   flex アイテムの既定は min-width:auto ＝「中身より小さくならない」。
     //   表が大きいと**この div 自体が画面より広くなり**、中の w-full が
     //   その広がった幅を指すため、table-fixed でも列が縮まない。
-    <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+    // 🔴 data-print-area：紙に出すのはこの中だけ（globals.css の @media print）
+    <div data-print-area className="min-h-0 min-w-0 flex-1 overflow-auto print:overflow-visible">
+      <div className="mb-1.5 hidden items-baseline justify-between print:flex">
+        <h1 className="text-[16px] font-semibold tracking-tight text-slate-900">{printHeading.title}</h1>
+        <span className="text-[11px] text-slate-500">{printHeading.asOf}</span>
+      </div>
       {/*
         🔴 table-fixed が要る（2026-09-15）。
           既定の table-layout:auto は**中身に合わせて列を広げる**ため、
@@ -204,13 +221,15 @@ export function WeekGrid({
         <thead>
           <tr>
             {/* 左上の角。縦横どちらの固定にも属するので z を一段高くする */}
-            <th className={`${TH_BASE} sticky top-0 left-0 z-30 w-[176px] bg-white`}>現場</th>
+            <th className={`${TH_BASE} sticky top-0 left-0 z-30 w-[176px] bg-white print:static print:w-[36mm]`}>
+              現場
+            </th>
             {data.dates.map((d, i) => (
               <th
                 key={d}
                 className={[
                   TH_BASE,
-                  "sticky top-0 z-20 w-[150px] text-center",
+                  "sticky top-0 z-20 w-[150px] text-center print:static print:w-[34.5mm]",
                   // 🔴 基準日の藍を優先する。曜日は毎週同じだが、基準日は
                   //   いま選んでいる列＝右のプールが何日ぶんかを示すため
                   // 🔴 見出しは曜日で変えない。色が付くのは基準日（いま選んでいる列）だけ
@@ -237,16 +256,16 @@ export function WeekGrid({
               <tr>
                 <th
                   colSpan={8}
-                  className="sticky left-0 border border-slate-200 bg-slate-100 px-2 py-1 text-left text-[12px] font-semibold text-slate-700"
+                  className="sticky left-0 border border-slate-200 bg-slate-100 px-2 py-1 text-left text-[12px] font-semibold text-slate-700 print:static"
                 >
                   {g.customer?.name ?? "（得意先が未設定）"}
                 </th>
               </tr>
               {g.rows.map((row) => (
-                <tr key={row.site.id}>
+                <tr key={row.site.id} className="print:break-inside-avoid">
                   <th
                     scope="row"
-                    className="sticky left-0 z-10 border border-slate-200 bg-white px-2 py-1 text-left align-top text-[13px] font-medium text-slate-900"
+                    className="sticky left-0 z-10 border border-slate-200 bg-white px-2 py-1 text-left align-top text-[13px] font-medium text-slate-900 print:static"
                   >
                     <span className="line-clamp-2" title={row.site.name}>
                       {row.site.name}
@@ -268,7 +287,7 @@ export function WeekGrid({
               <tr>
                 <th
                   colSpan={8}
-                  className="sticky left-0 border border-slate-200 bg-slate-100 px-2 py-1 text-left text-[12px] font-semibold text-slate-700"
+                  className="sticky left-0 border border-slate-200 bg-slate-100 px-2 py-1 text-left text-[12px] font-semibold text-slate-700 print:static"
                 >
                   業務外
                 </th>
@@ -276,10 +295,10 @@ export function WeekGrid({
               {data.offRows.map((row) => (
                 // 🔴 key は label。offKind だけだと、一部勤務可を入れた 2026-09-16 以降
                 //   「有給」と「有給（夜A）」が同じ key になって行が入れ替わる
-                <tr key={row.label}>
+                <tr key={row.label} className="print:break-inside-avoid">
                   <th
                     scope="row"
-                    className="sticky left-0 z-10 border border-slate-200 bg-white px-2 py-1 text-left align-top text-[13px] font-medium text-slate-600"
+                    className="sticky left-0 z-10 border border-slate-200 bg-white px-2 py-1 text-left align-top text-[13px] font-medium text-slate-600 print:static"
                   >
                     {row.label}
                   </th>

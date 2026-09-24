@@ -16,7 +16,9 @@
 import Link from "next/link";
 import { requireStaff, canEdit } from "@/lib/auth";
 import { WeekDnd } from "@/components/board/WeekDnd";
+import { PrintButton } from "@/components/PrintButton";
 import { addDays, formatWeekDay, startOfWeek, todayInJst, type BoardShiftGroup } from "@/lib/board";
+import { jstHm } from "@/lib/board-format";
 import { getWeekBoardData } from "@/lib/week-board";
 
 function CountChip({
@@ -93,11 +95,28 @@ export default async function WeekPage({
   };
 
   const thisWeek = startOfWeek(todayInJst());
+
+  // 🔴 紙の見出し（2026-09-24）。紙は書き込んで**記録として残す**（柴山）ため、
+  //   「いつの時点の表か」を必ず刷る。印刷した時刻ではなく**データを取った時刻**
+  //   （画面を開いたまま後で刷ると、その間の変更は紙に載らない）。
+  const printHeading = {
+    title: `A表（${group === "day" ? "日勤" : "夜勤"}）${
+      // 管轄が1つのあいだは出さない（s20-output-design.md §7）
+      week.jurisdictions.length > 1 ? `　${week.jurisdiction.name}` : ""
+    }　${formatWeekDay(week.startDate)} 〜 ${formatWeekDay(week.dates[6])}`,
+    asOf: `${formatWeekDay(todayInJst())} ${jstHm(new Date().toISOString())} 時点`,
+  };
   const navBtn =
     "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* 🔴 紙は A3 縦（2026-09-24・柴山「A3 縦であることは確実」）。
+          @page は文書全体に効くため、この画面を開いているときだけ置く
+          （連絡の電話リストなど他の印刷を巻き込まない）。
+          インラインの style は CSP の style-src 'unsafe-inline' で許可されている */}
+      <style>{"@media print { @page { size: A3 portrait; margin: 8mm; } }"}</style>
+
       {/* ══ ヘッダ ═══════════════════════════════════════════ */}
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b-2 border-slate-300 bg-white px-4 py-2.5 shadow-sm">
         <div className="flex items-center gap-1">
@@ -162,10 +181,15 @@ export default async function WeekPage({
           <CountChip label="重複" value={week.counts.overlap} tone="overlap" />
         </div>
 
+        {/* 🔴 紙に出るのは表だけ（プール・ボタンは出ない）。screen-design.md §7-2-8 */}
+        <PrintButton
+          className="ml-auto rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
+        />
+
         {/* 🔴 確定は週表では行わない（§7-2-6）。日別へ降りる導線だけ置く */}
         <Link
           href={boardHref(week.baseDate)}
-          className="ml-auto rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
+          className="rounded-md border-2 border-slate-300 bg-white px-3 py-1.5 text-[14px] font-semibold text-slate-700 transition-all duration-150 ease-in-out hover:bg-slate-100"
         >
           {formatWeekDay(week.baseDate)} の配置ボードへ
         </Link>
@@ -177,6 +201,7 @@ export default async function WeekPage({
         baseHrefs={week.dates.map((d) => hrefWith({ base: d }))}
         dayHrefs={week.dates.map((d) => boardHref(d))}
         editable={editable}
+        printHeading={printHeading}
       />
     </div>
   );
