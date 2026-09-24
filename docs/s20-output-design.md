@@ -263,5 +263,5 @@
 
 1. §6-3 穴 #1〜#3 のマイグレーション＋ `consistency-audit.sql`（**本番 DB を変えるため、着手前に確認を取る**）
 2. §8 #6（請求番号）を実データで確かめる
-3. `hearing-kansei-20261001.md` に §8 #1 を1問追加／`hearing-jimu.md` に §8 #2〜#5・#8 を反映
+3. ✅ `hearing-kansei-20261001.md` に §8 #1 を追加（C-7）／`hearing-jimu.md` に §8 #2〜#5・#8 を反映
 4. `requirements.md` §7-1 条件4・§8-6 を本書に合わせて更新
