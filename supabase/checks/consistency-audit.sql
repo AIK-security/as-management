@@ -55,6 +55,13 @@ with problems as (
                   else sh.end_h * 60 + sh.end_m end as e_min
     ) m
    where a.kind = 'site'
+     -- 🔴 過去の稼働履歴（★「行ったことがある」の元データ）は**わざと時刻を持たない**
+     --   （20260903000000 の末尾・scripts/gen-seed.mts）。ずれではないので除く。
+     --   ただし除くのは「過去日 かつ 時刻が空」だけ。今日以降で時刻が空の行は
+     --   重複を止める EXCLUDE 制約が黙って外れている状態なので、**必ず拾う**。
+     --   （2026-09-24：この除外が無く、ダミーの履歴47件を誤ってずれと数えた）
+     and not (a.planned_start_at is null and a.planned_end_at is null
+              and a.work_date < (now() at time zone 'Asia/Tokyo')::date)
      and (   a.planned_start_at is distinct from
                (sh.work_date::timestamp + make_interval(mins => m.s_min)) at time zone 'Asia/Tokyo'
           or a.planned_end_at is distinct from
@@ -122,6 +129,8 @@ with counts as (
                     then sh.end_h * 60 + sh.end_m + 24 * 60
                     else sh.end_h * 60 + sh.end_m end as e_min) m
       where a.kind = 'site'
+        and not (a.planned_start_at is null and a.planned_end_at is null
+                 and a.work_date < (now() at time zone 'Asia/Tokyo')::date)
         and (   a.planned_start_at is distinct from
                   (sh.work_date::timestamp + make_interval(mins => m.s_min)) at time zone 'Asia/Tokyo'
              or a.planned_end_at is distinct from
