@@ -204,7 +204,8 @@ where id = (select id from auth.users where email = 'user@example.com');
 | 目的 | 実行するもの |
 |---|---|
 | 土台が正しく入ったか（新環境を作った直後） | `supabase/checks/verify-setup.sql` → **全行 ✅** になること |
-| RLS の付け忘れが無いか（**テーブルを追加するたび**） | `supabase/checks/rls-audit.sql` → **0行**であること |
+| RLS の付け忘れが無いか（**テーブルを追加するたび**） | `supabase/checks/rls-audit.sql` → 最後の判定が **✅ 1行**であること |
+| 写しが元とずれていないか（**テーブル・写しを追加するたび**） | `supabase/checks/consistency-audit.sql` → 最後の判定が **✅ 1行**であること<br>（考え方は `docs/s20-output-design.md` §6） |
 
 RLS が1つでも抜けていれば要件違反（`docs/requirements.md` §6 S-2）。
 

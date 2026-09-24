@@ -223,9 +223,14 @@
 | **3** | **協力会社かどうかが2か所**（`guards.employment_type='partner'` と `companies.kind='partner'`） | 自社所属なのに雇用形態が協力会社、が入る。**出力で自社と外注の数がずれる** | 一方から決まる形にし、矛盾を制約で止める |
 | **4** | **請求番号が2か所**（`sites.billing_no` と `customers.billing_no`） | どちらが正か決まっていない。**請求単位を決める列** | 🟠 **実データでの使い分けを確かめてから決める**（推測で直さない） |
 
+> ✅ **#1〜#3 は `supabase/migrations/20260924000000_consistency_guards.sql` で塞いだ**（2026-09-24 作成・✅ **同日 DB 適用済み**。トリガー3・制約4の存在を確認）。
+> #2 は複合外部キー（`on update cascade`：部署の管轄変更に所属が追随し、現場なら #1 が枠へ写す）。
+> #3 は `companies.kind` を正とし、協力会社所属なら DB が `partner` に揃え、自社なのに `partner` は拒否。
+> 協力会社 → 自社へ戻すときは所属隊員を `employee` に戻す（止めると隊員側を先に直す手段が無く、永久に戻せない）。
+
 ### 6-4. 検査 SQL
 
-`supabase/checks/consistency-audit.sql`（新規・未作成）。
+`supabase/checks/consistency-audit.sql`（2026-09-24 作成）。
 `rls-audit.sql` と同じく、**テーブルを足したら実行する。0行でなければ整合性違反。**
 
 ---
