@@ -19,15 +19,28 @@ import Link from "next/link";
 export default async function OffsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string }>;
+  searchParams: Promise<{ m?: string; h?: string }>;
 }) {
   // 🔴 ここが実際の関門。proxy.ts は導線であって認可ではない。
   const { profile } = await requireStaff();
   const editable = canEdit(profile);
 
   const sp = await searchParams;
-  const month = monthStart(sp.m, todayInJst()).slice(0, 7);
+  const today = todayInJst();
+  const month = monthStart(sp.m, today).slice(0, 7);
   const data = await getOffMonth(month);
+
+  // 🔴 半月ずつ見せる（2026-10-01）。1か月を横に並べるとマスが 26px しか取れず、
+  //   「マス・文字が小さい」と管制に言われた。半月なら言葉（有給・休み）で書ける。
+  //   既定は今日を含む側。今月でなければ前半から。
+  const isThisMonth = month === today.slice(0, 7);
+  const half: 1 | 2 =
+    sp.h === "1" || sp.h === "2"
+      ? (Number(sp.h) as 1 | 2)
+      : isThisMonth && Number(today.slice(8, 10)) > 15
+        ? 2
+        : 1;
+  const dates = half === 1 ? data.dates.slice(0, 15) : data.dates.slice(15);
 
   const navBtn =
     "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
@@ -50,7 +63,7 @@ export default async function OffsPage({
           <Link href={`/offs?m=${shiftMonth(month, 1)}`} className={navBtn} aria-label="次の月">
             ▶
           </Link>
-          {month !== todayInJst().slice(0, 7) && (
+          {!isThisMonth && (
             <Link
               href="/offs"
               className="ml-1 rounded-md border border-slate-300 px-2 py-1 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
@@ -60,8 +73,24 @@ export default async function OffsPage({
           )}
         </div>
 
+        <div className="ml-1 flex shrink-0 overflow-hidden rounded-md border border-slate-300">
+          {([1, 2] as const).map((h) => (
+            <Link
+              key={h}
+              href={`/offs?m=${month}&h=${h}`}
+              aria-current={half === h ? "true" : undefined}
+              className={[
+                "px-2.5 py-1 text-[13px] font-semibold whitespace-nowrap transition-all duration-150 ease-in-out",
+                half === h ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100",
+              ].join(" ")}
+            >
+              {h === 1 ? "1〜15日" : `16〜${data.dates.length}日`}
+            </Link>
+          ))}
+        </div>
+
         <div className="ml-1 flex shrink-0 items-baseline gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 whitespace-nowrap text-slate-700">
-          <span className="t-meta">休み</span>
+          <span className="t-meta">{Number(month.slice(5, 7))}月の休み</span>
           <span className="text-[16px] font-bold tabular-nums">{offCount}</span>
           <span className="t-meta text-slate-500">件</span>
         </div>
@@ -71,7 +100,7 @@ export default async function OffsPage({
         )}
       </header>
 
-      <OffGrid month={month} dates={data.dates} rows={data.rows} editable={editable} />
+      <OffGrid month={month} dates={dates} rows={data.rows} editable={editable} />
     </div>
   );
 }

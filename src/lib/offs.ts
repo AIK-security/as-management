@@ -24,6 +24,8 @@ export type OffEntry = {
 export type OffMonthRow = {
   guardId: string;
   name: string;
+  /** 🔴 並び順と「あかさたな」の見出しに使う。未登録の隊員もいるので null あり */
+  nameKana: string | null;
   shortName: string;
   isPartner: boolean;
   /** 'YYYY-MM-DD' → その日の休み（一部勤務可は最大3件） */
@@ -72,9 +74,8 @@ export async function getOffMonth(month: string): Promise<OffMonth> {
   const [guardRes, assignRes, companyRes] = await Promise.all([
     supabase
       .from("guards")
-      .select("id, staff_code, name, short_name, company_id, jurisdiction_id")
-      .eq("status", "active")
-      .order("name"),
+      .select("id, staff_code, name, name_kana, short_name, company_id, jurisdiction_id")
+      .eq("status", "active"),
     // 🔴 kind で絞らない。**配置が入っている日**も同時に知りたいため
     //   （休みと配置が同じ日に立っているのは事故で、気づけるのはこの画面だけ）
     supabase
@@ -90,7 +91,8 @@ export async function getOffMonth(month: string): Promise<OffMonth> {
   if (assignRes.error) throw new Error(`休みの取得に失敗しました: ${assignRes.error.message}`);
   if (companyRes.error) throw new Error(`会社の取得に失敗しました: ${companyRes.error.message}`);
 
-  const guards = (guardRes.data ?? []) as Guard[];
+  // フリガナは並び順のためだけに引く。共通の Guard 型には足さない（配置ボードでは使わない）
+  const guards = (guardRes.data ?? []) as (Guard & { name_kana: string | null })[];
   const partnerIds = new Set(
     ((companyRes.data ?? []) as { id: string; kind: string }[])
       .filter((c) => c.kind === "partner")
@@ -102,6 +104,7 @@ export async function getOffMonth(month: string): Promise<OffMonth> {
     rows.set(g.id, {
       guardId: g.id,
       name: g.name,
+      nameKana: g.name_kana,
       shortName: g.short_name,
       isPartner: partnerIds.has(g.company_id),
       byDate: {},
@@ -130,5 +133,15 @@ export async function getOffMonth(month: string): Promise<OffMonth> {
     }
   }
 
-  return { month, dates, rows: [...rows.values()] };
+  // 🔴 フリガナ順に並べる（2026-10-01）。以前は氏名（漢字）の文字コード順で、
+  //   人から見るとほぼばらばらだった ─ 100名を超えると目的の人が探せない（管制の指摘）。
+  //   半角カナが混じっても同じ順になるよう NFKC で揃える。フリガナの無い隊員は末尾に回す。
+  const sorted = [...rows.values()].sort((a, b) => {
+    const ka = a.nameKana?.normalize("NFKC") ?? "";
+    const kb = b.nameKana?.normalize("NFKC") ?? "";
+    if (!ka !== !kb) return ka ? -1 : 1;
+    return ka.localeCompare(kb, "ja") || a.name.localeCompare(b.name, "ja");
+  });
+
+  return { month, dates, rows: sorted };
 }
