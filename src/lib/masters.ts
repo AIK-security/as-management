@@ -95,6 +95,10 @@ export async function listSites({ q, page }: MasterQuery): Promise<MasterList<Si
   const supabase = await createClient();
   const [from, to] = rangeFor(page);
 
+  // 🔴 部署は外部キー名を指定して繋ぐ（2026-10-01）。
+  //   9/24 の整合性の修正で sites → departments の外部キーが2本になり
+  //   （department_id 単独／department_id + jurisdiction_id の複合）、
+  //   名前を書かないと PostgREST がどちらか決められず一覧ごと落ちる。隊員も同じ。
   let query = supabase
     .from("sites")
     .select(
@@ -103,7 +107,7 @@ export async function listSites({ q, page }: MasterQuery): Promise<MasterList<Si
        name_kana, address, band_name, billing_no,
        customer:customers ( name ),
        jurisdiction:jurisdictions ( name ),
-       department:departments ( name )`,
+       department:departments!sites_department_id_fkey ( name )`,
       { count: "exact" },
     )
     .order("name")
@@ -156,7 +160,7 @@ export async function listGuards({ q, page }: MasterQuery): Promise<MasterList<G
       `id, staff_code, guard_no, name, short_name, name_kana, email, employment_type, status,
        company:companies ( name, kind ),
        jurisdiction:jurisdictions ( name ),
-       department:departments ( name ),
+       department:departments!guards_department_id_fkey ( name ),
        guard_qualifications ( expires_on, qualification:qualifications ( short_label, name ) )`,
       { count: "exact" },
     )
