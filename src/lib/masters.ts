@@ -37,11 +37,65 @@ function safePage(raw: string | undefined): number {
   return Number.isInteger(n) && n >= 1 ? n : 1;
 }
 
-export type MasterQuery = { q: string; page: number };
+/**
+ * 一覧の検索条件（2026-10-02 に並べ替え・絞り込みを追加）。
+ *
+ * 🔴 すべて URL（searchParams）から来る＝**手で書き換えられる**。
+ *   並べ替えの鍵は一覧ごとの許可リスト（SITE_SORTS など）でしか列名に変えない。
+ *   絞り込みの値も形を検査してから使う。
+ */
+export type MasterQuery = {
+  q: string;
+  page: number;
+  /** 並べ替えの鍵。許可リストに無ければ既定の順 */
+  sort: string;
+  dir: "asc" | "desc";
+  /** 管轄コード */
+  j: string;
+  /** 状態：active / inactive。空なら全部 */
+  st: string;
+  /** 所属：own（自社）/ partner（協力会社）。空なら全部 */
+  co: string;
+};
+
+export type MasterSearchParams = {
+  q?: string;
+  page?: string;
+  sort?: string;
+  dir?: string;
+  j?: string;
+  st?: string;
+  co?: string;
+};
 
 /** searchParams から検索条件を取り出す。全マスタ共通。 */
-export function parseMasterQuery(sp: { q?: string; page?: string }): MasterQuery {
-  return { q: safeSearchTerm(sp.q), page: safePage(sp.page) };
+export function parseMasterQuery(sp: MasterSearchParams): MasterQuery {
+  const pick = (v: string | undefined, allowed: string[]) =>
+    v && allowed.includes(v) ? v : "";
+  return {
+    q: safeSearchTerm(sp.q),
+    page: safePage(sp.page),
+    sort: /^[a-z_]{1,20}$/.test(sp.sort ?? "") ? (sp.sort as string) : "",
+    dir: sp.dir === "desc" ? "desc" : "asc",
+    j: /^[0-9A-Za-z_-]{1,10}$/.test(sp.j ?? "") ? (sp.j as string) : "",
+    st: pick(sp.st, ["active", "inactive"]),
+    co: pick(sp.co, ["own", "partner"]),
+  };
+}
+
+/** 並べ替えの鍵 → ビューの列（先頭から順に効かせる）。 */
+type SortMap = Record<string, string[]>;
+
+/**
+ * 並べ替えの列を決める。**許可リストに無い鍵は既定の順に倒す**（URL の値を列名に直接使わない）。
+ * 最後に id を足す ─ 同じ値が並んだときの順が毎回変わると、ページ送りで行が飛ぶ・重なる。
+ */
+function sortColumns(sorts: SortMap, fallback: string, { sort, dir }: MasterQuery) {
+  const known = sort in sorts;
+  return {
+    cols: [...(known ? sorts[sort] : sorts[fallback]), "id"],
+    ascending: known ? dir === "asc" : true,
+  };
 }
 
 /** 一覧の共通の戻り値。件数はページャの表示に要る。 */
@@ -68,6 +122,9 @@ function rangeFor(page: number): [number, number] {
 
 // ─────────────────────────────────────────────────────────
 // 現場（S-10）
+//
+// 🔴 一覧はビュー site_list から読む（20261002200000_master_list_views.sql）。
+//   得意先名・管轄名を普通の列として持つので、並べ替え・絞り込み・検索が単純に書ける。
 // ─────────────────────────────────────────────────────────
 
 export type SiteRow = {
@@ -84,49 +141,58 @@ export type SiteRow = {
   name_kana: string | null;
   address: string | null;
   billing_no: string | null;
-  customer: { name: string } | null;
-  jurisdiction: { name: string } | null;
-  department: { name: string } | null;
+  customer_name: string | null;
+  jurisdiction_name: string | null;
+  department_name: string | null;
 };
 
-export async function listSites({ q, page }: MasterQuery): Promise<MasterList<SiteRow>> {
+/** 現場一覧の並べ替え。既定は現場コード順（実データの現場はフリガナが空のため） */
+const SITE_SORTS: SortMap = {
+  code: ["site_code"],
+  name: ["name"],
+  customer: ["customer_kana_sort", "customer_name"],
+  jurisdiction: ["jurisdiction_code"],
+  status: ["status"],
+};
+
+export async function listSites(query: MasterQuery): Promise<MasterList<SiteRow>> {
   const supabase = await createClient();
+  const { q, page, j, st } = query;
   const [from, to] = rangeFor(page);
 
-  // 🔴 部署は外部キー名を指定して繋ぐ（2026-10-01）。
-  //   9/24 の整合性の修正で sites → departments の外部キーが2本になり
-  //   （department_id 単独／department_id + jurisdiction_id の複合）、
-  //   名前を書かないと PostgREST がどちらか決められず一覧ごと落ちる。隊員も同じ。
-  let query = supabase
-    .from("sites")
+  let base = supabase
+    .from("site_list")
     .select(
       `id, site_code, name, short_name, status,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
-       name_kana, address, billing_no,
-       customer:customers ( name ),
-       jurisdiction:jurisdictions ( name ),
-       department:departments!sites_department_id_fkey ( name )`,
+       name_kana, address, billing_no, customer_name, jurisdiction_name, department_name`,
       { count: "exact" },
-    )
-    .order("name")
-    .range(from, to);
+    );
 
   // 🔴 検索対象は「管制が手元の紙に持っている値」に合わせる。
-  //   現場名・略称・フリガナ・現場コード・住所で引く（警備先番号は現場に持たせない ─ 2026-10-02）。
+  //   現場名・略称・フリガナ・現場コード・住所・**得意先名**（2026-10-02 追加）
   if (q) {
-    query = query.or(
-      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,site_code.ilike.%${q}%,address.ilike.%${q}%`,
+    base = base.or(
+      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,site_code.ilike.%${q}%,address.ilike.%${q}%,customer_name.ilike.%${q}%`,
     );
   }
+  if (j) base = base.eq("jurisdiction_code", j);
+  if (st) base = base.eq("status", st);
 
-  const { data, count, error } = await query;
+  const { cols, ascending } = sortColumns(SITE_SORTS, "code", query);
+  for (const c of cols) base = base.order(c, { ascending, nullsFirst: false });
+
+  const { data, count, error } = await base.range(from, to);
   if (error) throw new Error(`現場マスタの取得に失敗しました: ${error.message}`);
 
-  return toList((data ?? []) as unknown as SiteRow[], count ?? 0, page);
+  return toList((data ?? []) as SiteRow[], count ?? 0, page);
 }
 
 // ─────────────────────────────────────────────────────────
 // 隊員（S-11）
+//
+// 🔴 一覧はビュー guard_list から読む。資格は**そのページに出ている隊員の分だけ**別に引く
+//   （ビューから資格の表へ繋ぐと、PostgREST がビューの関係を推定できるかに頼ることになる）。
 // ─────────────────────────────────────────────────────────
 
 export type GuardRow = {
@@ -139,42 +205,79 @@ export type GuardRow = {
   email: string | null;
   employment_type: string;
   status: string;
-  company: { name: string; kind: string } | null;
-  jurisdiction: { name: string } | null;
-  department: { name: string } | null;
-  guard_qualifications: {
-    expires_on: string | null;
-    qualification: { short_label: string; name: string } | null;
-  }[];
+  company_name: string | null;
+  company_kind: string | null;
+  jurisdiction_name: string | null;
+  department_name: string | null;
+  guard_qualifications: GuardQualBadge[];
 };
 
-export async function listGuards({ q, page }: MasterQuery): Promise<MasterList<GuardRow>> {
+type GuardQualBadge = {
+  expires_on: string | null;
+  qualification: { short_label: string; name: string } | null;
+};
+
+/** 隊員一覧の並べ替え。既定はフリガナ順（休み画面と同じ） */
+const GUARD_SORTS: SortMap = {
+  code: ["staff_code_sort"],
+  name: ["name_kana_sort", "name"],
+  company: ["company_kind", "company_name"],
+  jurisdiction: ["jurisdiction_code"],
+  status: ["status"],
+};
+
+export async function listGuards(query: MasterQuery): Promise<MasterList<GuardRow>> {
   const supabase = await createClient();
+  const { q, page, j, st, co } = query;
   const [from, to] = rangeFor(page);
 
-  let query = supabase
-    .from("guards")
+  let base = supabase
+    .from("guard_list")
     .select(
       `id, staff_code, guard_no, name, short_name, name_kana, email, employment_type, status,
-       company:companies ( name, kind ),
-       jurisdiction:jurisdictions ( name ),
-       department:departments!guards_department_id_fkey ( name ),
-       guard_qualifications ( expires_on, qualification:qualifications ( short_label, name ) )`,
+       company_name, company_kind, jurisdiction_name, department_name`,
       { count: "exact" },
-    )
-    .order("name")
-    .range(from, to);
+    );
 
+  // フリガナは半角で入っているため、全角に揃えた列（name_kana_sort）でも引く
   if (q) {
-    query = query.or(
-      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,staff_code.ilike.%${q}%,guard_no.ilike.%${q}%`,
+    base = base.or(
+      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,name_kana_sort.ilike.%${q}%,staff_code.ilike.%${q}%,guard_no.ilike.%${q}%`,
     );
   }
+  if (j) base = base.eq("jurisdiction_code", j);
+  if (st) base = base.eq("status", st);
+  if (co) base = base.eq("company_kind", co);
 
-  const { data, count, error } = await query;
+  const { cols, ascending } = sortColumns(GUARD_SORTS, "name", query);
+  for (const c of cols) base = base.order(c, { ascending, nullsFirst: false });
+
+  const { data, count, error } = await base.range(from, to);
   if (error) throw new Error(`隊員マスタの取得に失敗しました: ${error.message}`);
 
-  return toList((data ?? []) as unknown as GuardRow[], count ?? 0, page);
+  const rows = (data ?? []) as Omit<GuardRow, "guard_qualifications">[];
+  const quals = new Map<string, GuardQualBadge[]>();
+  if (rows.length > 0) {
+    const { data: qd, error: qe } = await supabase
+      .from("guard_qualifications")
+      .select("guard_id, expires_on, qualification:qualifications ( short_label, name )")
+      .in(
+        "guard_id",
+        rows.map((r) => r.id),
+      );
+    if (qe) throw new Error(`隊員の資格の取得に失敗しました: ${qe.message}`);
+    for (const r of (qd ?? []) as unknown as ({ guard_id: string } & GuardQualBadge)[]) {
+      const list = quals.get(r.guard_id) ?? [];
+      list.push({ expires_on: r.expires_on, qualification: r.qualification });
+      quals.set(r.guard_id, list);
+    }
+  }
+
+  return toList(
+    rows.map((r) => ({ ...r, guard_qualifications: quals.get(r.id) ?? [] })),
+    count ?? 0,
+    page,
+  );
 }
 
 // ─────────────────────────────────────────────────────────
@@ -190,35 +293,56 @@ export type CustomerRow = {
   contact_name: string | null;
   billing_no: string | null;
   billing_name: string | null;
-  jurisdiction: { name: string } | null;
+  jurisdiction_name: string | null;
   /** 🔴 customers に status 列は無い（2026-09-08 にマイグレーションで確認）。
    *   有効・無効の区別はこのマスタでは持っていない。 */
   /** 現場数。得意先の規模がひと目で分かる（「1社で20件超」＝管制の実感） */
-  site_count: { count: number }[];
+  site_count: number;
 };
 
-export async function listCustomers({ q, page }: MasterQuery): Promise<MasterList<CustomerRow>> {
+/** 得意先一覧の並べ替え。既定はフリガナ順 */
+const CUSTOMER_SORTS: SortMap = {
+  code: ["staff_code_sort"],
+  name: ["name_kana_sort", "name"],
+  jurisdiction: ["jurisdiction_code"],
+  sites: ["site_count"],
+};
+
+export async function listCustomers(query: MasterQuery): Promise<MasterList<CustomerRow>> {
   const supabase = await createClient();
+  const { q, page, j } = query;
   const [from, to] = rangeFor(page);
 
-  let query = supabase
-    .from("customers")
-    .select(`id, staff_code, name, name_kana, contact_name, billing_no, billing_name,
-       jurisdiction:jurisdictions ( name ),
-       site_count:sites ( count )`, {
-      count: "exact",
-    })
-    .order("name")
-    .range(from, to);
+  let base = supabase
+    .from("customer_list")
+    .select(
+      `id, staff_code, name, name_kana, contact_name, billing_no, billing_name,
+       jurisdiction_name, site_count`,
+      { count: "exact" },
+    );
 
   if (q) {
-    query = query.or(`name.ilike.%${q}%,name_kana.ilike.%${q}%,staff_code.ilike.%${q}%`);
+    base = base.or(
+      `name.ilike.%${q}%,name_kana.ilike.%${q}%,name_kana_sort.ilike.%${q}%,staff_code.ilike.%${q}%`,
+    );
   }
+  if (j) base = base.eq("jurisdiction_code", j);
 
-  const { data, count, error } = await query;
+  const { cols, ascending } = sortColumns(CUSTOMER_SORTS, "name", query);
+  for (const c of cols) base = base.order(c, { ascending, nullsFirst: false });
+
+  const { data, count, error } = await base.range(from, to);
   if (error) throw new Error(`得意先マスタの取得に失敗しました: ${error.message}`);
 
-  return toList((data ?? []) as unknown as CustomerRow[], count ?? 0, page);
+  return toList((data ?? []) as CustomerRow[], count ?? 0, page);
+}
+
+/** 一覧の絞り込みに出す管轄（コード順） */
+export async function listJurisdictionOptions(): Promise<{ code: string; name: string }[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("jurisdictions").select("code, name").order("code");
+  if (error) throw new Error(`管轄の取得に失敗しました: ${error.message}`);
+  return (data ?? []) as { code: string; name: string }[];
 }
 
 // ─────────────────────────────────────────────────────────

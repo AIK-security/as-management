@@ -11,20 +11,83 @@
 //   セル間の縦線は入れず横線だけ。行ホバーでマウス位置を示す。
 import Link from "next/link";
 import { ClickableRow } from "@/components/masters/ClickableRow";
-import { PAGE_SIZE, type MasterList } from "@/lib/masters";
+import { AutoSubmitSelect } from "@/components/masters/AutoSubmitSelect";
+import { PAGE_SIZE, type MasterList, type MasterQuery } from "@/lib/masters";
 
-/** 検索欄。GET フォームなので JS 不要。 */
+/** 検索条件の一部（NG のように並べ替え・絞り込みを持たない一覧もある） */
+type QueryLike = Pick<MasterQuery, "q"> & Partial<Omit<MasterQuery, "q">>;
+
+/**
+ * 一覧の URL を組み立てる（2026-10-02）。
+ * 🔴 検索語・並べ替え・絞り込みを**いつも全部引き継ぐ**。
+ *   ページ送りや見出しのクリックで条件が1つでも落ちると、「さっきと違う一覧」になる。
+ *   既定値（1ページ目・昇順・空の絞り込み）は URL に書かない。
+ */
+export function masterHref(action: string, query: QueryLike, patch: Partial<MasterQuery> = {}) {
+  const v = { ...query, ...patch };
+  const sp = new URLSearchParams();
+  if (v.q) sp.set("q", v.q);
+  if (v.j) sp.set("j", v.j);
+  if (v.st) sp.set("st", v.st);
+  if (v.co) sp.set("co", v.co);
+  if (v.sort) sp.set("sort", v.sort);
+  if (v.sort && v.dir === "desc") sp.set("dir", "desc");
+  if (v.page && v.page > 1) sp.set("page", String(v.page));
+  const s = sp.toString();
+  return s ? `${action}?${s}` : action;
+}
+
+/** 絞り込みのプルダウン1つぶん */
+export type FilterDef = {
+  name: "j" | "st" | "co";
+  label: string;
+  options: { value: string; label: string }[];
+};
+
+/**
+ * 検索欄。GET フォームなので JS 不要。
+ * 🔴 絞り込みのプルダウンは選んだ瞬間に送る（AutoSubmitSelect）。JS が止まっていても「検索」で送れる。
+ * 🔴 並べ替えは hidden で引き継ぐ。検索し直したら並びが既定に戻る、を起こさない。
+ */
 export function SearchForm({
   action,
   q,
   placeholder,
+  query,
+  filters = [],
 }: {
   action: string;
   q: string;
   placeholder: string;
+  query?: QueryLike;
+  filters?: FilterDef[];
 }) {
+  const active = filters.some((f) => query?.[f.name]);
   return (
-    <form action={action} method="get" className="flex items-center gap-2">
+    <form action={action} method="get" className="flex flex-wrap items-center gap-2">
+      {query?.sort && <input type="hidden" name="sort" value={query.sort} />}
+      {query?.sort && query.dir === "desc" && <input type="hidden" name="dir" value="desc" />}
+      {filters.map((f) => (
+        <AutoSubmitSelect
+          key={f.name}
+          name={f.name}
+          defaultValue={query?.[f.name] ?? ""}
+          aria-label={f.label}
+          className={[
+            "h-9 rounded-md border px-2 text-[14px] transition-all duration-150 ease-in-out focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20",
+            query?.[f.name]
+              ? "border-indigo-400 bg-indigo-50 text-indigo-800"
+              : "border-slate-300 bg-white text-slate-700",
+          ].join(" ")}
+        >
+          <option value="">{f.label}：すべて</option>
+          {f.options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {f.label}：{o.label}
+            </option>
+          ))}
+        </AutoSubmitSelect>
+      ))}
       {/* 🔴 検索したら1ページ目へ戻す。page を残すと
           「3ページ目の絞り込み結果」＝ たいてい空振り になる */}
       <input
@@ -40,7 +103,7 @@ export function SearchForm({
       >
         検索
       </button>
-      {q && (
+      {(q || active) && (
         <Link
           href={action}
           className="h-9 rounded-md border border-slate-300 bg-white px-3 text-[14px] font-medium leading-9 text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
@@ -56,19 +119,16 @@ export function SearchForm({
 export function Pager<T>({
   action,
   q,
+  query,
   list,
 }: {
   action: string;
   q: string;
+  /** 並べ替え・絞り込みを引き継ぐ。無い一覧（NG）は q だけ */
+  query?: QueryLike;
   list: MasterList<T>;
 }) {
-  const href = (page: number) => {
-    const sp = new URLSearchParams();
-    if (q) sp.set("q", q);
-    if (page > 1) sp.set("page", String(page));
-    const s = sp.toString();
-    return s ? `${action}?${s}` : action;
-  };
+  const href = (page: number) => masterHref(action, query ?? { q }, { page });
 
   const first = list.total === 0 ? 0 : (list.page - 1) * PAGE_SIZE + 1;
   const last = Math.min(list.page * PAGE_SIZE, list.total);
@@ -158,6 +218,52 @@ export function Th({
   );
 }
 
+/**
+ * 押すと並べ替わる見出し（2026-10-02）。もう一度押すと逆順。
+ * 🔴 <Link> なので JS 不要。並べ替えたら1ページ目へ戻す（並びが変わればページの中身も変わる）。
+ */
+export function SortTh({
+  children,
+  action,
+  query,
+  sortKey,
+  isDefault = false,
+  className = "",
+}: {
+  children: React.ReactNode;
+  action: string;
+  query: MasterQuery;
+  sortKey: string;
+  /** 何も指定していないときの並び（＝ この列の昇順）なら true */
+  isDefault?: boolean;
+  className?: string;
+}) {
+  const current = query.sort ? query.sort === sortKey : isDefault;
+  const dir = query.sort ? query.dir : "asc";
+  const next = current && dir === "asc" ? "desc" : "asc";
+  return (
+    <th
+      scope="col"
+      aria-sort={current ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      className={`whitespace-nowrap px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide ${className}`}
+    >
+      <Link
+        href={masterHref(action, query, { sort: sortKey, dir: next, page: 1 })}
+        className={[
+          "inline-flex items-center gap-0.5 rounded px-0.5 transition-all duration-150 ease-in-out hover:bg-slate-200 hover:text-slate-800",
+          current ? "text-indigo-700" : "text-slate-500",
+        ].join(" ")}
+        title={`${typeof children === "string" ? children : "この列"}で並べ替え`}
+      >
+        {children}
+        <span className={current ? "" : "text-slate-300"}>
+          {current ? (dir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </Link>
+    </th>
+  );
+}
+
 export function Td({
   children,
   className = "",
@@ -236,14 +342,26 @@ export function Row({
 }
 
 /** 0件のときの表示。「壊れている」と「該当が無い」を言い分ける。 */
-export function EmptyRow({ colSpan, q }: { colSpan: number; q: string }) {
+export function EmptyRow({
+  colSpan,
+  q,
+  filtered = false,
+}: {
+  colSpan: number;
+  q: string;
+  /** 絞り込みが効いているか（「データが無い」と言い分ける） */
+  filtered?: boolean;
+}) {
   return (
     <tr>
       <td colSpan={colSpan} className="px-3 py-10 text-center text-[14px] text-slate-500">
         {q ? (
           <>
-            「<span className="font-semibold text-slate-700">{q}</span>」に一致する行はありません。
+            「<span className="font-semibold text-slate-700">{q}</span>」に一致する行はありません
+            {filtered && "（絞り込み中）"}。
           </>
+        ) : filtered ? (
+          "絞り込みに一致する行はありません。"
         ) : (
           "データがありません。"
         )}

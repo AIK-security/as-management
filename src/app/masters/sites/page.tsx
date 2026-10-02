@@ -8,7 +8,12 @@
 // 🔴 警備先番号は現場に持たせない（2026-10-02）。一覧は現場コードを出す。
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
-import { listSites, parseMasterQuery } from "@/lib/masters";
+import {
+  listJurisdictionOptions,
+  listSites,
+  parseMasterQuery,
+  type MasterSearchParams,
+} from "@/lib/masters";
 import {
   Ellipsis,
   EmptyRow,
@@ -16,6 +21,7 @@ import {
   Pager,
   Row,
   SearchForm,
+  SortTh,
   Td,
   Th,
 } from "@/components/masters/MasterFrame";
@@ -31,20 +37,42 @@ function planTime(h: number | null, m: number | null) {
 export default async function SitesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string }>;
+  searchParams: Promise<MasterSearchParams>;
 }) {
   // 🔴 layout でも通しているが、ここでも通す（関門を layout だけに預けない）
   await requireStaff();
 
   const query = parseMasterQuery(await searchParams);
-  const list = await listSites(query);
+  const [list, jurisdictions] = await Promise.all([listSites(query), listJurisdictionOptions()]);
+  const filtered = Boolean(query.j || query.st);
+  const sortProps = { action: ACTION, query };
 
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SearchForm action={ACTION} q={query.q} placeholder="現場名・略称・現場コードで検索" />
+        <SearchForm
+          action={ACTION}
+          q={query.q}
+          query={query}
+          placeholder="現場名・得意先名・現場コードで検索"
+          filters={[
+            {
+              name: "j",
+              label: "管轄",
+              options: jurisdictions.map((j) => ({ value: j.code, label: j.name })),
+            },
+            {
+              name: "st",
+              label: "状態",
+              options: [
+                { value: "active", label: "稼働" },
+                { value: "inactive", label: "停止" },
+              ],
+            },
+          ]}
+        />
         <div className="flex items-center gap-2">
-          <Pager action={ACTION} q={query.q} list={list} />
+          <Pager action={ACTION} q={query.q} query={query} list={list} />
           {/* 🔴 新規登録の入口（2026-09-09）。これまで一覧に入口が無く、
               現場は配置ボード経由でしか作れず、隊員・得意先は作れなかった。
               権限の出し分けはしない ─ 押した先の requireRole() と RLS で止める。 */}
@@ -57,24 +85,35 @@ export default async function SitesPage({
       <MasterTable
         head={
           <>
-            <Th>現場コード</Th>
-            <Th>現場名</Th>
+            {/* 🔴 見出しを押すと並べ替え（2026-10-02）。既定は現場コード順 */}
+            <SortTh {...sortProps} sortKey="code" isDefault>
+              現場コード
+            </SortTh>
+            <SortTh {...sortProps} sortKey="name">
+              現場名
+            </SortTh>
             <Th>フリガナ</Th>
             <Th>略称</Th>
-            <Th>得意先</Th>
-            <Th>管轄</Th>
+            <SortTh {...sortProps} sortKey="customer">
+              得意先
+            </SortTh>
+            <SortTh {...sortProps} sortKey="jurisdiction">
+              管轄
+            </SortTh>
             <Th>部署</Th>
             <Th>予定</Th>
             <Th className="text-right">休憩</Th>
             <Th>住所</Th>
             <Th>請求番号</Th>
-            <Th>状態</Th>
+            <SortTh {...sortProps} sortKey="status">
+              状態
+            </SortTh>
             <Th> </Th>
           </>
         }
       >
         {list.rows.length === 0 ? (
-          <EmptyRow colSpan={13} q={query.q} />
+          <EmptyRow colSpan={13} q={query.q} filtered={filtered} />
         ) : (
           list.rows.map((s) => {
             const start = planTime(s.plan_start_h, s.plan_start_m);
@@ -90,8 +129,8 @@ export default async function SitesPage({
                 </Td>
                 <Td className="text-slate-500">{s.short_name}</Td>
                 <Td>
-                  <Ellipsis value={s.customer?.name} width="max-w-[160px]" />
-                  {!s.customer && (
+                  <Ellipsis value={s.customer_name} width="max-w-[160px]" />
+                  {!s.customer_name && (
                     // 🔴 「（あとで設定する）」で作った現場がここに出る。
                     //   放置すると請求（第2弾）の突き合わせで詰まるため目立たせる
                     <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[12px] font-medium text-amber-800">
@@ -99,8 +138,8 @@ export default async function SitesPage({
                     </span>
                   )}
                 </Td>
-                <Td className="text-slate-500">{s.jurisdiction?.name ?? "—"}</Td>
-                <Td className="text-slate-500">{s.department?.name ?? "—"}</Td>
+                <Td className="text-slate-500">{s.jurisdiction_name ?? "—"}</Td>
+                <Td className="text-slate-500">{s.department_name ?? "—"}</Td>
                 <Td className="font-mono tabular-nums">
                   {start && end ? (
                     `${start}–${end}`
