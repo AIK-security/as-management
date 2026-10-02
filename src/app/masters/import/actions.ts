@@ -191,15 +191,24 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
   //   ShiftMax が正なので、警備先番号が同じなら丸ごと上書きする。
   // ─────────────────────────────────────────────────────
   if (input.kind === "duties") {
-    const existing = await codeToId(supabase, "duty_codes", "guard_target_no");
-    if (!existing.ok) return existing;
+    // 🔴 duty_codes は id 列を持たない（主キーが警備先番号）。codeToId は使えない
+    const existing = new Set<string>();
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase
+        .from("duty_codes")
+        .select("guard_target_no")
+        .range(from, from + 999);
+      if (error) return { ok: false, message: toMessage(error) };
+      for (const r of data ?? []) existing.add(r.guard_target_no);
+      if ((data?.length ?? 0) < 1000) break;
+    }
     for (const part of chunk(input.rows)) {
       const { error } = await supabase
         .from("duty_codes")
         .upsert(part, { onConflict: "guard_target_no" });
       if (error) return { ok: false, message: toMessage(error) };
     }
-    const created = input.rows.filter((r) => !existing.map.has(r.guard_target_no)).length;
+    const created = input.rows.filter((r) => !existing.has(r.guard_target_no)).length;
     refresh();
     return {
       ok: true,
