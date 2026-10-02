@@ -9,6 +9,7 @@
 //   「見えない」は壊れているのではなく、そう設計してある。
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
 // 🔴 内部でも使う。再エクスポートしただけでは同一モジュール内から参照できない
 import {
   GROUP_WORK_KINDS,
@@ -137,7 +138,11 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     .order("code");
   if (jError) throw jError;
 
-  const jurisdictions = (jurisdictionRows ?? []) as Jurisdiction[];
+  // 切り替えに出すのは現場を持つ管轄だけ（src/lib/site-jurisdictions.ts）
+  const jurisdictions = await keepSiteJurisdictions(
+    supabase,
+    (jurisdictionRows ?? []) as Jurisdiction[],
+  );
   if (jurisdictions.length === 0) {
     // マイグレーションは通ったがダミー投入がまだ、という状態。
     // ここで落とすと原因が分かりにくいので、空のボードとして返す。

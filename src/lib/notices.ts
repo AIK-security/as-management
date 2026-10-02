@@ -9,6 +9,7 @@
 //
 // ⚠️ 暫定方針であり確定ではない（screen-design.md §4-1）。9/16 の管制ヒアリングで詰める。
 import { createClient } from "@/lib/supabase/server";
+import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
 import type { BoardShiftGroup } from "@/lib/board";
 import { todayInJst } from "@/lib/board-format";
 // 🔴 型と差し込みは notice-format 側に置く（クライアントからも読むため）。
@@ -193,5 +194,6 @@ export async function listJurisdictionsForNotice() {
     .select("id, code, name")
     .order("code");
   if (error) throw new Error(`管轄の取得に失敗しました: ${error.message}`);
-  return (data ?? []) as { id: string; code: string; name: string }[];
+  // 切り替えに出すのは現場を持つ管轄だけ（src/lib/site-jurisdictions.ts）
+  return keepSiteJurisdictions(supabase, (data ?? []) as { id: string; code: string; name: string }[]);
 }
