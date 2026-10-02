@@ -311,7 +311,7 @@ export async function listNgEntries({ q, page }: MasterQuery): Promise<MasterLis
       ? supabase.from("guards").select("id, name").in("id", guardIds)
       : Promise.resolve({ data: [], error: null }),
     siteIds.length
-      ? supabase.from("sites").select("id, name").in("id", siteIds)
+      ? supabase.from("sites").select("id, name, customer:customers ( name )").in("id", siteIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -319,7 +319,7 @@ export async function listNgEntries({ q, page }: MasterQuery): Promise<MasterLis
     ((guardsRes.data ?? []) as { id: string; name: string }[]).map((g) => [g.id, g.name]),
   );
   const siteName = new Map(
-    ((sitesRes.data ?? []) as { id: string; name: string }[]).map((s) => [s.id, s.name]),
+    ((sitesRes.data ?? []) as unknown as SiteWithCustomer[]).map((s) => [s.id, siteLabel(s)]),
   );
 
   const rows: NgRow[] = raw.map((r) => ({
@@ -341,21 +341,38 @@ export async function listNgEntries({ q, page }: MasterQuery): Promise<MasterLis
   return toList(rows, count ?? 0, page);
 }
 
+type SiteWithCustomer = { id: string; name: string; customer: { name: string } | null };
+
+/**
+ * 現場を名前で見せるときの表記。**得意先名を添える**（2026-10-02）。
+ * 🔴 現場は〈現場名 × 得意先〉で1件のため、同じ名前の現場がありうる
+ *   （7月実データで「東門前」「梶が谷」など駅名の現場に別の元請け）。名前だけでは選び分けられない。
+ */
+function siteLabel(s: SiteWithCustomer): string {
+  return s.customer?.name ? `${s.name}（${s.customer.name}）` : s.name;
+}
+
 /** NG 登録の選択肢。
- *  🟠 実データでは現場 1,593 件。全件を画面へ送るのは配置ボードと同じ宿題
- *     （board.ts に注記済み）。ここも実データ移行時に検索へ寄せる。 */
+ *  🟠 実データでは現場 約130件（7月分で127件）。件数が増えたら検索へ寄せる。 */
 export async function listNgPicks() {
   const supabase = await createClient();
   const [guardsRes, sitesRes] = await Promise.all([
     supabase.from("guards").select("id, name").eq("status", "active").order("name"),
-    supabase.from("sites").select("id, name").eq("status", "active").order("name"),
+    supabase
+      .from("sites")
+      .select("id, name, customer:customers ( name )")
+      .eq("status", "active")
+      .order("name"),
   ]);
   if (guardsRes.error) throw new Error(`隊員の取得に失敗しました: ${guardsRes.error.message}`);
   if (sitesRes.error) throw new Error(`現場の取得に失敗しました: ${sitesRes.error.message}`);
 
   return {
     guards: (guardsRes.data ?? []) as { id: string; name: string }[],
-    sites: (sitesRes.data ?? []) as { id: string; name: string }[],
+    sites: ((sitesRes.data ?? []) as unknown as SiteWithCustomer[]).map((s) => ({
+      id: s.id,
+      name: siteLabel(s),
+    })),
   };
 }
 
