@@ -5,6 +5,10 @@
 //   隊員の所属会社 ─ は**一切触らない**。
 //   ShiftMax が正である間は、何度でも取り直せる状態を保つのが狙い。
 //
+// 🔴 2026-10-02：勤務マスターは現場ではなく `duty_codes`（〈得意先×区分〉→ 警備先番号）へ入れる。
+//   現場は実データから起こした一覧で入れ、**新しい現場だけ足す（既存には触らない）**。
+//   現場コードは DB が振るため、流し直しても番号が付け替わらない。
+//
 // 🔴 認可は3枚重ねの2枚目。Server Action は URL なので、ここでも必ず見る。
 "use server";
 
@@ -13,6 +17,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type {
   CustomerImportRow,
+  DutyImportRow,
   GuardImportRow,
   MasterKind,
   SiteImportRow,
@@ -24,8 +29,8 @@ export type ImportResult =
       kind: MasterKind;
       created: number;
       updated: number;
-      /** 得意先が見つからず、紐付けを見送った現場の件数（現場の取込のみ） */
-      unresolvedCustomers: number;
+      /** 既にあったため触らなかった件数（現場一覧のみ） */
+      skipped: number;
       /** 新しく作った管轄・部署 */
       newJurisdictions: string[];
       newDepartments: string[];
@@ -170,6 +175,7 @@ async function ensureOrgs(
 /** 取込1件ぶんの入力。画面側で解釈・検証を済ませたものを受け取る。 */
 export type ImportInput =
   | { kind: "guards"; rows: GuardImportRow[] }
+  | { kind: "duties"; rows: DutyImportRow[] }
   | { kind: "sites"; rows: SiteImportRow[] }
   | { kind: "customers"; rows: CustomerImportRow[] };
 
@@ -178,6 +184,33 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
   if (input.rows.length === 0) return { ok: false, message: "取り込む行がありません。" };
 
   const supabase = await createClient();
+
+  // ─────────────────────────────────────────────────────
+  // 勤務マスター（警備先番号の対応表）
+  //   管轄・部署を持たない写しなので、組織の用意より前に済ませる。
+  //   ShiftMax が正なので、警備先番号が同じなら丸ごと上書きする。
+  // ─────────────────────────────────────────────────────
+  if (input.kind === "duties") {
+    const existing = await codeToId(supabase, "duty_codes", "guard_target_no");
+    if (!existing.ok) return existing;
+    for (const part of chunk(input.rows)) {
+      const { error } = await supabase
+        .from("duty_codes")
+        .upsert(part, { onConflict: "guard_target_no" });
+      if (error) return { ok: false, message: toMessage(error) };
+    }
+    const created = input.rows.filter((r) => !existing.map.has(r.guard_target_no)).length;
+    refresh();
+    return {
+      ok: true,
+      kind: "duties",
+      created,
+      updated: input.rows.length - created,
+      skipped: 0,
+      newJurisdictions: [],
+      newDepartments: [],
+    };
+  }
 
   // ── 管轄・部署を先に揃える ──────────────────────────
   const jset = new Map<string, string | null>();
@@ -198,7 +231,7 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
   const base = {
     newJurisdictions: orgs.newJurisdictions,
     newDepartments: orgs.newDepartments,
-    unresolvedCustomers: 0,
+    skipped: 0,
   };
 
   // ─────────────────────────────────────────────────────
@@ -308,75 +341,84 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
   }
 
   // ─────────────────────────────────────────────────────
-  // 現場
+  // 現場一覧
+  //
+  // 🔴 **新しい現場だけ足す。既存の現場には触らない。**
+  //   現場は取込のあと管制が画面で直していく（住所・略称・資格など）。
+  //   一覧を流し直すたびに上書きすると、その手直しが消える。
+  //   突き合わせは〈現場名 × 得意先〉（同じ駅名に別の元請けが入る ─ 10/2 確認）。
   // ─────────────────────────────────────────────────────
-  const existing = await codeToId(supabase, "sites", "site_code");
-  if (!existing.ok) return existing;
   const customers = await codeToId(supabase, "customers", "staff_code");
   if (!customers.ok) return customers;
+
+  // 🔴 担当コードがあるのに得意先が引けない行があれば、**丸ごと止める**。
+  //   得意先なしで作ってしまうと、あとで得意先を入れて流し直したとき
+  //   〈現場名 × 得意先〉が一致せず、同じ現場がもう1件できる。
+  const unresolved = input.rows.filter(
+    (r) => r.customer_staff_code && !customers.map.has(r.customer_staff_code),
+  );
+  if (unresolved.length > 0) {
+    return {
+      ok: false,
+      message: `${unresolved.length.toLocaleString()} 件の現場で、担当コードに対応する得意先が見つかりません（例：${unresolved[0].customer_staff_code}）。先に得意先マスターを取り込んでください。`,
+    };
+  }
 
   const missingJ = input.rows.find((r) => !jid(r.jurisdiction_code));
   if (missingJ) {
     return { ok: false, message: `管轄 ${missingJ.jurisdiction_code} を用意できませんでした。` };
   }
 
-  const common = (r: SiteImportRow) => ({
-    site_code: r.site_code,
-    guard_target_no: r.guard_target_no,
-    name: r.name,
-    short_name: r.short_name,
-    name_kana: r.name_kana,
-    band_name: r.band_name,
-    address: r.address,
-    plan_start_h: r.plan_start_h,
-    plan_start_m: r.plan_start_m,
-    plan_end_h: r.plan_end_h,
-    plan_end_m: r.plan_end_m,
-    plan_break: r.plan_break,
-    has_plan: r.has_plan,
-    customer_code: r.customer_code,
-    customer_no: r.customer_no,
-    billing_no: r.billing_no,
-    jurisdiction_id: jid(r.jurisdiction_code),
-    department_id: did(r.department_code),
-  });
+  const keyOf = (name: string, customerId: string | null) => `${name}\u0000${customerId ?? ""}`;
+  const existing = new Set<string>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("sites")
+      .select("name, customer_id")
+      .range(from, from + 999);
+    if (error) return { ok: false, message: toMessage(error) };
+    for (const r of data ?? []) existing.add(keyOf(r.name, r.customer_id));
+    if ((data?.length ?? 0) < 1000) break;
+  }
 
-  // 🔴 得意先を引けた行と引けなかった行で、送る列を変える。
-  //   引けない行にも `customer_id: null` を送ると、**既に紐付いている現場の
-  //   得意先が消える**。得意先マスターを先に取り込んでいないときに必ず起きる。
-  const linked = input.rows.filter(
-    (r) => r.customer_staff_code && customers.map.has(r.customer_staff_code),
-  );
-  const unlinked = input.rows.filter(
-    (r) => !r.customer_staff_code || !customers.map.has(r.customer_staff_code),
-  );
+  const customerIdOf = (r: SiteImportRow) =>
+    r.customer_staff_code ? (customers.map.get(r.customer_staff_code) as string) : null;
+  const news = input.rows.filter((r) => !existing.has(keyOf(r.name, customerIdOf(r))));
 
-  for (const part of chunk(linked)) {
-    const { error } = await supabase.from("sites").upsert(
+  for (const part of chunk(news)) {
+    // site_code は送らない（DB が AS0001〜 を振る）
+    const { error } = await supabase.from("sites").insert(
       part.map((r) => ({
-        ...common(r),
-        customer_id: customers.map.get(r.customer_staff_code as string) as string,
+        name: r.name,
+        short_name: r.short_name,
+        name_kana: r.name_kana,
+        band_name: r.band_name,
+        address: r.address,
+        plan_start_h: r.plan_start_h,
+        plan_start_m: r.plan_start_m,
+        plan_end_h: r.plan_end_h,
+        plan_end_m: r.plan_end_m,
+        plan_break: r.plan_break,
+        has_plan: r.has_plan,
+        customer_id: customerIdOf(r),
+        customer_code: r.customer_code,
+        customer_no: r.customer_no,
+        billing_no: r.billing_no,
+        jurisdiction_id: jid(r.jurisdiction_code),
+        department_id: did(r.department_code),
       })),
-      { onConflict: "site_code" },
     );
     if (error) return { ok: false, message: toMessage(error) };
   }
-  for (const part of chunk(unlinked)) {
-    const { error } = await supabase
-      .from("sites")
-      .upsert(part.map(common), { onConflict: "site_code" });
-    if (error) return { ok: false, message: toMessage(error) };
-  }
 
-  const created = input.rows.filter((r) => !existing.map.has(r.site_code)).length;
   refresh();
   return {
     ok: true,
     kind: "sites",
-    created,
-    updated: input.rows.length - created,
+    created: news.length,
+    updated: 0,
+    skipped: input.rows.length - news.length,
     newJurisdictions: orgs.newJurisdictions,
     newDepartments: orgs.newDepartments,
-    unresolvedCustomers: unlinked.filter((r) => r.customer_staff_code).length,
   };
 }

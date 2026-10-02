@@ -62,8 +62,6 @@ export type Customer = {
 export type Site = {
   id: string;
   site_code: string;
-  /** 警備先番号。べんり君の入力キーでもある */
-  guard_target_no: string;
   name: string;
   short_name: string;
   customer_id: string;

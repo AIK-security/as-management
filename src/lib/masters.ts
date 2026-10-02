@@ -73,7 +73,6 @@ function rangeFor(page: number): [number, number] {
 export type SiteRow = {
   id: string;
   site_code: string;
-  guard_target_no: string;
   name: string;
   short_name: string;
   status: string;
@@ -102,7 +101,7 @@ export async function listSites({ q, page }: MasterQuery): Promise<MasterList<Si
   let query = supabase
     .from("sites")
     .select(
-      `id, site_code, guard_target_no, name, short_name, status,
+      `id, site_code, name, short_name, status,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
        name_kana, address, band_name, billing_no,
        customer:customers ( name ),
@@ -114,10 +113,10 @@ export async function listSites({ q, page }: MasterQuery): Promise<MasterList<Si
     .range(from, to);
 
   // 🔴 検索対象は「管制が手元の紙に持っている値」に合わせる。
-  //   現場名・略称のほか、**警備先番号**（べんり君の入力キー）で引けることが要る。
+  //   現場名・略称・フリガナ・現場コード・住所で引く（警備先番号は現場に持たせない ─ 2026-10-02）。
   if (q) {
     query = query.or(
-      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,guard_target_no.ilike.%${q}%,site_code.ilike.%${q}%,address.ilike.%${q}%`,
+      `name.ilike.%${q}%,short_name.ilike.%${q}%,name_kana.ilike.%${q}%,site_code.ilike.%${q}%,address.ilike.%${q}%`,
     );
   }
 
@@ -350,14 +349,14 @@ export async function listNgPicks() {
   const supabase = await createClient();
   const [guardsRes, sitesRes] = await Promise.all([
     supabase.from("guards").select("id, name").eq("status", "active").order("name"),
-    supabase.from("sites").select("id, name, guard_target_no").eq("status", "active").order("name"),
+    supabase.from("sites").select("id, name").eq("status", "active").order("name"),
   ]);
   if (guardsRes.error) throw new Error(`隊員の取得に失敗しました: ${guardsRes.error.message}`);
   if (sitesRes.error) throw new Error(`現場の取得に失敗しました: ${sitesRes.error.message}`);
 
   return {
     guards: (guardsRes.data ?? []) as { id: string; name: string }[],
-    sites: (sitesRes.data ?? []) as { id: string; name: string; guard_target_no: string }[],
+    sites: (sitesRes.data ?? []) as { id: string; name: string }[],
   };
 }
 
@@ -368,7 +367,6 @@ export async function listNgPicks() {
 export type SiteDetail = {
   id: string;
   site_code: string;
-  guard_target_no: string;
   name: string;
   short_name: string;
   name_kana: string | null;
@@ -396,7 +394,7 @@ export async function getSite(id: string): Promise<SiteDetail | null> {
   const { data, error } = await supabase
     .from("sites")
     .select(
-      `id, site_code, guard_target_no, name, short_name, name_kana, address, band_name,
+      `id, site_code, name, short_name, name_kana, address, band_name,
        billing_no, customer_code, customer_no,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break, has_plan,
        customer_id, jurisdiction_id, department_id, status`,
@@ -853,7 +851,6 @@ export async function getGuardAssignments(
 export type CustomerSiteRow = {
   id: string;
   site_code: string;
-  guard_target_no: string;
   name: string;
   short_name: string;
   status: string;
@@ -872,7 +869,7 @@ export async function getCustomerSites(
   const { data, error } = await supabase
     .from("sites")
     .select(
-      `id, site_code, guard_target_no, name, short_name, status, band_name,
+      `id, site_code, name, short_name, status, band_name,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m`,
     )
     .eq("customer_id", customerId)

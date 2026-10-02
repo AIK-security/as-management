@@ -22,7 +22,7 @@ export function NgAddDialog({
   sites,
 }: {
   guards: { id: string; name: string }[];
-  sites: { id: string; name: string; guard_target_no: string }[];
+  sites: { id: string; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);

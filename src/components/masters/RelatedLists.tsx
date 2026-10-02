@@ -119,7 +119,7 @@ export function CustomerSiteList({ rows }: { rows: CustomerSiteRow[] }) {
         <table className="w-full text-[13px]">
           <thead className="sticky top-0 bg-white">
             <tr>
-              <th className={TH}>警備先番号</th>
+              <th className={TH}>現場コード</th>
               <th className={TH}>現場名</th>
               <th className={TH}>略称</th>
               <th className={TH}>班</th>
@@ -141,7 +141,7 @@ export function CustomerSiteList({ rows }: { rows: CustomerSiteRow[] }) {
                 className="border-b border-slate-100 transition-all duration-150 ease-in-out hover:bg-slate-50"
               >
                 <td className="whitespace-nowrap py-1.5 pr-2 font-mono tabular-nums text-slate-500">
-                  {s.guard_target_no}
+                  {s.site_code}
                 </td>
                 <td className="py-1.5 pr-2">
                   <Link

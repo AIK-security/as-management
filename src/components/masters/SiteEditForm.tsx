@@ -29,8 +29,6 @@ export function SiteEditForm({
   };
   refs: SiteRefs;
 }) {
-  const [siteCode, setSiteCode] = useState(site.site_code);
-  const [guardTargetNo, setGuardTargetNo] = useState(site.guard_target_no);
   const [name, setName] = useState(site.name);
   const [shortName, setShortName] = useState(site.short_name);
   const [nameKana, setNameKana] = useState(site.name_kana ?? "");
@@ -76,19 +74,6 @@ export function SiteEditForm({
   // 🔴 部署は管轄にぶら下がる。管轄を変えたら選べる部署も変わる。
   //   全部署を出すと、別管轄の部署を付けられてしまう。
   const departments = options.departments.filter((d) => d.jurisdiction_id === jurisdictionId);
-  // 🔴 どちらが仮のままかを**名指しする**（2026-09-09）。
-  //   「仮番号のままです」とだけ出していたため、警備先番号を本番号に直しても
-  //   現場コードが TMP- のまま消えず、**何を直せば消えるのか分からなかった**（柴山の指摘）。
-  //
-  // 🔴 なぜ2つとも要るのか
-  //   投入CSV は 2列目に**現場コード**、3列目に**警備先番号**を載せる
-  //   （shiftmax-api-analysis.md §3）。べんり君は警備先番号で勤務マスターを引き、
-  //   **未登録ならエラーで送信を中止する**。どちらか片方が仮のままでは引き渡せない。
-  const tmpFields = [
-    guardTargetNo.startsWith("TMP-") || guardTargetNo.trim() === "" ? "警備先番号" : null,
-    siteCode.startsWith("TMP-") || siteCode.trim() === "" ? "現場コード" : null,
-  ].filter((v): v is string => v !== null);
-  const isTemporary = tmpFields.length > 0;
 
   async function save() {
     // 🔴 時と分は組。片方だけ入った状態で保存させない
@@ -103,8 +88,6 @@ export function SiteEditForm({
     setSaved(false);
     const r = await callAction(() => updateSite({
       id: site.id,
-      siteCode,
-      guardTargetNo,
       name,
       shortName,
       nameKana,
@@ -230,40 +213,15 @@ export function SiteEditForm({
           </span>
         )}
       </div>
-      {isTemporary && (
-        // 🔴 仮番号のままでは段3（べんり君への引き渡し）に出せない。
-        //   9/7 に「新規現場は仮番号で通す」と決めた代わりに、ここで必ず気づかせる。
-        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] leading-snug text-amber-900">
-          🔴 <span className="font-semibold">{tmpFields.join("・")} が仮のままです。</span>
-          <span className="ml-1">
-            この2つ（警備先番号・現場コード）が
-            <span className="font-semibold">どちらも ShiftMax の本番の値</span>
-            になると、この表示は消えます。
-          </span>
-          <span className="ml-1">
-            引き渡しの CSV は現場コードと警備先番号の両方を載せ、べんり君が
-            <span className="font-semibold">警備先番号で ShiftMax の勤務マスターを引く</span>
-            ため、仮の値のままでは送信がエラーで止まります。
-          </span>
-        </p>
-      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Section title="識別">
           <div className="grid grid-cols-2 gap-2">
-            <Field label="警備先番号" hint="べんり君の入力キー">
-              <input
-                value={guardTargetNo}
-                onChange={(e) => edit(setGuardTargetNo)(e.target.value)}
-                className={FIELD + " font-mono"}
-              />
-            </Field>
-            <Field label="現場コード">
-              <input
-                value={siteCode}
-                onChange={(e) => edit(setSiteCode)(e.target.value)}
-                className={FIELD + " font-mono"}
-              />
+            {/* 🔴 現場コードは DB が振る（AS0001〜）。直す理由が無いので表示だけ（2026-10-02） */}
+            <Field label="現場コード" hint="自動で振られます">
+              <div className="flex h-9 items-center font-mono text-[13px] text-slate-600">
+                {site.site_code}
+              </div>
             </Field>
             <Field label="状態">
               <select

@@ -388,13 +388,10 @@ export async function setShiftCancelled(input: {
 //   **手数を増やさない**ことが仕様。既存現場を選んだら、
 //   時刻・休憩は sites のひな形（plan_*）から埋めて、そのまま作れる。
 //
-// 🔴 新規現場は「名前と時間」だけで作れる。
-//   site_code と guard_target_no（べんり君の警備先番号）は NOT NULL だが、
-//   **新しい仕事が入った瞬間に管制がこれらを知っているとは限らない**。
-//   ここで番号を要求すると、いちばん急いでいるときに手が止まる。
-//   → 仮の番号を採番して先へ通し、後で正しい番号に差し替える。
-//   ⚠️ 仮番号のままでは ShiftMax へ渡せない（段3）。
-//      「番号は誰がいつ決めるのか」は管制・事務に要確認。
+// 🔴 新規現場は「名前と時間」だけで作れる。番号は一切聞かない。
+//   現場コードは DB が振る（AS0001〜）。警備先番号は現場に持たせず、
+//   引き渡し（段3）のときに〈現場の得意先 × 枠の区分〉で duty_codes から引く
+//   （2026-10-02。それまでは仮番号 TMP- を振っていた）。
 // ─────────────────────────────────────────────────────────
 /** 枠の追加結果。**何件作って何件飛ばしたか**を画面で言うために持つ */
 export type AddShiftResult =
@@ -443,14 +440,9 @@ export async function addShift(input: {
     const name = (input.newSiteName ?? "").trim();
     if (!name) return { ok: false, message: "現場名を入れてください。" };
 
-    // 🔴 仮番号。`TMP-` で始めておくと、あとから
-    //   「まだ本番の番号が入っていない現場」を1クエリで洗い出せる。
-    const tmp = `TMP-${Date.now().toString(36).toUpperCase()}`;
     const { data: created, error: cError } = await supabase
       .from("sites")
       .insert({
-        site_code: tmp,
-        guard_target_no: tmp,
         name,
         short_name: name.slice(0, 8),
         customer_id: input.newSiteCustomerId ?? null,

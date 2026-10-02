@@ -64,7 +64,7 @@ export default async function SiteDetailPage({
           ◀ 現場一覧
         </Link>
         <h1 className="text-[18px] font-semibold tracking-tight text-slate-900">{site.name}</h1>
-        <span className="t-meta font-mono text-slate-500">{site.guard_target_no}</span>
+        <span className="t-meta font-mono text-slate-500">{site.site_code}</span>
         {site.status !== "active" && (
           <span className="t-badge rounded bg-slate-200 px-1.5 py-0.5 text-slate-600">停止中</span>
         )}

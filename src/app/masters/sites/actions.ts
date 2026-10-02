@@ -4,9 +4,8 @@
 //   RLS 側は 20260908000000_masters_editable_by_control.sql で can_edit() に開けた
 //   （「いま作っている段階のものは管制が全操作できる」＝ 2026-09-08 の判断）。
 //
-// 🔴 なぜ編集が要るのか
-//   9/7 に「現場を追加」で仮番号（TMP-）の現場を作れるようにしたが、
-//   **本物の警備先番号に直す場所が無かった**。仮番号のままでは段3で引き渡せない。
+// 🔴 現場コードは DB が振る（AS0001〜）。ここでは作成・更新とも送らない。
+//   警備先番号は現場に持たせない（duty_codes で引く ─ 2026-10-02）。
 "use server";
 
 import { refresh } from "next/cache";
@@ -28,10 +27,6 @@ export type CreatedResult = { ok: true; id: string } | { ok: false; message: str
 
 function toMessage(error: { code?: string; message: string }): string {
   if (error.code === "42501") return "この操作の権限がありません。";
-  // 23505 = unique_violation。sites では site_code が unique
-  if (error.code === "23505") {
-    return "同じ現場コードが既にあります。別の値にしてください。";
-  }
   // 23503 = foreign_key_violation。枠から参照されている現場は消せない
   if (error.code === "23503") {
     return "この現場を使っている配置枠が残っているため削除できません。枠を消すか、状態を「停止」にしてください。";
@@ -41,8 +36,6 @@ function toMessage(error: { code?: string; message: string }): string {
 
 export type SiteInput = {
   id: string;
-  siteCode: string;
-  guardTargetNo: string;
   name: string;
   shortName: string;
   nameKana: string;
@@ -76,10 +69,6 @@ export async function updateSite(input: SiteInput): Promise<ActionResult> {
   //   管制には何のことか分からない。
   if (!input.name.trim()) return { ok: false, message: "現場名を入れてください。" };
   if (!input.shortName.trim()) return { ok: false, message: "略称を入れてください。" };
-  if (!input.siteCode.trim()) return { ok: false, message: "現場コードを入れてください。" };
-  if (!input.guardTargetNo.trim()) {
-    return { ok: false, message: "警備先番号を入れてください。" };
-  }
   if (!input.jurisdictionId) return { ok: false, message: "管轄を選んでください。" };
   // 🔴 時と分は組。片方だけ入った状態を通さない。
   //   Server Action は URL なので、画面側の検査だけに頼らない。
@@ -94,8 +83,6 @@ export async function updateSite(input: SiteInput): Promise<ActionResult> {
   const { error } = await supabase
     .from("sites")
     .update({
-      site_code: input.siteCode.trim(),
-      guard_target_no: input.guardTargetNo.trim(),
       name: input.name.trim(),
       short_name: input.shortName.trim(),
       name_kana: orNull(input.nameKana),
@@ -199,8 +186,7 @@ export async function removeSiteRequiredQualification(input: {
 // ─────────────────────────────────────────────────────────
 // 現場を新しく作る（2026-09-09）
 //
-// 🔴 これまで現場を作れるのは配置ボードの「現場を追加」だけで、
-//   そこでは名前しか入れられず、必ず TMP- の仮番号になっていた。
+// 🔴 これまで現場を作れるのは配置ボードの「現場を追加」だけだった。
 //   マスタ側に入口が無いのは「一般的な情報の入力と保存ができる」の穴。
 //
 // 🔴 入れるのは最小限だけにする。速さが要るのは**作るとき**であって、
@@ -209,8 +195,6 @@ export async function removeSiteRequiredQualification(input: {
 export async function createSite(input: {
   name: string;
   shortName: string;
-  guardTargetNo: string;
-  siteCode: string;
   jurisdictionId: string;
   customerId: string;
 }): Promise<CreatedResult> {
@@ -220,21 +204,12 @@ export async function createSite(input: {
   if (!name) return { ok: false, message: "現場名を入れてください。" };
   if (!input.jurisdictionId) return { ok: false, message: "管轄を選んでください。" };
 
-  // 🔴 番号が決まっていないなら仮番号で通す（2026-09-07 の判断を踏襲）。
-  //   決まるまで作れないと、当日の飛び込みで手が止まる。
-  //   仮番号のままでは引き渡せないことは詳細画面が警告で言う。
-  const tmp = `TMP-${Date.now().toString(36).toUpperCase()}`;
-  const guardTargetNo = input.guardTargetNo.trim() || tmp;
-  const siteCode = input.siteCode.trim() || tmp;
-
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("sites")
     .insert({
       name,
       short_name: input.shortName.trim() || name.slice(0, 8),
-      guard_target_no: guardTargetNo,
-      site_code: siteCode,
       jurisdiction_id: input.jurisdictionId,
       customer_id: input.customerId || null,
     })

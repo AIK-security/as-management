@@ -14,18 +14,23 @@
 
 import { parseCsv } from "@/lib/csv";
 
-export type MasterKind = "guards" | "sites" | "customers";
+// 🔴 2026-10-02：勤務マスターは「現場」ではなく〈得意先×区分〉→ 警備先番号の対応表として
+//   `duty_codes` へ入れる。現場は実データから起こした一覧（scripts/extract-sites.py）で入れる。
+//   （docs/data-gap-20260917.md §2・§7）
+export type MasterKind = "guards" | "duties" | "sites" | "customers";
 
 export const KIND_LABEL: Record<MasterKind, string> = {
   guards: "社員マスター（隊員）",
-  sites: "勤務マスター（現場）",
+  duties: "勤務マスター（警備先番号）",
+  sites: "現場一覧",
   customers: "得意先マスター",
 };
 
 /** 取込に必要な最小の列。これが揃っていない CSV は受け取らない。 */
 const REQUIRED: Record<MasterKind, string[]> = {
   guards: ["個人コード", "個人名"],
-  sites: ["現場コード", "警備先番号", "現場"],
+  duties: ["現場コード", "警備先番号", "略称"],
+  sites: ["現場", "現場管轄"],
   customers: ["担当コード", "顧客名"],
 };
 
@@ -65,9 +70,22 @@ export type GuardImportRow = {
   department_name: string | null;
 };
 
-export type SiteImportRow = {
-  site_code: string;
+/** 勤務マスターの1行。現場ではなく〈得意先×区分〉に振られた番号。 */
+export type DutyImportRow = {
   guard_target_no: string;
+  sm_site_code: string;
+  kind_label: string;
+  customer_staff_code: string | null;
+  customer_code: string | null;
+  customer_no: string | null;
+  billing_no: string | null;
+};
+
+/**
+ * 現場一覧の1行。🔴 現場コードは持たない（DB が振る）。
+ *   既存の現場とは〈現場名 × 得意先〉で突き合わせる。
+ */
+export type SiteImportRow = {
   name: string;
   short_name: string;
   name_kana: string | null;
@@ -105,6 +123,7 @@ export type CustomerImportRow = {
 
 export type ImportRows =
   | { kind: "guards"; rows: GuardImportRow[] }
+  | { kind: "duties"; rows: DutyImportRow[] }
   | { kind: "sites"; rows: SiteImportRow[] }
   | { kind: "customers"; rows: CustomerImportRow[] };
 
@@ -170,9 +189,9 @@ function fallbackShort(short: string | null, name: string, max: number): string 
 /**
  * CSV 文字列を読んで、種別を判定し、行に直す。
  *
- * 🔴 種別は**見出しで自動判定**する。`担当コード` は勤務マスターにも
- *   （T列＝担当者の参照として）入っているため、判定の順番が意味を持つ。
- *   個人コード → 現場コード → 担当コード の順に見る。
+ * 🔴 種別は**見出しで自動判定**する。`担当コード` は勤務マスターにも現場一覧にも
+ *   入っているため、判定の順番が意味を持つ。
+ *   個人コード → 警備先番号 → 現場 → 担当コード の順に見る。
  */
 export function parseMasterCsv(text: string): ParseResult {
   const table = parseCsv(text);
@@ -183,14 +202,15 @@ export function parseMasterCsv(text: string): ParseResult {
 
   let kind: MasterKind | null = null;
   if (has("個人コード")) kind = "guards";
-  else if (has("現場コード")) kind = "sites";
+  else if (has("警備先番号")) kind = "duties";
+  else if (has("現場")) kind = "sites";
   else if (has("担当コード")) kind = "customers";
 
   if (!kind) {
     return {
       ok: false,
       message:
-        "どのマスタか判定できませんでした。1行目に見出し（個人コード／現場コード／担当コード のいずれか）が必要です。",
+        "どのマスタか判定できませんでした。1行目に見出し（個人コード／警備先番号／現場／担当コード のいずれか）が必要です。",
     };
   }
 
@@ -293,25 +313,57 @@ export function parseMasterCsv(text: string): ParseResult {
     return { ok: true, kind, rows, errors, warnings, total: body.length };
   }
 
-  // ── 勤務マスター（現場） ──────────────────────────
+  if (kind === "duties") {
+    const rows: DutyImportRow[] = [];
+    body.forEach((cells, i) => {
+      const line = i + 2;
+      const at = cellOf(cells);
+      const target = orNull(at("警備先番号"));
+      const smCode = orNull(at("現場コード"));
+      const kindLabel = orNull(at("略称"));
+      if (!target) return errors.push({ row: line, message: "警備先番号が空です。" });
+      if (!smCode) return errors.push({ row: line, message: "現場コードが空です。" });
+      if (!kindLabel) return errors.push({ row: line, message: "略称（区分）が空です。" });
+      const dup = seen.get(target);
+      if (dup) {
+        return errors.push({
+          row: line,
+          message: `警備先番号 ${target} が ${dup} 行目と重複しています。`,
+        });
+      }
+      seen.set(target, line);
+
+      rows.push({
+        guard_target_no: target,
+        sm_site_code: smCode,
+        kind_label: kindLabel,
+        customer_staff_code: orNull(at("担当コード")),
+        customer_code: orNull(at("顧客コード")),
+        customer_no: orNull(at("得意先番号")),
+        billing_no: orNull(at("請求番号")),
+      });
+    });
+    return { ok: true, kind, rows, errors, warnings, total: body.length };
+  }
+
+  // ── 現場一覧 ──────────────────────────────────
   const rows: SiteImportRow[] = [];
   body.forEach((cells, i) => {
     const line = i + 2;
     const at = cellOf(cells);
-    const code = orNull(at("現場コード"));
     const name = orNull(at("現場"));
-    const target = orNull(at("警備先番号"));
-    if (!code) return errors.push({ row: line, message: "現場コードが空です。" });
     if (!name) return errors.push({ row: line, message: "現場名が空です。" });
-    if (!target) return errors.push({ row: line, message: "警備先番号が空です。" });
-    const dup = seen.get(code);
+    // 🔴 同じ現場名でも得意先が違えば別の現場（駅名の現場に別の元請けが入る ─ 10/2 確認）
+    const staff = orNull(at("担当コード"));
+    const key = `${name}\u0000${staff ?? ""}`;
+    const dup = seen.get(key);
     if (dup) {
       return errors.push({
         row: line,
-        message: `現場コード ${code} が ${dup} 行目と重複しています。`,
+        message: `現場「${name}」（同じ得意先）が ${dup} 行目と重複しています。`,
       });
     }
-    seen.set(code, line);
+    seen.set(key, line);
 
     const jcode = orNull(at("現場管轄"));
     if (!jcode) return errors.push({ row: line, message: "現場管轄が空です。" });
@@ -344,8 +396,6 @@ export function parseMasterCsv(text: string): ParseResult {
     }
 
     rows.push({
-      site_code: code,
-      guard_target_no: target,
       name,
       short_name: fallbackShort(orNull(at("略称")), name, 8),
       name_kana: orNull(at("フリガナ")),
@@ -359,7 +409,7 @@ export function parseMasterCsv(text: string): ParseResult {
       has_plan: f ?? true,
       customer_code: orNull(at("顧客コード")),
       customer_no: orNull(at("得意先番号")),
-      customer_staff_code: orNull(at("担当コード")),
+      customer_staff_code: staff,
       billing_no: orNull(at("請求番号")),
       jurisdiction_code: jcode,
       jurisdiction_name: orNull(at("管轄表示")),

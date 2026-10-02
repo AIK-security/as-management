@@ -61,8 +61,6 @@ export function SiteCreateForm({
   const { pending, error, run } = useCreate("/masters/sites");
   const [name, setName] = useState("");
   const [shortName, setShortName] = useState("");
-  const [guardTargetNo, setGuardTargetNo] = useState("");
-  const [siteCode, setSiteCode] = useState("");
   const [jurisdictionId, setJurisdictionId] = useState(options.jurisdictions[0]?.id ?? "");
   const [customerId, setCustomerId] = useState("");
 
@@ -84,20 +82,6 @@ export function SiteCreateForm({
               onChange={(e) => setShortName(e.target.value)}
               placeholder={name.slice(0, 8)}
               className={FIELD}
-            />
-          </Field>
-          <Field label="警備先番号" hint="空なら仮番号（TMP-）で作る">
-            <input
-              value={guardTargetNo}
-              onChange={(e) => setGuardTargetNo(e.target.value)}
-              className={FIELD + " font-mono"}
-            />
-          </Field>
-          <Field label="現場コード" hint="空なら仮番号（TMP-）で作る">
-            <input
-              value={siteCode}
-              onChange={(e) => setSiteCode(e.target.value)}
-              className={FIELD + " font-mono"}
             />
           </Field>
           <Field label="管轄" hint="必須">
@@ -137,9 +121,7 @@ export function SiteCreateForm({
           type="button"
           disabled={pending || name.trim() === ""}
           onClick={() =>
-            run(() =>
-              createSite({ name, shortName, guardTargetNo, siteCode, jurisdictionId, customerId }),
-            )
+            run(() => createSite({ name, shortName, jurisdictionId, customerId }))
           }
           className={SUBMIT}
         >

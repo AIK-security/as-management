@@ -182,7 +182,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
          start_h, start_m, end_h, end_m, break_min,
          band_name, plan_comment, billing_note, status, cancelled_at,
          site:sites!inner (
-           id, site_code, guard_target_no, name, short_name, customer_id, jurisdiction_id,
+           id, site_code, name, short_name, customer_id, jurisdiction_id,
            customer:customers ( id, staff_code, name, name_kana )
          )`,
         )

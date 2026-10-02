@@ -5,8 +5,7 @@
 //   なお「新規作成のときに何が必須か」の線引きは 9/16 に管制へ聞く。
 //   それは**作る速さ**の話で、既にある現場を直すこの画面とは別。
 //
-// 🔴 検索は警備先番号でも引ける。べんり君の入力キーがそれだから
-//   （要件は資産に合わせて曲げない）。
+// 🔴 警備先番号は現場に持たせない（2026-10-02）。一覧は現場コードを出す。
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { listSites, parseMasterQuery } from "@/lib/masters";
@@ -43,11 +42,11 @@ export default async function SitesPage({
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SearchForm action={ACTION} q={query.q} placeholder="現場名・略称・警備先番号で検索" />
+        <SearchForm action={ACTION} q={query.q} placeholder="現場名・略称・現場コードで検索" />
         <div className="flex items-center gap-2">
           <Pager action={ACTION} q={query.q} list={list} />
           {/* 🔴 新規登録の入口（2026-09-09）。これまで一覧に入口が無く、
-              現場は配置ボード経由の仮番号でしか作れず、隊員・得意先は作れなかった。
+              現場は配置ボード経由でしか作れず、隊員・得意先は作れなかった。
               権限の出し分けはしない ─ 押した先の requireRole() と RLS で止める。 */}
           <Link href="/masters/sites/new" className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700">
             ＋ 現場を新規登録
@@ -58,7 +57,7 @@ export default async function SitesPage({
       <MasterTable
         head={
           <>
-            <Th>警備先番号</Th>
+            <Th>現場コード</Th>
             <Th>現場名</Th>
             <Th>フリガナ</Th>
             <Th>略称</Th>
@@ -83,7 +82,7 @@ export default async function SitesPage({
             const end = planTime(s.plan_end_h, s.plan_end_m);
             return (
               <Row key={s.id} href={`/masters/sites/${s.id}`}>
-                <Td className="font-mono tabular-nums text-slate-500">{s.guard_target_no}</Td>
+                <Td className="font-mono tabular-nums text-slate-500">{s.site_code}</Td>
                 <Td className="font-semibold text-slate-900">
                   <Ellipsis value={s.name} width="max-w-[240px]" />
                 </Td>

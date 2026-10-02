@@ -5,7 +5,7 @@
 // 流れ：ファイルを選ぶ → **その場で読んで検証し、件数とエラーを見せる** → 確定して取り込む。
 // 🔴 読み込んだ瞬間には書き込まない。1,593 行が黙って入るのが一番こわい。
 //
-// 🔴 種別（隊員／現場／得意先）は見出しから自動で判定する。
+// 🔴 種別（隊員／勤務マスター／現場一覧／得意先）は見出しから自動で判定する。
 //   選ばせると選び間違いが起きるし、CSV 側に答えが書いてある。
 import { useRef, useState } from "react";
 import { decodeCsvBytes } from "@/lib/csv";
@@ -92,9 +92,11 @@ export function MasterImport() {
     const r = await callAction(() =>
       parsed.kind === "guards"
         ? importMaster({ kind: "guards", rows: parsed.rows })
-        : parsed.kind === "sites"
-          ? importMaster({ kind: "sites", rows: parsed.rows })
-          : importMaster({ kind: "customers", rows: parsed.rows }),
+        : parsed.kind === "duties"
+          ? importMaster({ kind: "duties", rows: parsed.rows })
+          : parsed.kind === "sites"
+            ? importMaster({ kind: "sites", rows: parsed.rows })
+            : importMaster({ kind: "customers", rows: parsed.rows }),
     );
     setPending(false);
     if (!r.ok) {
@@ -108,12 +110,16 @@ export function MasterImport() {
 
   return (
     <div className="flex max-w-4xl flex-col gap-3">
-      <Section title="取り込む CSV を選ぶ" hint="隊員・現場・得意先は見出しから自動で判定します">
+      <Section title="取り込む CSV を選ぶ" hint="どのマスタかは見出しから自動で判定します">
         <p className="mb-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[12px] leading-snug text-slate-600">
           べんり君の <span className="font-mono">社員マスター</span> /{" "}
           <span className="font-mono">勤務マスター</span> /{" "}
           <span className="font-mono">得意先マスター</span> シートを、そのまま CSV
-          で保存したものを読みます。1行目が見出しである必要があります。
+          で保存したものと、<span className="font-mono">現場一覧</span>（べんり君の日々の入力から起こしたもの）を読みます。
+          1行目が見出しである必要があります。
+          <br />
+          🔴 <span className="font-semibold">得意先マスター → 勤務マスター → 現場一覧の順に</span>取り込んでください。
+          現場一覧は<span className="font-semibold">新しい現場だけを足し、既にある現場には触りません</span>。
           <br />
           🔴 <span className="font-semibold">既にある行は、ShiftMax にある項目だけ更新します。</span>
           連絡先・資格・NG・協力会社の隊員など、このシステムだけが持っている情報は書き換えません。
@@ -202,12 +208,21 @@ export function MasterImport() {
                 {done.created.toLocaleString()}
               </div>
             </div>
-            <div>
-              <div className="t-meta text-slate-500">更新した</div>
-              <div className="font-mono text-[18px] font-semibold text-slate-900">
-                {done.updated.toLocaleString()}
+            {done.kind === "sites" ? (
+              <div>
+                <div className="t-meta text-slate-500">既にあったので触らなかった</div>
+                <div className="font-mono text-[18px] font-semibold text-slate-900">
+                  {done.skipped.toLocaleString()}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <div className="t-meta text-slate-500">更新した</div>
+                <div className="font-mono text-[18px] font-semibold text-slate-900">
+                  {done.updated.toLocaleString()}
+                </div>
+              </div>
+            )}
           </div>
 
           {done.newJurisdictions.length > 0 && (
@@ -220,14 +235,6 @@ export function MasterImport() {
             <p className="text-[12px] text-slate-600">
               部署を新しく作りました：
               <span className="font-mono">{done.newDepartments.join(", ")}</span>
-            </p>
-          )}
-          {done.unresolvedCustomers > 0 && (
-            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-[12px] leading-snug text-amber-900">
-              🔴 {done.unresolvedCustomers.toLocaleString()} 件の現場は、担当コードに対応する得意先が
-              見つからなかったため<span className="font-semibold">得意先を紐付けていません</span>。
-              先に得意先マスターを取り込んでから、現場をもう一度取り込んでください
-              （既にある紐付けは消していません）。
             </p>
           )}
         </Section>

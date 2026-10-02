@@ -151,7 +151,8 @@ ShiftMax 由来（§7-2・25項目）。🔴 **時間・班・請求先まで現
 
 | 列 | 出所 |
 |---|---|
-| `site_code`（現場コード）／ `guard_target_no`（**警備先番号**＝入力キー） | ShiftMax |
+| `site_code`（現場コード） | 🔴 **DB が振る**（`AS0001`〜・2026-10-02）。意味を持たせない |
+| ~~`guard_target_no`（警備先番号）~~ | 🔴 **2026-10-02 削除。** `duty_codes`（下記）で〈得意先 × 区分〉から引く |
 | `name` / `short_name` / `name_kana` / `address` | ShiftMax |
 | `band_name`（班名） | ShiftMax |
 | `plan_start_h` / `plan_start_m` / `plan_end_h` / `plan_end_m` / `plan_break` | ShiftMax（**予定値のひな形**） |
@@ -179,6 +180,18 @@ ShiftMax 由来（§7-2・25項目）。🔴 **時間・班・請求先まで現
 > → 上の「現場名・時間・班が埋まる」は**顧客・請求番号だけ**に読み替える。
 > → 🔴 **`sites` の初期データをどう作るかが未決**（`data-gap-20260917.md` §7 論点5）。
 > 　 器（列）はこのままでよい。**埋める元が無い**ことが問題であり、第1弾の稼働に直結する。
+
+> ### ✅ 2026-10-02 ─ 現場は〈現場名 × 得意先〉で1件。警備先番号は `duty_codes` へ
+>
+> 詳細は `docs/data-gap-20260917.md` §12。
+>
+> | 表 | 中身 |
+> |---|---|
+> | `sites` | 日次シートの手入力から起こした現場（7月分で127件）。**警備先番号を持たない** |
+> | `duty_codes` | ShiftMax 勤務マスターの写し（1,593件）。`guard_target_no`（主キー）/ `sm_site_code` / `kind_label`（区分）/ `customer_staff_code`（＝`customers.staff_code`）/ `customer_code` / `customer_no` / `billing_no` |
+>
+> 引き渡し（段3）では〈現場の得意先の担当コード × 枠の区分〉で `duty_codes` を引く。
+> 段3 が不要と決まったら `duty_codes` ごと捨てる。
 
 ---
 
