@@ -89,7 +89,6 @@ export type SiteImportRow = {
   name: string;
   short_name: string;
   name_kana: string | null;
-  band_name: string | null;
   address: string | null;
   plan_start_h: number | null;
   plan_start_m: number | null;
@@ -399,7 +398,6 @@ export function parseMasterCsv(text: string): ParseResult {
       name,
       short_name: fallbackShort(orNull(at("略称")), name, 8),
       name_kana: orNull(at("フリガナ")),
-      band_name: orNull(at("班名")),
       address: orNull(at("現場住所")),
       plan_start_h: times.plan_start_h ?? null,
       plan_start_m: times.plan_start_m ?? null,

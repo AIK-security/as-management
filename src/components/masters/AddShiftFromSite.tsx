@@ -8,6 +8,12 @@
 // 🔴 現場は固定。ここで別の現場の枠は作れない（迷いようがない）。
 //   時刻・休憩の初期値は、この現場の「予定のひな形」から入る。
 //
+// 🔴 ひな形は**上の編集フォームでいま入っている値**を使う（保存前でも）。2026-10-02。
+//   以前は画面を開いた時点の保存済みの値を初期値にしていたため、
+//   ひな形を入れて保存せずに枠を作ると 08:00–17:00 で作られていた（柴山の指摘）。
+//   → 編集フォーム（SiteEditForm）の中に置き、値を props で受け取る。
+//   ひな形が空なら時刻も空欄にし、入れるまで作らせない（黙って既定値を入れない）。
+//
 // ⚠️ 配置ボードの「現場を追加」と同じ Server Action（addShift）を使う。
 //   入口が2つでも**作られるものは同じ**にする。
 "use client";
@@ -24,20 +30,27 @@ import { callAction } from "@/lib/action-call";
 const FIELD =
   "h-9 rounded-md border border-slate-300 px-2 text-[14px] text-slate-900 transition-all duration-150 ease-in-out focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
 
-export function AddShiftFromSite({ site }: { site: SiteDetail }) {
+/** 編集フォームでいま入っている「予定のひな形」。未設定は null */
+export type PlanDraft = {
+  startH: number | null;
+  startM: number | null;
+  endH: number | null;
+  endM: number | null;
+  breakMin: number | null;
+};
+
+export function AddShiftFromSite({ site, plan }: { site: SiteDetail; plan: PlanDraft }) {
   const today = todayInJst();
 
   const [open, setOpen] = useState(false);
   const [workKind, setWorkKind] = useState<WorkKind>("day");
-  // 🔴 現場の「予定のひな形」を初期値にする。無ければ 08:00–17:00
-  //   （ひな形が無い現場が実データに存在するため、null を素通りさせない）
-  const [startH, setStartH] = useState(site.plan_start_h ?? 8);
-  const [startM, setStartM] = useState(site.plan_start_m ?? 0);
-  const [endH, setEndH] = useState(site.plan_end_h ?? 17);
-  const [endM, setEndM] = useState(site.plan_end_m ?? 0);
-  const [breakMin, setBreakMin] = useState(site.plan_break ?? 60);
+  // 🔴 初期値は「開いたとき」に plan から入れる（openForm）。ここでは持たない
+  const [startH, setStartH] = useState<number | null>(null);
+  const [startM, setStartM] = useState<number | null>(null);
+  const [endH, setEndH] = useState<number | null>(null);
+  const [endM, setEndM] = useState<number | null>(null);
+  const [breakMin, setBreakMin] = useState<number | null>(null);
   const [headcount, setHeadcount] = useState(1);
-  const [bandName, setBandName] = useState(site.band_name ?? "");
   const [planComment, setPlanComment] = useState("");
   const [billingNote, setBillingNote] = useState("");
 
@@ -61,7 +74,21 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
     return out;
   })();
 
+  function openForm() {
+    setStartH(plan.startH);
+    setStartM(plan.startM);
+    setEndH(plan.endH);
+    setEndM(plan.endM);
+    setBreakMin(plan.breakMin);
+    setError(null);
+    setOpen(true);
+  }
+
   async function submit() {
+    if (startH === null || startM === null || endH === null || endM === null || breakMin === null) {
+      setError("開始・終了の時刻と休憩を入れてください。");
+      return;
+    }
     setPending(true);
     setError(null);
     setDone(null);
@@ -76,7 +103,6 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
       endM,
       breakMin,
       headcount,
-      bandName,
       planComment,
       billingNote,
     }));
@@ -107,7 +133,7 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={openForm}
             className="rounded-md bg-indigo-600 px-3 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700"
           >
             ＋ この現場の枠を作る
@@ -221,18 +247,18 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
           <span className="text-[11px] font-medium text-slate-500">開始</span>
           <div className="flex items-center gap-1">
             {/* 🔴 24時以降を許す（2026-09-16）。理由は AddShiftDialog の同じ箇所に書いた */}
-            <TwoDigitInput value={startH} onChange={setStartH} max={29} />
+            <TwoDigitInput value={startH} onChange={setStartH} max={29} allowEmpty />
             <span className="text-slate-400">:</span>
-            <TwoDigitInput value={startM} onChange={setStartM} max={59} />
+            <TwoDigitInput value={startM} onChange={setStartM} max={59} allowEmpty />
           </div>
         </label>
 
         <label className="flex flex-col gap-0.5">
           <span className="text-[11px] font-medium text-slate-500">終了</span>
           <div className="flex items-center gap-1">
-            <TwoDigitInput value={endH} onChange={setEndH} max={29} />
+            <TwoDigitInput value={endH} onChange={setEndH} max={29} allowEmpty />
             <span className="text-slate-400">:</span>
-            <TwoDigitInput value={endM} onChange={setEndM} max={59} />
+            <TwoDigitInput value={endM} onChange={setEndM} max={59} allowEmpty />
           </div>
         </label>
 
@@ -242,8 +268,8 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
             type="number"
             min={0}
             step={5}
-            value={breakMin}
-            onChange={(e) => setBreakMin(Number(e.target.value))}
+            value={breakMin ?? ""}
+            onChange={(e) => setBreakMin(e.target.value === "" ? null : Number(e.target.value))}
             className={FIELD + " w-16 text-right font-mono"}
           />
         </label>
@@ -259,14 +285,6 @@ export function AddShiftFromSite({ site }: { site: SiteDetail }) {
           />
         </label>
 
-        <label className="flex flex-col gap-0.5">
-          <span className="text-[11px] font-medium text-slate-500">班名</span>
-          <input
-            value={bandName}
-            onChange={(e) => setBandName(e.target.value)}
-            className={FIELD + " w-24"}
-          />
-        </label>
       </div>
 
       <div className="mt-2 flex gap-2">

@@ -82,7 +82,7 @@ export function ShiftRowCard({
   onToggleCancel?: (shiftId: string, cancelled: boolean) => void;
   /** 枠そのものを消す（2026-09-07）。中止とは別 ─ 間違えて作った枠を片づけるため */
   onDelete?: (shiftId: string) => void;
-  /** 🔴 枠の中身を直す（2026-09-09）。時刻・人数・班名・コメントをここから開く。
+  /** 🔴 枠の中身を直す（2026-09-09）。時刻・人数・コメントをここから開く。
       これが無いと、5分ずらすだけでも枠を消して作り直すことになっていた */
   onEdit?: (shiftId: string) => void;
   /** クリックでも選べるようにする。assignmentId が null なら枠だけの選択 */
@@ -270,7 +270,7 @@ export function ShiftRowCard({
                     e.stopPropagation();
                     onEdit(shift.id);
                   }}
-                  title="この枠の時刻・人数・班名・コメントを直す"
+                  title="この枠の時刻・人数・コメントを直す"
                   className="t-badge shrink-0 cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-slate-500 transition-all duration-150 ease-in-out hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
                 >
                   編集
@@ -301,11 +301,6 @@ export function ShiftRowCard({
           <span className="t-badge shrink-0 rounded border border-slate-300 bg-white px-1 text-slate-700">
             {WORK_KIND_LABEL[shift.work_kind]}
           </span>
-          {shift.band_name && (
-            <span className="t-meta shrink-0 rounded border border-slate-300 bg-white px-1 text-slate-600">
-              {shift.band_name}
-            </span>
-          )}
           <span className="t-meta shrink-0 text-slate-500">休{shift.break_min}</span>
 
           <span

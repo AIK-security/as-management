@@ -64,7 +64,6 @@ export default async function SitesPage({
             <Th>得意先</Th>
             <Th>管轄</Th>
             <Th>部署</Th>
-            <Th>班</Th>
             <Th>予定</Th>
             <Th className="text-right">休憩</Th>
             <Th>住所</Th>
@@ -75,7 +74,7 @@ export default async function SitesPage({
         }
       >
         {list.rows.length === 0 ? (
-          <EmptyRow colSpan={14} q={query.q} />
+          <EmptyRow colSpan={13} q={query.q} />
         ) : (
           list.rows.map((s) => {
             const start = planTime(s.plan_start_h, s.plan_start_m);
@@ -102,7 +101,6 @@ export default async function SitesPage({
                 </Td>
                 <Td className="text-slate-500">{s.jurisdiction?.name ?? "—"}</Td>
                 <Td className="text-slate-500">{s.department?.name ?? "—"}</Td>
-                <Td className="text-slate-500">{s.band_name ?? "—"}</Td>
                 <Td className="font-mono tabular-nums">
                   {start && end ? (
                     `${start}–${end}`

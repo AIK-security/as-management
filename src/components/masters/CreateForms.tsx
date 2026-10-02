@@ -97,13 +97,13 @@ export function SiteCreateForm({
               ))}
             </select>
           </Field>
-          <Field label="得意先" hint="あとで設定してよい">
+          <Field label="得意先" hint="必須">
             <select
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
               className={FIELD}
             >
-              <option value="">（未設定）</option>
+              <option value="">（選ぶ）</option>
               {options.customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -119,7 +119,7 @@ export function SiteCreateForm({
       <div>
         <button
           type="button"
-          disabled={pending || name.trim() === ""}
+          disabled={pending || name.trim() === "" || customerId === ""}
           onClick={() =>
             run(() => createSite({ name, shortName, jurisdictionId, customerId }))
           }

@@ -93,7 +93,6 @@ export type Shift = {
   end_h: number;
   end_m: number;
   break_min: number;
-  band_name: string | null;
   plan_comment: string | null;
   billing_note: string | null;
   status: ShiftStatus;

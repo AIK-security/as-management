@@ -26,7 +26,6 @@ export type NoticeTarget = {
   companyEmail: string | null;
   /** 差し込み用 */
   siteName: string;
-  bandName: string | null;
   startText: string;
   endText: string;
   planComment: string | null;
@@ -69,7 +68,9 @@ export function fillTemplate(body: string, t: NoticeTarget): string {
     "{現場名}": t.siteName,
     "{開始}": t.startText,
     "{終了}": t.endText,
-    "{班}": t.bandName ?? "",
+    // 🔴 班名は 2026-10-02 に削除。作成済みのテンプレートに {班} が残っていても、
+    //   空として扱い、その行に他の値が無ければ行ごと落とす
+    "{班}": "",
     "{集合}": t.planComment ?? "",
   };
   const keys = Object.keys(values);

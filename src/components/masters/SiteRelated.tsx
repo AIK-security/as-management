@@ -56,7 +56,6 @@ export function SiteShiftList({ rows }: { rows: SiteShiftRow[] }) {
               <th className={TH}>時刻</th>
               <th className={TH}>休憩</th>
               <th className={TH}>配置</th>
-              <th className={TH}>班</th>
               <th className={TH}>状態</th>
               <th className={TH} />
             </tr>
@@ -64,7 +63,7 @@ export function SiteShiftList({ rows }: { rows: SiteShiftRow[] }) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-2 text-slate-400">
+                <td colSpan={7} className="py-2 text-slate-400">
                   この現場の配置枠はまだありません。配置ボードの「現場を追加」で作ります。
                 </td>
               </tr>
@@ -97,9 +96,6 @@ export function SiteShiftList({ rows }: { rows: SiteShiftRow[] }) {
                     ].join(" ")}
                   >
                     {r.placed} / {r.headcount}
-                  </td>
-                  <td className="whitespace-nowrap py-1.5 pr-2 text-slate-500">
-                    {r.band_name ?? "—"}
                   </td>
                   <td className="whitespace-nowrap py-1.5 pr-2">
                     {r.status === "confirmed" ? (

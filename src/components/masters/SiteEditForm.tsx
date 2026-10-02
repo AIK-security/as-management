@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
 import { deleteSite, updateSite } from "@/app/masters/sites/actions";
+import { AddShiftFromSite } from "@/components/masters/AddShiftFromSite";
 import type { SiteDetail, SiteRefs } from "@/lib/masters";
 import { FIELD, Field, Section } from "@/components/masters/FormBits";
 import { callAction } from "@/lib/action-call";
@@ -33,7 +34,6 @@ export function SiteEditForm({
   const [shortName, setShortName] = useState(site.short_name);
   const [nameKana, setNameKana] = useState(site.name_kana ?? "");
   const [address, setAddress] = useState(site.address ?? "");
-  const [bandName, setBandName] = useState(site.band_name ?? "");
   const [billingNo, setBillingNo] = useState(site.billing_no ?? "");
   // 🔴 ShiftMax 勤務マスターの O列・P列（2026-09-09 追加）。
   //   突き合わせたら、25項目のうち持っていなかったのはこの2つだけだった。
@@ -92,7 +92,6 @@ export function SiteEditForm({
       shortName,
       nameKana,
       address,
-      bandName,
       billingNo,
       customerCode,
       customerNo,
@@ -116,279 +115,279 @@ export function SiteEditForm({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* 🔴 保存・削除は**画面の上**に置く（2026-09-09・柴山の指摘）。
-          「データの途中に保存ボタンがあるUIは聞いたことがない」── そのとおりで、
-          項目の間に挟まっていた。下に置くと項目が増えるほど遠くなるので、
-          上に置いて sticky で貼り付ける（スクロールしても押せる）。 */}
-      <div className="sticky top-0 z-10 -mx-1 flex items-center gap-2 border-b border-slate-200 bg-slate-100/95 px-1 py-2 backdrop-blur">
-        <button
-          type="button"
-          onClick={save}
-          disabled={pending}
-          className="rounded-md bg-indigo-600 px-4 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {pending ? "保存中…" : "保存する"}
-        </button>
+    <>
+      <div className="flex flex-col gap-3">
+        {/* 🔴 保存・削除は**画面の上**に置く（2026-09-09・柴山の指摘）。
+            「データの途中に保存ボタンがあるUIは聞いたことがない」── そのとおりで、
+            項目の間に挟まっていた。下に置くと項目が増えるほど遠くなるので、
+            上に置いて sticky で貼り付ける（スクロールしても押せる）。 */}
+        <div className="sticky top-0 z-10 -mx-1 flex items-center gap-2 border-b border-slate-200 bg-slate-100/95 px-1 py-2 backdrop-blur">
+          <button
+            type="button"
+            onClick={save}
+            disabled={pending}
+            className="rounded-md bg-indigo-600 px-4 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {pending ? "保存中…" : "保存する"}
+          </button>
 
-        <div className="ml-auto">
-          {!asking ? (
-            <button
-              type="button"
-              onClick={() => setAsking(true)}
-              className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-[13px] font-medium text-rose-700 transition-all duration-150 ease-in-out hover:bg-rose-50"
-            >
-              この現場を削除
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-1.5">
-              {/* 🔴 押す前に「何が起きるか」を出す。件数を出さずに押させない */}
-              <span className="text-[13px] text-rose-900">
-                {!refs.ok ? (
-                  // 🔴 数えられなかったときに「0件」と出して押させない。
-                  //   一緒に消えるもの（必要資格・NG）が見えないまま消すことになる。
-                  <>
-                    <span className="font-semibold">
-                      関連するデータの件数を確認できませんでした。
-                    </span>
-                    画面を開き直してください。
-                  </>
-                ) : refs.shifts > 0 ? (
-                  <>
-                    <span className="font-semibold">配置枠が {refs.shifts} 件あるため削除できません。</span>
-                    状態を「停止」にしてください。
-                  </>
-                ) : (
-                  <>
-                    削除すると
-                    <span className="font-semibold">
-                      必要資格 {refs.requiredQualifications} 件・NG {refs.ngEntries} 件
-                    </span>
-                    も一緒に消えます。戻せません。
-                  </>
-                )}
-              </span>
-              {refs.ok && refs.shifts === 0 && (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={async () => {
-                    setPending(true);
-                    const r = await callAction(() => deleteSite({ id: site.id }));
-                    if (r.ok) {
-                      // 🔴 消したこの画面に留まっても見るものが無いので一覧へ。
-                      //   遷移は画面側で行う（`src/lib/action-call.ts`）。pending は戻さない
-                      router.push("/masters/sites");
-                      return;
-                    }
-                    setPending(false);
-                    // 成功時は Server Action 側で一覧へ戻すため、ここに来るのは失敗のとき
-                    if (r && !r.ok) setError(r.message);
-                  }}
-                  className="rounded-md bg-rose-600 px-2.5 py-1 text-[13px] font-semibold text-white transition-all duration-150 ease-in-out hover:bg-rose-700 disabled:opacity-50"
-                >
-                  削除する
-                </button>
-              )}
+          <div className="ml-auto">
+            {!asking ? (
               <button
                 type="button"
-                onClick={() => setAsking(false)}
-                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
+                onClick={() => setAsking(true)}
+                className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-[13px] font-medium text-rose-700 transition-all duration-150 ease-in-out hover:bg-rose-50"
               >
-                やめる
+                この現場を削除
               </button>
-            </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-1.5">
+                {/* 🔴 押す前に「何が起きるか」を出す。件数を出さずに押させない */}
+                <span className="text-[13px] text-rose-900">
+                  {!refs.ok ? (
+                    // 🔴 数えられなかったときに「0件」と出して押させない。
+                    //   一緒に消えるもの（必要資格・NG）が見えないまま消すことになる。
+                    <>
+                      <span className="font-semibold">
+                        関連するデータの件数を確認できませんでした。
+                      </span>
+                      画面を開き直してください。
+                    </>
+                  ) : refs.shifts > 0 ? (
+                    <>
+                      <span className="font-semibold">配置枠が {refs.shifts} 件あるため削除できません。</span>
+                      状態を「停止」にしてください。
+                    </>
+                  ) : (
+                    <>
+                      削除すると
+                      <span className="font-semibold">
+                        必要資格 {refs.requiredQualifications} 件・NG {refs.ngEntries} 件
+                      </span>
+                      も一緒に消えます。戻せません。
+                    </>
+                  )}
+                </span>
+                {refs.ok && refs.shifts === 0 && (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={async () => {
+                      setPending(true);
+                      const r = await callAction(() => deleteSite({ id: site.id }));
+                      if (r.ok) {
+                        // 🔴 消したこの画面に留まっても見るものが無いので一覧へ。
+                        //   遷移は画面側で行う（`src/lib/action-call.ts`）。pending は戻さない
+                        router.push("/masters/sites");
+                        return;
+                      }
+                      setPending(false);
+                      // 成功時は Server Action 側で一覧へ戻すため、ここに来るのは失敗のとき
+                      if (r && !r.ok) setError(r.message);
+                    }}
+                    className="rounded-md bg-rose-600 px-2.5 py-1 text-[13px] font-semibold text-white transition-all duration-150 ease-in-out hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    削除する
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAsking(false)}
+                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
+                >
+                  やめる
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 🔴 結果はボタンの隣に出す。離れた場所に出すと、押したのに気づかれない */}
+          {error && (
+            <span className="ml-3 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[13px] text-rose-700">
+              {error}
+            </span>
+          )}
+          {saved && !error && (
+            <span className="ml-3 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[13px] text-emerald-700">
+              保存しました。
+            </span>
           )}
         </div>
 
-        {/* 🔴 結果はボタンの隣に出す。離れた場所に出すと、押したのに気づかれない */}
-        {error && (
-          <span className="ml-3 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[13px] text-rose-700">
-            {error}
-          </span>
-        )}
-        {saved && !error && (
-          <span className="ml-3 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[13px] text-emerald-700">
-            保存しました。
-          </span>
-        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Section title="識別">
+            <div className="grid grid-cols-2 gap-2">
+              {/* 🔴 現場コードは DB が振る（AS0001〜）。直す理由が無いので表示だけ（2026-10-02） */}
+              <Field label="現場コード" hint="自動で振られます">
+                <div className="flex h-9 items-center font-mono text-[13px] text-slate-600">
+                  {site.site_code}
+                </div>
+              </Field>
+              <Field label="状態">
+                <select
+                  value={status}
+                  onChange={(e) => edit(setStatus)(e.target.value)}
+                  className={FIELD}
+                >
+                  <option value="active">稼働</option>
+                  <option value="inactive">停止</option>
+                </select>
+              </Field>
+              <Field label="請求番号">
+                <input
+                  value={billingNo}
+                  onChange={(e) => edit(setBillingNo)(e.target.value)}
+                  className={FIELD + " font-mono"}
+                />
+              </Field>
+              <Field label="顧客コード" hint="ShiftMax 勤務マスター O列">
+                <input
+                  value={customerCode}
+                  onChange={(e) => edit(setCustomerCode)(e.target.value)}
+                  className={FIELD + " font-mono"}
+                />
+              </Field>
+              <Field label="得意先番号" hint="担当コードとは別物（P列）">
+                <input
+                  value={customerNo}
+                  onChange={(e) => edit(setCustomerNo)(e.target.value)}
+                  className={FIELD + " font-mono"}
+                />
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="名称">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="現場名">
+                <input value={name} onChange={(e) => edit(setName)(e.target.value)} className={FIELD} />
+              </Field>
+              <Field label="略称" hint="プレート・A表に出る">
+                <input
+                  value={shortName}
+                  onChange={(e) => edit(setShortName)(e.target.value)}
+                  className={FIELD}
+                />
+              </Field>
+              <Field label="フリガナ">
+                <input
+                  value={nameKana}
+                  onChange={(e) => edit(setNameKana)(e.target.value)}
+                  className={FIELD}
+                />
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="所属">
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="得意先" hint="必須">
+                <select
+                  value={customerId}
+                  onChange={(e) => edit(setCustomerId)(e.target.value)}
+                  className={FIELD}
+                >
+                  <option value="">（選ぶ）</option>
+                  {options.customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="管轄">
+                <select
+                  value={jurisdictionId}
+                  onChange={(e) => {
+                    edit(setJurisdictionId)(e.target.value);
+                    setDepartmentId(""); // 管轄が変われば部署は選び直し
+                  }}
+                  className={FIELD}
+                >
+                  {options.jurisdictions.map((j) => (
+                    <option key={j.id} value={j.id}>
+                      {j.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="部署">
+                <select
+                  value={departmentId}
+                  onChange={(e) => edit(setDepartmentId)(e.target.value)}
+                  className={FIELD}
+                >
+                  <option value="">（未設定）</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="住所">
+                <input
+                  value={address}
+                  onChange={(e) => edit(setAddress)(e.target.value)}
+                  className={FIELD}
+                />
+              </Field>
+            </div>
+          </Section>
+
+          <Section title="予定のひな形">
+            <p className="mb-2 text-[12px] leading-snug text-slate-500">
+              「現場を追加」でこの現場を選んだときに、
+              <span className="font-medium text-slate-600">時刻と休憩の初期値</span>
+              として入ります。
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <Field label="開始">
+                <div className="flex items-center gap-1">
+                  {/* 🔴 24時以降を許す（2026-09-16）。理由は AddShiftDialog の同じ箇所に書いた */}
+                  <TwoDigitInput value={startH} onChange={edit(setStartH)} max={29} allowEmpty />
+                  <span className="text-slate-400">:</span>
+                  <TwoDigitInput value={startM} onChange={edit(setStartM)} max={59} allowEmpty />
+                </div>
+              </Field>
+              <Field label="終了">
+                <div className="flex items-center gap-1">
+                  <TwoDigitInput value={endH} onChange={edit(setEndH)} max={29} allowEmpty />
+                  <span className="text-slate-400">:</span>
+                  <TwoDigitInput value={endM} onChange={edit(setEndM)} max={59} allowEmpty />
+                </div>
+              </Field>
+              <Field label="休憩（分）">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={breakMin ?? ""}
+                  onChange={(e) => {
+                    const d = e.target.value.replace(/[^0-9]/g, "");
+                    edit(setBreakMin)(d === "" ? null : Number(d));
+                  }}
+                  className={FIELD + " w-20 text-right font-mono"}
+                />
+              </Field>
+              <label className="flex items-center gap-1.5 pb-1.5 text-[13px] text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={hasPlan}
+                  onChange={(e) => edit(setHasPlan)(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                勤務予定あり
+              </label>
+            </div>
+          </Section>
+        </div>
+
       </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Section title="識別">
-          <div className="grid grid-cols-2 gap-2">
-            {/* 🔴 現場コードは DB が振る（AS0001〜）。直す理由が無いので表示だけ（2026-10-02） */}
-            <Field label="現場コード" hint="自動で振られます">
-              <div className="flex h-9 items-center font-mono text-[13px] text-slate-600">
-                {site.site_code}
-              </div>
-            </Field>
-            <Field label="状態">
-              <select
-                value={status}
-                onChange={(e) => edit(setStatus)(e.target.value)}
-                className={FIELD}
-              >
-                <option value="active">稼働</option>
-                <option value="inactive">停止</option>
-              </select>
-            </Field>
-            <Field label="請求番号">
-              <input
-                value={billingNo}
-                onChange={(e) => edit(setBillingNo)(e.target.value)}
-                className={FIELD + " font-mono"}
-              />
-            </Field>
-            <Field label="顧客コード" hint="ShiftMax 勤務マスター O列">
-              <input
-                value={customerCode}
-                onChange={(e) => edit(setCustomerCode)(e.target.value)}
-                className={FIELD + " font-mono"}
-              />
-            </Field>
-            <Field label="得意先番号" hint="担当コードとは別物（P列）">
-              <input
-                value={customerNo}
-                onChange={(e) => edit(setCustomerNo)(e.target.value)}
-                className={FIELD + " font-mono"}
-              />
-            </Field>
-          </div>
-        </Section>
-
-        <Section title="名称">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="現場名">
-              <input value={name} onChange={(e) => edit(setName)(e.target.value)} className={FIELD} />
-            </Field>
-            <Field label="略称" hint="プレート・A表に出る">
-              <input
-                value={shortName}
-                onChange={(e) => edit(setShortName)(e.target.value)}
-                className={FIELD}
-              />
-            </Field>
-            <Field label="フリガナ">
-              <input
-                value={nameKana}
-                onChange={(e) => edit(setNameKana)(e.target.value)}
-                className={FIELD}
-              />
-            </Field>
-            <Field label="班">
-              <input
-                value={bandName}
-                onChange={(e) => edit(setBandName)(e.target.value)}
-                className={FIELD}
-              />
-            </Field>
-          </div>
-        </Section>
-
-        <Section title="所属">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="得意先">
-              <select
-                value={customerId}
-                onChange={(e) => edit(setCustomerId)(e.target.value)}
-                className={FIELD}
-              >
-                <option value="">（未設定）</option>
-                {options.customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="管轄">
-              <select
-                value={jurisdictionId}
-                onChange={(e) => {
-                  edit(setJurisdictionId)(e.target.value);
-                  setDepartmentId(""); // 管轄が変われば部署は選び直し
-                }}
-                className={FIELD}
-              >
-                {options.jurisdictions.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {j.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="部署">
-              <select
-                value={departmentId}
-                onChange={(e) => edit(setDepartmentId)(e.target.value)}
-                className={FIELD}
-              >
-                <option value="">（未設定）</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="住所">
-              <input
-                value={address}
-                onChange={(e) => edit(setAddress)(e.target.value)}
-                className={FIELD}
-              />
-            </Field>
-          </div>
-        </Section>
-
-        <Section title="予定のひな形">
-          <p className="mb-2 text-[12px] leading-snug text-slate-500">
-            「現場を追加」でこの現場を選んだときに、
-            <span className="font-medium text-slate-600">時刻と休憩の初期値</span>
-            として入ります。
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <Field label="開始">
-              <div className="flex items-center gap-1">
-                {/* 🔴 24時以降を許す（2026-09-16）。理由は AddShiftDialog の同じ箇所に書いた */}
-                <TwoDigitInput value={startH} onChange={edit(setStartH)} max={29} allowEmpty />
-                <span className="text-slate-400">:</span>
-                <TwoDigitInput value={startM} onChange={edit(setStartM)} max={59} allowEmpty />
-              </div>
-            </Field>
-            <Field label="終了">
-              <div className="flex items-center gap-1">
-                <TwoDigitInput value={endH} onChange={edit(setEndH)} max={29} allowEmpty />
-                <span className="text-slate-400">:</span>
-                <TwoDigitInput value={endM} onChange={edit(setEndM)} max={59} allowEmpty />
-              </div>
-            </Field>
-            <Field label="休憩（分）">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={breakMin ?? ""}
-                onChange={(e) => {
-                  const d = e.target.value.replace(/[^0-9]/g, "");
-                  edit(setBreakMin)(d === "" ? null : Number(d));
-                }}
-                className={FIELD + " w-20 text-right font-mono"}
-              />
-            </Field>
-            <label className="flex items-center gap-1.5 pb-1.5 text-[13px] text-slate-700">
-              <input
-                type="checkbox"
-                checked={hasPlan}
-                onChange={(e) => edit(setHasPlan)(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300"
-              />
-              勤務予定あり
-            </label>
-          </div>
-        </Section>
-      </div>
-
-    </div>
+      {/* 🔴 枠の作成はここに置く。ひな形の**入力中の値**を渡すため（2026-10-02） */}
+      <AddShiftFromSite
+        site={site}
+        plan={{ startH, startM, endH, endM, breakMin }}
+      />
+    </>
   );
 }

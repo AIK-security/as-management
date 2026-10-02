@@ -56,7 +56,7 @@ export async function getNoticeTargets(
          guard_contacts ( kind, value, reachable, is_primary )
        ),
        shift:shifts!inner (
-         id, work_date, jurisdiction_id, work_kind, band_name, plan_comment,
+         id, work_date, jurisdiction_id, work_kind, plan_comment,
          start_h, start_m, end_h, end_m, cancelled_at, status, updated_at,
          site:sites ( name )
        )`,
@@ -80,7 +80,6 @@ export async function getNoticeTargets(
     } | null;
     shift: {
       id: string;
-      band_name: string | null;
       plan_comment: string | null;
       start_h: number;
       start_m: number;
@@ -121,7 +120,6 @@ export async function getNoticeTargets(
       companyName: r.guard.company?.name ?? null,
       companyEmail: r.guard.company?.contact_email ?? null,
       siteName: r.shift.site?.name ?? "（現場名なし）",
-      bandName: r.shift.band_name,
       startText: hhmm(r.shift.start_h, r.shift.start_m),
       endText: hhmm(r.shift.end_h, r.shift.end_m),
       planComment: r.shift.plan_comment,

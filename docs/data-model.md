@@ -154,7 +154,7 @@ ShiftMax 由来（§7-2・25項目）。🔴 **時間・班・請求先まで現
 | `site_code`（現場コード） | 🔴 **DB が振る**（`AS0001`〜・2026-10-02）。意味を持たせない |
 | ~~`guard_target_no`（警備先番号）~~ | 🔴 **2026-10-02 削除。** `duty_codes`（下記）で〈得意先 × 区分〉から引く |
 | `name` / `short_name` / `name_kana` / `address` | ShiftMax |
-| `band_name`（班名） | ShiftMax |
+| ~~`band_name`（班名）~~ | 🔴 **2026-10-02 削除**（実データで未使用。日次シート1,899行中0行） |
 | `plan_start_h` / `plan_start_m` / `plan_end_h` / `plan_end_m` / `plan_break` | ShiftMax（**予定値のひな形**） |
 | `has_plan`（勤務予定フラグ） | ShiftMax |
 | `customer_id` / `billing_no` | ShiftMax |
@@ -207,7 +207,7 @@ ShiftMax 由来（§7-2・25項目）。🔴 **時間・班・請求先まで現
 | `jurisdiction_id` | uuid | 投入が「日付×管轄」単位のため冗長に持つ（`sites` からトリガーで埋める） |
 | `headcount` | int | **人数**（A表の入力項目） |
 | `start_h` / `start_m` / `end_h` / `end_m` / `break_min` | int | 既定値は `sites` の予定値。**枠ごとに上書き可** |
-| `band_name` | text | 班名 |
+| ~~`band_name`~~ | ~~text~~ | 🔴 **2026-10-02 削除**（同上。投入CSV 5列目は空で出す） |
 | `plan_comment` | text | 予定コメント |
 | `billing_note` | text | 請求備考 |
 | **`status`** | text | 🔴 **`draft`（仮組み）／ `confirmed`（確定）** |

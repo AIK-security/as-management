@@ -63,7 +63,6 @@ export function AddShiftDialog({
   const [headcount, setHeadcount] = useState(1);
   // 🔴 2026-09-09 追加。現行の入力UI（`管制雛形` D〜U列）にあって無かった項目。
   //   これが無いと、作った枠を直すのにマスタまで行くしかなかった。
-  const [bandName, setBandName] = useState("");
   const [planComment, setPlanComment] = useState("");
   const [billingNote, setBillingNote] = useState("");
 
@@ -121,8 +120,6 @@ export function AddShiftDialog({
     if (site.plan_end_h !== null) setEndH(site.plan_end_h);
     if (site.plan_end_m !== null) setEndM(site.plan_end_m);
     if (site.plan_break !== null) setBreakMin(site.plan_break);
-    // 班名も現場マスタの既定値を入れる（現行の入力UIと同じ挙動）
-    setBandName(site.band_name ?? "");
   }
 
   function reset() {
@@ -152,7 +149,6 @@ export function AddShiftDialog({
       endM,
       breakMin,
       headcount,
-      bandName,
       planComment,
       billingNote,
     }));
@@ -200,8 +196,11 @@ export function AddShiftDialog({
   }
 
   // 🔴 作る日が0件のときは押させない（期間の指定ミス・全曜日オフ）
+  // 🔴 新しい現場は得意先が必須（2026-10-02）。現場は〈現場名 × 得意先〉で1件のため
   const canSubmit =
-    (picked !== null || query.trim().length > 0) && !pending && targetDates.length > 0;
+    (picked !== null || (query.trim().length > 0 && customerId !== "")) &&
+    !pending &&
+    targetDates.length > 0;
 
   return (
     <div className="relative">
@@ -295,14 +294,14 @@ export function AddShiftDialog({
         {!picked && (
           <label className="mt-2 flex flex-col gap-0.5">
             <span className="text-[11px] font-medium text-slate-500">
-              得意先（新しい現場に設定します）
+              得意先（新しい現場に設定します・必須）
             </span>
             <select
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
               className={FIELD + " w-full"}
             >
-              <option value="">（あとで設定する）</option>
+              <option value="">（選ぶ）</option>
               {customerPicks.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -460,14 +459,6 @@ export function AddShiftDialog({
             />
           </label>
 
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-medium text-slate-500">班名</span>
-            <input
-              value={bandName}
-              onChange={(e) => setBandName(e.target.value)}
-              className={FIELD + " w-24"}
-            />
-          </label>
         </div>
 
         {/* 🔴 予定コメントと請求備考は手入力（現場マスタには無い）。

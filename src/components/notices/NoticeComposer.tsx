@@ -127,7 +127,7 @@ export function NoticeComposer({
 
   /** 🔴 CSV は UTF-8 BOM を付ける（Excel の文字化け対策・2026-09-08 決定） */
   function downloadCsv() {
-    const head = ["経路", "氏名", "宛先", "現場", "開始", "終了", "班", "集合", "会社"];
+    const head = ["経路", "氏名", "宛先", "現場", "開始", "終了", "集合", "会社"];
     const rows = selected.map((t) => [
       CHANNEL_LABEL[t.channel] ?? t.channel,
       t.name,
@@ -135,7 +135,6 @@ export function NoticeComposer({
       t.siteName,
       t.startText,
       t.endText,
-      t.bandName ?? "",
       t.planComment ?? "",
       t.companyName ?? "",
     ]);
@@ -303,7 +302,7 @@ export function NoticeComposer({
               ))}
             </select>
             <span className="t-meta ml-auto text-slate-500">
-              差込：{"{隊員名} {現場名} {開始} {終了} {班} {集合}"}
+              差込：{"{隊員名} {現場名} {開始} {終了} {集合}"}
             </span>
           </div>
 

@@ -421,9 +421,8 @@ export async function addShift(input: {
   breakMin: number;
   headcount: number;
   // 🔴 2026-09-09 追加。現行の入力UI（`管制雛形` D〜U列）にあって、こちらに無かった項目。
-  //   班名は現場マスタの既定値がベース、予定コメント・請求備考は手入力（§8-2）。
-  //   投入CSV 18列のうち 5:班名 / 14:予定コメント / 18:請求備考 に対応する。
-  bandName?: string;
+  //   予定コメント・請求備考は手入力（§8-2）。投入CSV 18列のうち 14・18列目に対応する。
+  //   🔴 班名（5列目）は 2026-10-02 に削除。実データで1行も使われていなかった（空で出す）。
   planComment?: string;
   billingNote?: string;
 }): Promise<AddShiftResult> {
@@ -439,6 +438,8 @@ export async function addShift(input: {
   if (!siteId) {
     const name = (input.newSiteName ?? "").trim();
     if (!name) return { ok: false, message: "現場名を入れてください。" };
+    // 🔴 得意先は必須（2026-10-02）。現場は〈現場名 × 得意先〉で1件
+    if (!input.newSiteCustomerId) return { ok: false, message: "得意先を選んでください。" };
 
     const { data: created, error: cError } = await supabase
       .from("sites")
@@ -484,7 +485,6 @@ export async function addShift(input: {
       end_h: input.endH,
       end_m: input.endM,
       break_min: input.breakMin,
-      band_name: orNullText(input.bandName),
       plan_comment: orNullText(input.planComment),
       billing_note: orNullText(input.billingNote),
       status: "draft",
@@ -553,7 +553,6 @@ export async function updateShift(input: {
   endH: number;
   endM: number;
   breakMin: number;
-  bandName: string;
   planComment: string;
   billingNote: string;
 }): Promise<ActionResult> {
@@ -573,7 +572,6 @@ export async function updateShift(input: {
       end_h: input.endH,
       end_m: input.endM,
       break_min: input.breakMin,
-      band_name: orNullText(input.bandName),
       plan_comment: orNullText(input.planComment),
       billing_note: orNullText(input.billingNote),
     })

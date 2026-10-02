@@ -278,13 +278,13 @@ w();
 w("-- ── 現場（勤務マスタ）──────────────────────────────");
 w(
   "insert into public.sites (id, site_code, name, short_name, name_kana," +
-    " address, band_name, billing_no, plan_start_h, plan_start_m, plan_end_h, plan_end_m," +
+    " address, billing_no, plan_start_h, plan_start_m, plan_end_h, plan_end_m," +
     " plan_break, has_plan, customer_id, jurisdiction_id, department_id) values",
 );
 w(
   SITES.map(
     (s) =>
-      `  ('${siteUuid.get(s.id)}', ${q(`ST${String(idNum(s.id)).padStart(4, "0")}`)}, ${q(s.name)}, ${q(s.shortName)}, ${q(s.nameKana)}, ${q(s.address)}, ${q(s.bandName)}, ${q(s.billingNo)}, ${n(s.planStartH)}, ${n(s.planStartM)}, ${n(s.planEndH)}, ${n(s.planEndM)}, ${n(s.planBreak)}, ${s.hasPlan}, '${customerUuid.get(s.customerId)}', '${jurisdictionUuid.get(s.jurisdictionId)}', '${departmentUuid.get(s.departmentId)}')`,
+      `  ('${siteUuid.get(s.id)}', ${q(`ST${String(idNum(s.id)).padStart(4, "0")}`)}, ${q(s.name)}, ${q(s.shortName)}, ${q(s.nameKana)}, ${q(s.address)}, ${q(s.billingNo)}, ${n(s.planStartH)}, ${n(s.planStartM)}, ${n(s.planEndH)}, ${n(s.planEndM)}, ${n(s.planBreak)}, ${s.hasPlan}, '${customerUuid.get(s.customerId)}', '${jurisdictionUuid.get(s.jurisdictionId)}', '${departmentUuid.get(s.departmentId)}')`,
   ).join(",\n") + ";",
 );
 w();
@@ -342,12 +342,12 @@ w();
 w("-- ── 配置枠（A表の1行）──────────────────────────────");
 w("-- jurisdiction_id はトリガーが sites から埋めるため、ここでは渡さない");
 w(
-  "insert into public.shifts (id, site_id, work_date, jurisdiction_id, work_kind, headcount, start_h, start_m, end_h, end_m, break_min, band_name, plan_comment, status) values",
+  "insert into public.shifts (id, site_id, work_date, jurisdiction_id, work_kind, headcount, start_h, start_m, end_h, end_m, break_min, plan_comment, status) values",
 );
 w(
   SHIFTS.map(
     (s) =>
-      `  ('${shiftUuid.get(s.id)}', '${siteUuid.get(s.siteId)}', '${s.workDate}', '${jurisdictionUuid.get(s.jurisdictionId)}', ${q(s.workKind)}, ${n(s.headcount)}, ${n(s.startH)}, ${n(s.startM)}, ${n(s.endH)}, ${n(s.endM)}, ${n(s.breakMin)}, ${q(s.bandName)}, ${q(s.planComment)}, ${q(s.status)})`,
+      `  ('${shiftUuid.get(s.id)}', '${siteUuid.get(s.siteId)}', '${s.workDate}', '${jurisdictionUuid.get(s.jurisdictionId)}', ${q(s.workKind)}, ${n(s.headcount)}, ${n(s.startH)}, ${n(s.startM)}, ${n(s.endH)}, ${n(s.endM)}, ${n(s.breakMin)}, ${q(s.planComment)}, ${q(s.status)})`,
   ).join(",\n") + ";",
 );
 w();

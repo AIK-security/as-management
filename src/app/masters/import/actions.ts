@@ -392,7 +392,6 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
         name: r.name,
         short_name: r.short_name,
         name_kana: r.name_kana,
-        band_name: r.band_name,
         address: r.address,
         plan_start_h: r.plan_start_h,
         plan_start_m: r.plan_start_m,

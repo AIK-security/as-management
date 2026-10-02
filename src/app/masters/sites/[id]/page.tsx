@@ -23,7 +23,6 @@ import {
   getGuardFormOptions,
   listNgPicks,
 } from "@/lib/masters";
-import { AddShiftFromSite } from "@/components/masters/AddShiftFromSite";
 import { SiteEditForm } from "@/components/masters/SiteEditForm";
 import {
   SiteNgList,
@@ -85,7 +84,6 @@ export default async function SiteDetailPage({
         {editable ? (
           <div className="flex flex-col gap-3">
             <SiteEditForm site={site} options={options} refs={refs} />
-            <AddShiftFromSite site={site} />
             <SiteShiftList rows={shifts} />
             <div className="grid grid-cols-2 gap-3">
               <SiteQualificationList

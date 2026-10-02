@@ -122,7 +122,6 @@ export function CustomerSiteList({ rows }: { rows: CustomerSiteRow[] }) {
               <th className={TH}>現場コード</th>
               <th className={TH}>現場名</th>
               <th className={TH}>略称</th>
-              <th className={TH}>班</th>
               <th className={TH}>予定</th>
               <th className={TH}>状態</th>
             </tr>
@@ -130,7 +129,7 @@ export function CustomerSiteList({ rows }: { rows: CustomerSiteRow[] }) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-2 text-slate-400">
+                <td colSpan={5} className="py-2 text-slate-400">
                   この得意先の現場はありません。
                 </td>
               </tr>
@@ -152,9 +151,6 @@ export function CustomerSiteList({ rows }: { rows: CustomerSiteRow[] }) {
                   </Link>
                 </td>
                 <td className="whitespace-nowrap py-1.5 pr-2 text-slate-500">{s.short_name}</td>
-                <td className="whitespace-nowrap py-1.5 pr-2 text-slate-500">
-                  {s.band_name ?? "—"}
-                </td>
                 <td className="whitespace-nowrap py-1.5 pr-2 font-mono tabular-nums text-slate-600">
                   {hhmm(s.plan_start_h, s.plan_start_m)}–{hhmm(s.plan_end_h, s.plan_end_m)}
                 </td>

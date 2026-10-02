@@ -83,7 +83,6 @@ export type SiteRow = {
   plan_break: number | null;
   name_kana: string | null;
   address: string | null;
-  band_name: string | null;
   billing_no: string | null;
   customer: { name: string } | null;
   jurisdiction: { name: string } | null;
@@ -103,7 +102,7 @@ export async function listSites({ q, page }: MasterQuery): Promise<MasterList<Si
     .select(
       `id, site_code, name, short_name, status,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
-       name_kana, address, band_name, billing_no,
+       name_kana, address, billing_no,
        customer:customers ( name ),
        jurisdiction:jurisdictions ( name ),
        department:departments!sites_department_id_fkey ( name )`,
@@ -371,7 +370,6 @@ export type SiteDetail = {
   short_name: string;
   name_kana: string | null;
   address: string | null;
-  band_name: string | null;
   billing_no: string | null;
   // 🔴 ShiftMax 勤務マスターの O列・P列（2026-09-09 に追加）。
   //   得意先マスターには無く、勤務マスターにしか無い列。担当コードとは別物。
@@ -394,7 +392,7 @@ export async function getSite(id: string): Promise<SiteDetail | null> {
   const { data, error } = await supabase
     .from("sites")
     .select(
-      `id, site_code, name, short_name, name_kana, address, band_name,
+      `id, site_code, name, short_name, name_kana, address,
        billing_no, customer_code, customer_no,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break, has_plan,
        customer_id, jurisdiction_id, department_id, status`,
@@ -701,7 +699,6 @@ export type SiteShiftRow = {
   end_h: number;
   end_m: number;
   break_min: number;
-  band_name: string | null;
   plan_comment: string | null;
   billing_note: string | null;
   status: string;
@@ -725,7 +722,7 @@ export async function getSiteShifts(siteId: string, limit = 30): Promise<SiteShi
     .from("shifts")
     .select(
       `id, work_date, work_kind, headcount, start_h, start_m, end_h, end_m, break_min,
-       band_name, plan_comment, billing_note, status,
+       plan_comment, billing_note, status,
        assignments ( id )`,
     )
     .eq("site_id", siteId)
@@ -854,7 +851,6 @@ export type CustomerSiteRow = {
   name: string;
   short_name: string;
   status: string;
-  band_name: string | null;
   plan_start_h: number | null;
   plan_start_m: number | null;
   plan_end_h: number | null;
@@ -869,7 +865,7 @@ export async function getCustomerSites(
   const { data, error } = await supabase
     .from("sites")
     .select(
-      `id, site_code, name, short_name, status, band_name,
+      `id, site_code, name, short_name, status,
        plan_start_h, plan_start_m, plan_end_h, plan_end_m`,
     )
     .eq("customer_id", customerId)

@@ -71,8 +71,6 @@ export type SitePick = {
   plan_end_h: number | null;
   plan_end_m: number | null;
   plan_break: number | null;
-  /** 班名。現行の入力UIでも現場マスタから自動で入る（shiftmax-api-analysis.md §8-2 P列） */
-  band_name: string | null;
 };
 
 export type BoardData = {
@@ -180,7 +178,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .select(
         `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
        start_h, start_m, end_h, end_m, break_min,
-       band_name, plan_comment, billing_note, status, cancelled_at,
+       plan_comment, billing_note, status, cancelled_at,
        site:sites!inner (
          id, site_code, name, short_name, customer_id, jurisdiction_id,
          customer:customers ( id, staff_code, name, name_kana ),
@@ -267,7 +265,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .from("sites")
       .select(
         `id, name, short_name, plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
-       band_name, customer:customers ( name )`,
+       customer:customers ( name )`,
       )
       .eq("jurisdiction_id", jurisdiction.id)
       .eq("status", "active")

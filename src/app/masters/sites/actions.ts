@@ -40,7 +40,6 @@ export type SiteInput = {
   shortName: string;
   nameKana: string;
   address: string;
-  bandName: string;
   billingNo: string;
   customerCode: string;
   customerNo: string;
@@ -70,6 +69,8 @@ export async function updateSite(input: SiteInput): Promise<ActionResult> {
   if (!input.name.trim()) return { ok: false, message: "現場名を入れてください。" };
   if (!input.shortName.trim()) return { ok: false, message: "略称を入れてください。" };
   if (!input.jurisdictionId) return { ok: false, message: "管轄を選んでください。" };
+  // 🔴 得意先は必須（2026-10-02）。現場は〈現場名 × 得意先〉で1件
+  if (!input.customerId) return { ok: false, message: "得意先を選んでください。" };
   // 🔴 時と分は組。片方だけ入った状態を通さない。
   //   Server Action は URL なので、画面側の検査だけに頼らない。
   if (
@@ -87,7 +88,6 @@ export async function updateSite(input: SiteInput): Promise<ActionResult> {
       short_name: input.shortName.trim(),
       name_kana: orNull(input.nameKana),
       address: orNull(input.address),
-      band_name: orNull(input.bandName),
       billing_no: orNull(input.billingNo),
       customer_code: orNull(input.customerCode),
       customer_no: orNull(input.customerNo),
@@ -97,8 +97,8 @@ export async function updateSite(input: SiteInput): Promise<ActionResult> {
       plan_end_m: input.planEndM,
       plan_break: input.planBreak,
       has_plan: input.hasPlan,
-      // 得意先・部署は「未設定」を許す（新規現場は得意先が後から決まる）
-      customer_id: input.customerId || null,
+      // 部署は「未設定」を許す
+      customer_id: input.customerId,
       jurisdiction_id: input.jurisdictionId,
       department_id: input.departmentId || null,
       status: input.status,
@@ -203,6 +203,7 @@ export async function createSite(input: {
   const name = input.name.trim();
   if (!name) return { ok: false, message: "現場名を入れてください。" };
   if (!input.jurisdictionId) return { ok: false, message: "管轄を選んでください。" };
+  if (!input.customerId) return { ok: false, message: "得意先を選んでください。" };
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -211,7 +212,7 @@ export async function createSite(input: {
       name,
       short_name: input.shortName.trim() || name.slice(0, 8),
       jurisdiction_id: input.jurisdictionId,
-      customer_id: input.customerId || null,
+      customer_id: input.customerId,
     })
     .select("id")
     .single();

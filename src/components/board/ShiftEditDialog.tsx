@@ -40,7 +40,6 @@ export function ShiftEditDialog({
   const [endM, setEndM] = useState(shift.end_m);
   const [breakMin, setBreakMin] = useState(shift.break_min);
   const [headcount, setHeadcount] = useState(shift.headcount);
-  const [bandName, setBandName] = useState(shift.band_name ?? "");
   const [planComment, setPlanComment] = useState(shift.plan_comment ?? "");
   const [billingNote, setBillingNote] = useState(shift.billing_note ?? "");
 
@@ -68,7 +67,6 @@ export function ShiftEditDialog({
       endH,
       endM,
       breakMin,
-      bandName,
       planComment,
       billingNote,
     }));
@@ -170,14 +168,6 @@ export function ShiftEditDialog({
             />
           </label>
 
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-medium text-slate-500">班名</span>
-            <input
-              value={bandName}
-              onChange={(e) => setBandName(e.target.value)}
-              className={FIELD + " w-24"}
-            />
-          </label>
         </div>
 
         <div className="mt-2 flex gap-2">
