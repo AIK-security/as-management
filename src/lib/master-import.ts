@@ -171,6 +171,17 @@ function flag(v: string | undefined): boolean | undefined {
 }
 
 /**
+ * 部署コード。🔴 **`0` は「部署なし」**（2026-10-02・実データで判明）。
+ *   ShiftMax は部署の無い得意先・現場に `0`（名前は空）を入れている（得意先603件すべて・現場・社員1件）。
+ *   これを部署として作ると、東京と千葉の得意先が同じ部署「0」にぶら下がり、
+ *   部署と管轄の整合の外部キー（20260924000000_consistency_guards.sql）で取込が丸ごと落ちる。
+ */
+function deptCode(v: string | undefined): string | null {
+  const t = orNull(v);
+  return t === "0" ? null : t;
+}
+
+/**
  * 略称が空のときの既定値。プレートに出るので空のままにはできない。
  *
  * 🔴 空白を落としてから切る。`鈴木 次郎` をそのまま4字にすると `鈴木 次` になり、
@@ -271,7 +282,7 @@ export function parseMasterCsv(text: string): ParseResult {
         email: orNull(at("メールアドレス")),
         jurisdiction_code: jcode,
         jurisdiction_name: orNull(at("管轄表示")),
-        department_code: orNull(at("部署コード")),
+        department_code: deptCode(at("部署コード")),
         department_name: orNull(at("部署名")),
       });
     });
@@ -305,7 +316,7 @@ export function parseMasterCsv(text: string): ParseResult {
         billing_name: orNull(at("請求名")),
         jurisdiction_code: orNull(at("管轄")),
         jurisdiction_name: orNull(at("管轄表示")),
-        department_code: orNull(at("部署コード")),
+        department_code: deptCode(at("部署コード")),
         department_name: orNull(at("部署名")),
       });
     });
@@ -411,7 +422,7 @@ export function parseMasterCsv(text: string): ParseResult {
       billing_no: orNull(at("請求番号")),
       jurisdiction_code: jcode,
       jurisdiction_name: orNull(at("管轄表示")),
-      department_code: orNull(at("部署コード")),
+      department_code: deptCode(at("部署コード")),
       department_name: orNull(at("部署名")),
     });
   });
