@@ -20,6 +20,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
+import { fetchAll } from "@/lib/fetch-all";
 import {
   GROUP_WORK_KINDS,
   OFF_KIND_LABEL,
@@ -199,21 +200,26 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         .order("start_m")
         .order("id"),
 
-      // その週の稼働（配置・非現場・貸出をまとめて1回で引く）
-      supabase
-        .from("assignments")
-        .select(
-          `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
-         off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
-         planned_start_at, planned_end_at`,
-        )
-        // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
-        //   20:00–06:00 の枠は隣の日の枠と重なりうる（board.ts と同じ理由）。
-        //   セルに並べるのは週の中だけで、広く取るのは重なりを見るため。
-        .gte("work_date", addDays(startDate, -1))
-        .lte("work_date", addDays(endDate, 1))
-        .eq("status", "planned")
-        .order("position"),
+      // その週の稼働（配置・非現場・貸出をまとめて引く）
+      // 🔴 9日ぶん・全管轄で 1,000行に届く（7月実データで 約850件）。最後まで読む（fetch-all.ts）
+      fetchAll<AssignmentWithSpan>((from, to) =>
+        supabase
+          .from("assignments")
+          .select(
+            `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
+           off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
+           planned_start_at, planned_end_at`,
+          )
+          // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
+          //   20:00–06:00 の枠は隣の日の枠と重なりうる（board.ts と同じ理由）。
+          //   セルに並べるのは週の中だけで、広く取るのは重なりを見るため。
+          .gte("work_date", addDays(startDate, -1))
+          .lte("work_date", addDays(endDate, 1))
+          .eq("status", "planned")
+          .order("position")
+          .order("id")
+          .range(from, to),
+      ),
 
       supabase
         .from("guards")
@@ -222,7 +228,15 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         .order("staff_code", { nullsFirst: false }),
       supabase.from("companies").select("id, kind, name"),
       supabase.from("qualifications").select("id, code, name, short_label"),
-      supabase.from("guard_qualifications").select("guard_id, qualification_id"),
+      // 🔴 資格は隊員 × 資格で育つ（250名 × 数種）。1,000行で切れないよう最後まで読む
+      fetchAll<{ guard_id: string; qualification_id: string }>((from, to) =>
+        supabase
+          .from("guard_qualifications")
+          .select("guard_id, qualification_id")
+          .order("guard_id")
+          .order("qualification_id")
+          .range(from, to),
+      ),
     ]);
 
   for (const r of [shiftRes, assignRes, guardsRes, companiesRes, qualsRes, guardQualsRes]) {

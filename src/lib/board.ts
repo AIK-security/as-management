@@ -10,6 +10,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
+import { fetchAll } from "@/lib/fetch-all";
 // 🔴 内部でも使う。再エクスポートしただけでは同一モジュール内から参照できない
 import {
   GROUP_WORK_KINDS,
@@ -126,6 +127,27 @@ export type BoardParams = {
   group?: BoardShiftGroup;
 };
 
+/**
+ * 経験（★）の〈隊員 × 現場〉を、表示日より前の1年ぶん**全件**引く（2026-10-02）。
+ *
+ * 🔴 以前は assignments を1年ぶん直接読んでいた。PostgREST は既定で 1,000行までしか返さないため、
+ *   7月の実データ（配置 2,901件）を入れた時点で約1,900件が**黙って落ち**、★ が付かなくなった。
+ *   → ビュー guard_site_experience（20261002180000）で〈隊員 × 現場〉に畳み、
+ *     さらに 1,000行ずつ**最後まで**取る（src/lib/fetch-all.ts）。
+ */
+function fetchExperience(supabase: Awaited<ReturnType<typeof createClient>>, workDate: string) {
+  return fetchAll<{ guard_id: string; site_id: string }>((from, to) =>
+    supabase
+      .from("guard_site_experience")
+      .select("guard_id, site_id")
+      .lt("first_date", workDate)
+      .gte("last_date", addDays(workDate, -365))
+      .order("guard_id")
+      .order("site_id")
+      .range(from, to),
+  );
+}
+
 export async function getBoardData(params: BoardParams = {}): Promise<BoardData> {
   const supabase = await createClient();
   const group = params.group ?? "day";
@@ -223,21 +245,23 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .order("staff_code", { nullsFirst: false }),
     supabase.from("companies").select("id, kind, name"),
     supabase.from("qualifications").select("id, code, name, short_label"),
-    supabase.from("guard_qualifications").select("guard_id, qualification_id"),
+    // 🔴 資格は隊員 × 資格で育つ（250名 × 数種）。1,000行で切れないよう最後まで読む
+    fetchAll<{ guard_id: string; qualification_id: string }>((from, to) =>
+      supabase
+        .from("guard_qualifications")
+        .select("guard_id, qualification_id")
+        .order("guard_id")
+        .order("qualification_id")
+        .range(from, to),
+    ),
     supabase
       .from("ng_entries")
       .select("id, kind, guard_id, site_id, counterpart_guard_id, reason, severity"),
 
-    // 経験（★）── 専用テーブルは作らず assignments の履歴から引く
-    // 🔴 期間を切る。切らないと年々重くなり、いずれ画面が開かなくなる。
-    //   1年より前の経験を「行ったことがある」と言ってよいかは業務判断だが、
+    // 経験（★）── 〈隊員 × 現場〉に畳んだビューから引く（fetchExperience）
+    // 🔴 期間を切る。1年より前の経験を「行ったことがある」と言ってよいかは業務判断だが、
     //   誰にも確認していないので、まず1年で置く（gap-analysis A-1 に積む）。
-    supabase
-      .from("assignments")
-      .select("guard_id, shift:shifts!inner ( site_id )")
-      .eq("kind", "site")
-      .lt("work_date", workDate)
-      .gte("work_date", addDays(workDate, -365)),
+    fetchExperience(supabase, workDate),
 
     // 重なり判定に使う前後1日ぶんの稼働時間帯
     // 🔴 その日の実態で見る。管轄や日勤/夜勤で切ると見えない重なりが残る。
@@ -321,12 +345,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
 
   // ── 経験（★）── 取得は上の Promise.all 済み。ここは組み立てるだけ
   const experienced = new Set<string>();
-  for (const row of (pastRes.data ?? []) as unknown as {
-    guard_id: string;
-    shift: { site_id: string } | null;
-  }[]) {
-    if (row.shift) experienced.add(`${row.guard_id}:${row.shift.site_id}`);
-  }
+  for (const row of pastRes.data) experienced.add(`${row.guard_id}:${row.site_id}`);
 
   // ─────────────────────────────────────────────────────
   // 組み立て
