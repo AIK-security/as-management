@@ -31,8 +31,15 @@
     → local/sites-extracted.csv  確認用（Excel でそのまま開ける）
     → local/sites-import.csv     現場一覧（/masters/import にそのまま通せる）
     → local/duties-import.csv    勤務マスター（同上。現場一覧より先に取り込む）
+    → local/customers-import.csv 得意先マスター（同上）
+    → local/guards-import.csv    社員マスター（同上）
 
-    取り込む順番：得意先マスター → 勤務マスター → 現場一覧
+    取り込む順番：得意先マスター → 勤務マスター → 現場一覧 → 社員マスター
+    （社員はどこにも依存しないので最後でよい。過去の配置 SQL はこの4つの後）
+
+🔴 マスタはべんり君の**非表示シート**に入っている（起動時に ShiftMax から取得したもの）。
+  人がシートを再表示して CSV に保存する手間と、そのときの事故（設定シートを開く等）を無くすため、
+  ここで書き出す。🔴 「設定」シートには ShiftMax の認証情報があるため**読まない**。
 """
 import collections
 import csv
@@ -55,6 +62,8 @@ DEFAULT_SRC = os.path.join("docs", "管制_別紙", "べんり君_別紙Ⓑ.xlsm
 OUT = os.path.join("local", "sites-extracted.csv")          # 確認用
 OUT_IMPORT = os.path.join("local", "sites-import.csv")        # 取込用（現場一覧）
 OUT_DUTIES = os.path.join("local", "duties-import.csv")       # 取込用（勤務マスター）
+OUT_CUSTOMERS = os.path.join("local", "customers-import.csv") # 取込用（得意先マスター）
+OUT_GUARDS = os.path.join("local", "guards-import.csv")       # 取込用（社員マスター）
 
 # 日ごとのシート名：「7.1(チェック済み)」「10.15」など。月.日 で始まるものを拾う
 DAY_SHEET = re.compile(r"^\s*(\d{1,2})\.(\d{1,2})(?!\d)")
@@ -120,6 +129,27 @@ def read_master(wb):
             "dept_name": cell(r[M_DEPT_NAME]),
         }
     return master
+
+
+def dump_sheet(wb, sheet, key, out):
+    """シートを見出し行から下ごと CSV にする。見出しの無い列・key が空の行は落とす。
+
+    取込画面は**見出しの名前で**列を突き合わせるため、列の並びはシートのままでよい。
+    """
+    rows = list(wb[sheet].iter_rows(max_row=5000, max_col=40, values_only=True))
+    hi = next(i for i, r in enumerate(rows) if r and any(cell(c) == key for c in r))
+    cols = [i for i, c in enumerate(rows[hi]) if cell(c)]
+    k = [cell(c) for c in rows[hi]].index(key)
+    n = 0
+    with io.open(out, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow([cell(rows[hi][i]) for i in cols])
+        for r in rows[hi + 1:]:
+            if not cell(r[k]):
+                continue
+            w.writerow([cell(r[i]) for i in cols])
+            n += 1
+    return n
 
 
 def main():
@@ -267,9 +297,16 @@ def main():
     print("■ 現場として書き出した: %d 件（うち区分の違う番号をまとめたもの %d 件）" % (rows, merged))
     print("■ 現場ではないため除外した行（休み・内勤など）: %d 行" % skipped)
     print("■ 勤務マスタに警備先番号が無く顧客を引けなかった行: %d 行" % unmatched)
-    print("■ 勤務マスター: %d 件" % len(master))
+    wb = openpyxl.load_workbook(srcs[-1], data_only=True, read_only=True)
+    n_cust = dump_sheet(wb, "得意先マスター", "担当コード", OUT_CUSTOMERS)
+    n_guard = dump_sheet(wb, "社員マスター", "個人コード", OUT_GUARDS)
+    wb.close()
+
+    print("■ 勤務マスター: %d 件 / 得意先マスター: %d 件 / 社員マスター: %d 件" % (
+        len(master), n_cust, n_guard))
     print("→ 確認用: %s" % OUT)
-    print("→ 取込用: %s / %s（/masters/import に通せる）" % (OUT_DUTIES, OUT_IMPORT))
+    print("→ 取込用（この順に /masters/import へ）: %s → %s → %s → %s" % (
+        OUT_CUSTOMERS, OUT_DUTIES, OUT_IMPORT, OUT_GUARDS))
 
 
 if __name__ == "__main__":
