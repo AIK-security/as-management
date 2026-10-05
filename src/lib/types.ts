@@ -193,6 +193,8 @@ export type GuardView = {
   guard: Guard;
   qualLabels: QualLabels;
   isPartner: boolean;
+  /** 🔴 反対側の区分に既に入っている（「日勤済」「夜勤済」）。配置ボードのプールだけで使う */
+  doneLabel?: string;
 };
 
 /** 配置ボードの1行（現場 × 枠） */

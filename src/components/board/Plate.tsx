@@ -135,7 +135,7 @@ export function Plate({ plate }: { plate: PlateView }) {
 
 /** プール（未配置）に並べる版 */
 export function PoolPlate({ view }: { view: GuardView }) {
-  const { guard, isPartner, qualLabels: quals } = view;
+  const { guard, isPartner, qualLabels: quals, doneLabel } = view;
   return (
     <div
       className={[
@@ -154,6 +154,15 @@ export function PoolPlate({ view }: { view: GuardView }) {
         {isPartner && (
           <span className={NEUTRAL_BADGE} title="協力会社の隊員">
             協
+          </span>
+        )}
+        {/* 🔴 今日もう1回出ている人（2026-10-05）。amber＝「まだ気にすること」の色 */}
+        {doneLabel && (
+          <span
+            className="t-badge shrink-0 rounded border border-amber-400 bg-amber-50 px-0.5 leading-4 text-amber-800"
+            title={`この日はすでに${doneLabel.replace("済", "")}に入っています`}
+          >
+            {doneLabel}
           </span>
         )}
       </div>

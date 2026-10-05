@@ -231,7 +231,8 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .from("assignments")
       .select(
         `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
-       off_kind, off_work_kind, lent_to_company_id, external_site_name, status`,
+       off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
+       shift:shifts ( work_kind )`,
       )
       .eq("work_date", workDate)
       .eq("status", "planned")
@@ -321,7 +322,11 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
 
   const shifts = (shiftRes.data ?? []) as unknown as ShiftRowRaw[];
   const shiftIds = shifts.map((s) => s.id);
-  const allAssignments = (assignRes.data ?? []) as Assignment[];
+  // 🔴 shift.work_kind はプールの「日勤済／夜勤済」にだけ使う（2026-10-05）。
+  //   別の管轄の枠も含むため、shifts（この管轄だけ）からは引けない
+  const allAssignments = (assignRes.data ?? []) as unknown as (Assignment & {
+    shift: { work_kind: WorkKind } | null;
+  })[];
 
   const guards = (guardsRes.data ?? []) as Guard[];
   const companies = (companiesRes.data ?? []) as Company[];
@@ -513,12 +518,12 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   //   人は管轄をまたいで1人しかいない。プールは画面の都合ではなく
   //   **その日の実態**で決まる。
   //
-  // 🟠 副作用：日勤に入っている人が夜勤のプールにも出なくなる。
-  //   8/27 に「日勤＋夜勤・途中交代がある」と聞いているため、
-  //   掛け持ちをプールから置く経路が無くなる。
-  //   → **管制に確認する**（requirements.md §8-7）。実際に掛け持ちを組むなら、
-  //     「その時間帯に空いているか」で出し分ける形に変える。
-  //     いまは「同じ人が二重に見える」ほうが事故が大きいと判断して閉じる。
+  // 🔴 ただし**反対側の区分にだけ入っている人はプールに残し、印を付ける**（2026-10-05）。
+  //   以前はここで一律に外しており、日勤に入れた人を夜勤の盤面に置く経路が無かった。
+  //   7月の実データで「日勤＋夜A」25件・「日勤＋夜B」14件（約15名）＝**1日1〜2件**ある。
+  //   印（日勤済／夜勤済）は「今日もう1回出ている人」を、うっかり入れないため。
+  //   時間帯が本当に重なれば、確定時に DB（assignments_no_overlap）が止め、要確認にも出る。
+  //   🟠 同じ区分の掛け持ち（夜A＋夜A・7月に4件／1名）はまれなので、従来どおり外す。
   // 🔴 休みは**いま見ている区分にかかるものだけ**プールから外す（2026-09-16）。
   //   「一部勤務可」── 日勤なら出られる／A夜勤なら出られる、という休み方が実在する。
   //   全部まとめて外していると、夜勤だけ休む隊員が日勤の盤面からも消える。
@@ -530,8 +535,15 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   //        枠単位で止めるかは未決（screen-design.md §10）。
   const nightOff = new Map<string, Set<string>>();
   const busy = new Set<string>();
+  /** 反対側の区分にだけ入っている人 → 名札の印 */
+  const doneOther = new Map<string, string>();
+  const ownKinds = new Set<WorkKind>(GROUP_WORK_KINDS[group]);
   for (const a of allAssignments) {
     if (a.kind !== "off") {
+      if (a.kind === "site" && a.shift && !ownKinds.has(a.shift.work_kind)) {
+        doneOther.set(a.guard_id, group === "day" ? "夜勤済" : "日勤済");
+        continue;
+      }
       busy.add(a.guard_id);
       continue;
     }
@@ -589,6 +601,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
         .map((id) => qualById.get(id)?.short_label)
         .filter((v): v is string => Boolean(v)),
       isPartner: companyById.get(g.company_id)?.kind === "partner",
+      doneLabel: doneOther.get(g.id),
     }));
 
   // ── 「現場を追加」の候補（取得は上の Promise.all 済み）──────
