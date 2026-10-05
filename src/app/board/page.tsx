@@ -24,6 +24,8 @@ import { WarningsPane } from "@/components/board/BoardPanes";
 import { BoardDnd } from "@/components/board/BoardDnd";
 import { ConfirmAllButton } from "@/components/board/ConfirmAllButton";
 import { AddShiftDialog } from "@/components/board/AddShiftDialog";
+import { CopyDayDialog } from "@/components/board/CopyDayDialog";
+import { DateJump } from "@/components/DateJump";
 import { HEADER_BTN } from "@/components/board/header-ui";
 import {
   addDays,
@@ -187,6 +189,16 @@ export default async function BoardPage({
               今日
             </Link>
           )}
+          {/* 🔴 管轄と日勤夜勤は引き継ぐ。得意先の絞り込みは外す（別の日には無い得意先がある） */}
+          <span className="ml-1">
+            <DateJump
+              action="/board"
+              name="date"
+              type="date"
+              value={workDate}
+              keep={{ group, ...(board.jurisdiction.code ? { j: board.jurisdiction.code } : {}) }}
+            />
+          </span>
         </div>
 
         {/* 🔴 管轄（東京／千葉）の切り替えは**画面から外した**（2026-09-16・管制の要望）。
@@ -235,6 +247,12 @@ export default async function BoardPage({
                 group={board.group}
                 sitePicks={board.sitePicks}
                 customerPicks={board.customerPicks}
+              />
+              {/* 🔴 似た日を丸ごと写す（2026-10-05）。空の盤面に1件ずつ作らせない */}
+              <CopyDayDialog
+                workDate={board.date}
+                jurisdictionId={board.jurisdiction.id}
+                jurisdictionName={board.jurisdiction.name}
               />
               <ConfirmAllButton shiftIds={draftShiftIdsOnScreen} />
               {/* 🔴 中身が無いボタンは「準備中」と分かる形にする（2026-09-09 決定）。

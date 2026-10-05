@@ -12,6 +12,7 @@
 //   一部勤務可（日勤だけ休み・夜Aだけ休み）は、**その区分の盤面からだけ**消える。
 import { requireStaff, canEdit } from "@/lib/auth";
 import { OffGrid } from "@/components/offs/OffGrid";
+import { DateJump } from "@/components/DateJump";
 import { todayInJst } from "@/lib/board";
 import { getOffMonth, monthStart, shiftMonth } from "@/lib/offs";
 import Link from "next/link";
@@ -71,6 +72,9 @@ export default async function OffsPage({
               今月
             </Link>
           )}
+          <span className="ml-1">
+            <DateJump action="/offs" name="m" type="month" value={month} />
+          </span>
         </div>
 
         <div className="ml-1 flex shrink-0 overflow-hidden rounded-md border border-slate-300">

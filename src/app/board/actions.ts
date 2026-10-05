@@ -18,10 +18,10 @@
 
 import { refresh } from "next/cache";
 import { requireRole } from "@/lib/auth";
-import { addDays, formatSpanPlace } from "@/lib/board-format";
+import { addDays, formatSpanPlace, OFF_KIND_LABEL, WORK_KIND_LABEL } from "@/lib/board-format";
 import { findOverlaps, type Span } from "@/lib/overlap";
 import { createClient } from "@/lib/supabase/server";
-import type { WorkKind } from "@/lib/types";
+import type { OffKind, OffWorkKind, WorkKind } from "@/lib/types";
 
 /**
  * 🔴 `details` は「なぜ落ちたか」を**名前で**並べたもの（2026-09-04 追加）。
@@ -580,4 +580,351 @@ export async function updateShift(input: {
 
   refresh();
   return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 別の日の盤面を複写する（2026-10-05）
+//
+// 🔴 なぜ要るのか
+//   本番には過去（7月）の枠しか無く、管制が「明日」を開くと盤面が空になる。
+//   1日 約55枠を「現場を追加」で1件ずつ作るのは、べんり君より手数が多い。
+//   べんり君では A表が約2か月前に出ており、**枠は先にあって、人を動かすのが日々の仕事**。
+//   → 似た日を丸ごと写し、そこから直す形にする。
+//
+// 🔴 範囲は「1日 × 1管轄」。日勤・夜勤はまとめて写す。
+//   中止の枠（cancelled_at・区分 dayCancel/nightCancel）は写さない ── 中止は繰り返さない。
+//
+// 🔴 二重に作らない。〈現場 × 区分〉ごとに「写す先に既にある数」を差し引く。
+//   addShift は〈現場 × 区分 × 日〉に1件でもあれば作らないが、ここでは
+//   同じ現場に同じ区分の枠が複数ある日（7月で実在する）をそのまま写したいので数で見る。
+//
+// 🔴 配置も写せる（柴山・2026-10-05）。ただし次の人は**置かずに理由を返す**：
+//   ・休み … 終日の休み、または写す枠と同じ区分の休み
+//   ・時間が重なる … 写す日（と前日の夜勤）の配置、今回写した配置と時間帯が重なる。
+//     時刻を持たない予定（応援）はその日いっぱい埋まっているとみなす。
+//     🔴 「同じ日に予定があれば置かない」ではない。日勤のあと夜Bに入る勤務が実在する
+//   ・在籍していない
+//   黙って落とすと「写したのに居ない」に見える。名前と理由を必ず返す。
+//
+// 🔴 写した枠はすべて仮組み。確定は管制が見てから押す。
+//   draft の枠には重なりの制約（assignments_no_overlap）が効かないので、
+//   上の「置かない」判定はここでしかできない。
+// ─────────────────────────────────────────────────────────
+
+/** 置かなかった人。画面にそのまま並べる */
+export type CopySkip = { guardName: string; place: string; reason: string };
+
+export type CopyDayResult =
+  | {
+      ok: true;
+      /** 複写元にあった枠（中止を除く） */
+      sourceShifts: number;
+      created: number;
+      /** 写す先に既にあったので作らなかった枠 */
+      skippedShifts: number;
+      placed: number;
+      skips: CopySkip[];
+    }
+  | { ok: false; message: string };
+
+const COPYABLE_KINDS: WorkKind[] = ["day", "nightA", "nightB"];
+
+export async function copyDay(input: {
+  jurisdictionId: string;
+  fromDate: string;
+  toDate: string;
+  withAssignments: boolean;
+}): Promise<CopyDayResult> {
+  const supabase = await editorClient();
+  const { jurisdictionId, fromDate, toDate } = input;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    return { ok: false, message: "日付を選んでください。" };
+  }
+  if (fromDate === toDate) {
+    return { ok: false, message: "複写元と同じ日には写せません。" };
+  }
+
+  // ── 複写元の枠 ──
+  const { data: srcData, error: srcErr } = await supabase
+    .from("shifts")
+    .select(
+      `id, site_id, work_kind, headcount, start_h, start_m, end_h, end_m, break_min,
+       plan_comment, billing_note, site:sites ( short_name )`,
+    )
+    .eq("work_date", fromDate)
+    .eq("jurisdiction_id", jurisdictionId)
+    .is("cancelled_at", null)
+    .in("work_kind", COPYABLE_KINDS)
+    .order("start_h")
+    .order("start_m")
+    .order("id");
+  if (srcErr) return { ok: false, message: toMessage(srcErr) };
+
+  type SrcShift = {
+    id: string;
+    site_id: string;
+    work_kind: WorkKind;
+    headcount: number;
+    start_h: number;
+    start_m: number;
+    end_h: number;
+    end_m: number;
+    break_min: number;
+    plan_comment: string | null;
+    billing_note: string | null;
+    site: { short_name: string } | null;
+  };
+  const source = (srcData ?? []) as unknown as SrcShift[];
+  if (source.length === 0) {
+    return { ok: false, message: "複写元の日に枠がありません（中止の枠は写しません）。" };
+  }
+
+  // ── 写す先に既にある枠の数（〈現場 × 区分〉ごと） ──
+  const { data: dstData, error: dstErr } = await supabase
+    .from("shifts")
+    .select("site_id, work_kind")
+    .eq("work_date", toDate)
+    .eq("jurisdiction_id", jurisdictionId);
+  if (dstErr) return { ok: false, message: toMessage(dstErr) };
+
+  const keyOf = (siteId: string, kind: string) => `${siteId}|${kind}`;
+  const remaining = new Map<string, number>();
+  for (const r of dstData ?? []) {
+    const k = keyOf(r.site_id as string, r.work_kind as string);
+    remaining.set(k, (remaining.get(k) ?? 0) + 1);
+  }
+
+  // 🔴 id はこちらで振る。insert の戻り順に頼らずに「元の枠 → 新しい枠」を対応づけるため
+  const plan: { src: SrcShift; newId: string }[] = [];
+  for (const s of source) {
+    const k = keyOf(s.site_id, s.work_kind);
+    const left = remaining.get(k) ?? 0;
+    if (left > 0) {
+      remaining.set(k, left - 1);
+      continue;
+    }
+    plan.push({ src: s, newId: crypto.randomUUID() });
+  }
+
+  const result = {
+    ok: true as const,
+    sourceShifts: source.length,
+    created: plan.length,
+    skippedShifts: source.length - plan.length,
+    placed: 0,
+    skips: [] as CopySkip[],
+  };
+  if (plan.length === 0) return result;
+
+  const { error: insErr } = await supabase.from("shifts").insert(
+    plan.map(({ src, newId }) => ({
+      id: newId,
+      site_id: src.site_id,
+      work_date: toDate,
+      jurisdiction_id: jurisdictionId,
+      work_kind: src.work_kind,
+      headcount: src.headcount,
+      start_h: src.start_h,
+      start_m: src.start_m,
+      end_h: src.end_h,
+      end_m: src.end_m,
+      break_min: src.break_min,
+      plan_comment: src.plan_comment,
+      billing_note: src.billing_note,
+      status: "draft",
+    })),
+  );
+  if (insErr) return { ok: false, message: toMessage(insErr) };
+
+  if (!input.withAssignments) {
+    refresh();
+    return result;
+  }
+
+  // 🔴 配置で失敗したら、作った枠ごと取り消す（配置は cascade で一緒に消える）。
+  //   「枠だけ写って人が居ない」で残すと、写し直しても二重防止で枠が作られず直せない
+  const undo = async (message: string): Promise<CopyDayResult> => {
+    await supabase
+      .from("shifts")
+      .delete()
+      .in(
+        "id",
+        plan.map((p) => p.newId),
+      );
+    return { ok: false, message };
+  };
+
+  // ── 複写元の配置 ──
+  const planBySrc = new Map(plan.map((p) => [p.src.id, p]));
+  const { data: srcAsg, error: saErr } = await supabase
+    .from("assignments")
+    .select("shift_id, guard_id, role, position")
+    .in("shift_id", [...planBySrc.keys()])
+    .eq("kind", "site")
+    .eq("status", "planned")
+    .order("position");
+  if (saErr) return undo(toMessage(saErr));
+
+  const asgRows = (srcAsg ?? []) as {
+    shift_id: string;
+    guard_id: string;
+    role: string;
+    position: number;
+  }[];
+  if (asgRows.length === 0) {
+    refresh();
+    return result;
+  }
+
+  // ── 写す先の日の予定（全管轄。別の管轄に入っている人も見る） ──
+  // 🔴 前日も取る。前日の夜勤は work_date が前日のまま、写す日の朝まで続く
+  const { data: dayAsg, error: daErr } = await supabase
+    .from("assignments")
+    .select(
+      `guard_id, work_date, kind, off_kind, off_work_kind, planned_start_at, planned_end_at,
+       shift:shifts ( work_kind, site:sites ( short_name ) )`,
+    )
+    .gte("work_date", addDays(toDate, -1))
+    .lte("work_date", toDate)
+    .eq("status", "planned");
+  if (daErr) return undo(toMessage(daErr));
+
+  const guardIds = [...new Set(asgRows.map((a) => a.guard_id))];
+  const { data: guardData, error: gErr } = await supabase
+    .from("guards")
+    .select("id, name, status")
+    .in("id", guardIds);
+  if (gErr) return undo(toMessage(gErr));
+  const guardById = new Map(
+    ((guardData ?? []) as { id: string; name: string; status: string }[]).map((g) => [g.id, g]),
+  );
+
+  type DayRow = {
+    guard_id: string;
+    work_date: string;
+    kind: string;
+    off_kind: OffKind | null;
+    off_work_kind: OffWorkKind | null;
+    planned_start_at: string | null;
+    planned_end_at: string | null;
+    shift: { work_kind: WorkKind; site: { short_name: string } | null } | null;
+  };
+
+  // 🔴 「置けるか」は**時間帯の重なり**で見る（2026-10-05 訂正）。
+  //   最初は「同じ日に予定があれば置かない」にしていたが、7/31 の実データに
+  //   **日勤のあと夜Bにも入る**隊員がいて、実在した勤務が写せなかった。
+  //   時刻は DB のトリガー（20260903000000_assignment_planned_times.sql）と同じ式で組む：
+  //   終了が開始以前なら日跨ぎ。日付は JST の0時から数える。
+  type Busy = { start: number; end: number; label: string };
+  const dayStart = Date.parse(`${toDate}T00:00:00+09:00`);
+  const spanOf = (s: { start_h: number; start_m: number; end_h: number; end_m: number }) => {
+    const startMin = s.start_h * 60 + s.start_m;
+    let endMin = s.end_h * 60 + s.end_m;
+    if (endMin <= startMin) endMin += 24 * 60;
+    return { start: dayStart + startMin * 60_000, end: dayStart + endMin * 60_000 };
+  };
+
+  // 終日の休み／区分つきの休み／時間帯の予定／終日の予定（時刻を持たない応援）
+  const offAllDay = new Map<string, string>();
+  const offByKind = new Map<string, Map<OffWorkKind, string>>();
+  const busySpans = new Map<string, Busy[]>();
+  const busyAllDay = new Map<string, string>();
+  const addBusy = (guardId: string, b: Busy) =>
+    busySpans.set(guardId, [...(busySpans.get(guardId) ?? []), b]);
+
+  for (const a of (dayAsg ?? []) as unknown as DayRow[]) {
+    if (a.kind === "off") {
+      if (a.work_date !== toDate) continue; // 前日の休みは関係ない
+      const label = a.off_kind ? OFF_KIND_LABEL[a.off_kind] : "休み";
+      if (!a.off_work_kind) {
+        offAllDay.set(a.guard_id, label);
+      } else {
+        const m = offByKind.get(a.guard_id) ?? new Map<OffWorkKind, string>();
+        m.set(a.off_work_kind, label);
+        offByKind.set(a.guard_id, m);
+      }
+      continue;
+    }
+    if (a.planned_start_at && a.planned_end_at) {
+      const site = a.shift?.site?.short_name ?? "別の現場";
+      const kind = a.shift ? WORK_KIND_LABEL[a.shift.work_kind] : "";
+      addBusy(a.guard_id, {
+        start: Date.parse(a.planned_start_at),
+        end: Date.parse(a.planned_end_at),
+        label: `${a.work_date === toDate ? "" : "前日の"}${site}${kind ? "・" + kind : ""}に配置済み`,
+      });
+    } else if (a.work_date === toDate) {
+      // 🔴 時刻を持たない予定（応援など）は、その日いっぱい埋まっているとみなす
+      busyAllDay.set(a.guard_id, a.kind === "lent_out" ? "応援に出ている" : "別の予定あり");
+    }
+  }
+
+  const rows: {
+    guard_id: string;
+    shift_id: string;
+    work_date: string;
+    kind: "site";
+    role: string;
+    position: number;
+    status: "planned";
+  }[] = [];
+  for (const a of asgRows) {
+    const p = planBySrc.get(a.shift_id);
+    if (!p) continue;
+    const guard = guardById.get(a.guard_id);
+    const place = `${p.src.site?.short_name ?? "（現場名なし）"}・${WORK_KIND_LABEL[p.src.work_kind]}`;
+    const skip = (reason: string) =>
+      result.skips.push({ guardName: guard?.name ?? "（氏名不明）", place, reason });
+
+    if (!guard || guard.status !== "active") {
+      skip("在籍していない");
+      continue;
+    }
+    const allDay = offAllDay.get(a.guard_id);
+    if (allDay) {
+      skip(`休み（${allDay}）`);
+      continue;
+    }
+    // COPYABLE_KINDS で絞っているので、枠の区分は休みの区分と同じ値の集合
+    const partial = offByKind.get(a.guard_id)?.get(p.src.work_kind as OffWorkKind);
+    if (partial) {
+      skip(`休み（${partial}・${WORK_KIND_LABEL[p.src.work_kind]}）`);
+      continue;
+    }
+    const allDayBusy = busyAllDay.get(a.guard_id);
+    if (allDayBusy) {
+      skip(`同じ日に予定あり（${allDayBusy}）`);
+      continue;
+    }
+    const span = spanOf(p.src);
+    const clash = (busySpans.get(a.guard_id) ?? []).find(
+      (b) => span.start < b.end && b.start < span.end,
+    );
+    if (clash) {
+      skip(`時間が重なる（${clash.label}）`);
+      continue;
+    }
+    // 🔴 work_date / planned_* はトリガーが枠から埋める（placeGuard と同じ）
+    rows.push({
+      guard_id: a.guard_id,
+      shift_id: p.newId,
+      work_date: toDate,
+      kind: "site",
+      role: a.role,
+      position: a.position,
+      status: "planned",
+    });
+    // 今回置いた人も予定に足す（同じ時間帯に2か所へ写さない）
+    addBusy(a.guard_id, { ...span, label: `${place}に複写済み` });
+  }
+
+  if (rows.length > 0) {
+    const { error: aErr } = await supabase.from("assignments").insert(rows);
+    if (aErr) return undo(toMessage(aErr));
+  }
+  result.placed = rows.length;
+
+  refresh();
+  return result;
 }
