@@ -12,6 +12,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { addDays } from "@/lib/board-format";
+import { fetchAll } from "@/lib/fetch-all";
 import type { Guard, OffKind, OffWorkKind } from "@/lib/types";
 
 export type OffEntry = {
@@ -78,12 +79,24 @@ export async function getOffMonth(month: string): Promise<OffMonth> {
       .eq("status", "active"),
     // 🔴 kind で絞らない。**配置が入っている日**も同時に知りたいため
     //   （休みと配置が同じ日に立っているのは事故で、気づけるのはこの画面だけ）
-    supabase
-      .from("assignments")
-      .select("id, guard_id, work_date, kind, off_kind, off_work_kind")
-      .gte("work_date", first)
-      .lte("work_date", last)
-      .eq("status", "planned"),
+    // 🔴 1か月・全隊員ぶんで 1,000行を超える（7月実データで 2,899件）。最後まで読む（fetch-all.ts）
+    fetchAll<{
+      id: string;
+      guard_id: string;
+      work_date: string;
+      kind: string;
+      off_kind: string | null;
+      off_work_kind: string | null;
+    }>((from, to) =>
+      supabase
+        .from("assignments")
+        .select("id, guard_id, work_date, kind, off_kind, off_work_kind")
+        .gte("work_date", first)
+        .lte("work_date", last)
+        .eq("status", "planned")
+        .order("id")
+        .range(from, to),
+    ),
     supabase.from("companies").select("id, kind"),
   ]);
 
