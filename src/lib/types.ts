@@ -38,6 +38,8 @@ export type Qualification = {
   name: string;
   /** 配置ボードのバッジに出す短い表記（例: 交1, 交2） */
   short_label: string;
+  /** 🔴 'train' = 列車見張（鉄道会社ごと）。名札での出し方が違う（qual-labels.ts） */
+  category: "train" | null;
 };
 
 export type Guard = {
@@ -48,6 +50,8 @@ export type Guard = {
   short_name: string;
   company_id: string;
   jurisdiction_id: string;
+  /** 🔴 並び順（フリガナ順）のためだけに引く。引いていない画面もあるので省略可 */
+  name_kana?: string | null;
 };
 
 export type Customer = {
@@ -195,6 +199,8 @@ export type GuardView = {
   isPartner: boolean;
   /** 🔴 反対側の区分に既に入っている（「日勤済」「夜勤済」）。配置ボードのプールだけで使う */
   doneLabel?: string;
+  /** 🔴 持っている列車見張の会社（「列5」の中身）。ツールチップに出す */
+  trainLabels?: string[];
 };
 
 /** 配置ボードの1行（現場 × 枠） */

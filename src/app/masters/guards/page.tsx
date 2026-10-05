@@ -158,7 +158,10 @@ export default async function GuardsPage({
                   {g.guard_qualifications.length === 0 ? (
                     <span className="text-slate-300">—</span>
                   ) : (
-                    g.guard_qualifications.map((q, i) => {
+                    <>
+                    {g.guard_qualifications
+                      .filter((q) => q.qualification?.category !== "train")
+                      .map((q, i) => {
                       // 期限なし（null）は「切れない資格」。期限切れだけを赤で出す。
                       const expired = q.expires_on !== null && q.expires_on < today;
                       return (
@@ -178,7 +181,35 @@ export default async function GuardsPage({
                           {q.qualification?.short_label ?? "?"}
                         </span>
                       );
-                    })
+                    })}
+                    {/* 🔴 列車見張（鉄道会社ごと・最大9種）は「列N」に畳む（2026-10-05）。
+                        数えるのは期限内のものだけ。中身と期限は乗せると出す */}
+                    {(() => {
+                      const train = g.guard_qualifications.filter(
+                        (q) => q.qualification?.category === "train",
+                      );
+                      if (train.length === 0) return null;
+                      const valid = train.filter((q) => q.expires_on === null || q.expires_on >= today);
+                      return (
+                        <span
+                          title={train
+                            .map(
+                              (q) =>
+                                `${q.qualification?.short_label}${q.expires_on ? `（期限 ${q.expires_on}）` : ""}`,
+                            )
+                            .join("\n")}
+                          className={[
+                            "t-badge rounded px-1.5 py-0.5",
+                            valid.length === 0
+                              ? "bg-rose-100 text-rose-700 line-through"
+                              : "bg-indigo-50 text-indigo-700",
+                          ].join(" ")}
+                        >
+                          列{valid.length > 0 ? valid.length : train.length}
+                        </span>
+                      );
+                    })()}
+                    </>
                   )}
                 </div>
               </Td>

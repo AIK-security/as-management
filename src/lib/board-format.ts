@@ -65,6 +65,38 @@ export function todayInJst(): string {
   return jst.toISOString().slice(0, 10);
 }
 
+/**
+ * 隊員をフリガナ順に並べる比較関数（2026-10-05）。
+ *
+ * 🔴 休み画面（offs.ts・2026-10-01）と同じ規則：半角カナが混じっても同じ順になるよう NFKC で揃え、
+ *   フリガナの無い隊員は末尾に回す。プールが個人コード順で、280名から探すのに時間がかかった（柴山）。
+ */
+export function compareByKana(
+  a: { name: string; name_kana?: string | null },
+  b: { name: string; name_kana?: string | null },
+): number {
+  const ka = a.name_kana?.normalize("NFKC") ?? "";
+  const kb = b.name_kana?.normalize("NFKC") ?? "";
+  if (!ka !== !kb) return ka ? -1 : 1;
+  return ka.localeCompare(kb, "ja") || a.name.localeCompare(b.name, "ja");
+}
+
+/**
+ * 名札に出す名前（2026-10-05）。
+ *
+ * 🔴 略称の空白（全角を含む）を詰める。べんり君の略称は「●安藤　翔一」のように
+ *   姓と名の間に全角スペースが入っている人が多く、84px の名札で名が「…」に切れていた。
+ *   データ（短縮名）は変えず、表示だけ詰める。
+ */
+export function plateName(g: { name: string; short_name: string | null }): string {
+  const s = (g.short_name || g.name).replace(/[\s　]+/g, "");
+  // 🔴 9文字以上は8文字で切る（2026-10-05・柴山）。名札を縦に伸ばさないため。
+  //   「…」は付けない（1文字ぶん削れる）。氏名は名札に乗せると title で全部出る。
+  //   Array.from で数える ── 文字列の length だと、まれな漢字（サロゲートペア）を2文字と数える
+  const chars = Array.from(s);
+  return chars.length > 8 ? chars.slice(0, 8).join("") : s;
+}
+
 export function addDays(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   const t = new Date(Date.UTC(y, m - 1, d + days));

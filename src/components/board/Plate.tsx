@@ -24,6 +24,8 @@ import { useRouter } from "next/navigation";
 //   プレートを描くたびにマスタを引かせない（1日 約150枚 描く画面のため）。
 import { useDraggable } from "@dnd-kit/core";
 import type { GuardView, PlateView } from "@/lib/types";
+import { TRAIN_PREFIX } from "@/lib/qual-labels";
+import { plateName } from "@/lib/board-format";
 
 // 🔴 隊長だけバッジを出す。「それ以外」は何も出さない（2026-09-02）。
 //   全員に何かを出すと、出ていること自体が情報でなくなる。
@@ -50,9 +52,12 @@ const NEUTRAL_BADGE =
   "t-badge shrink-0 rounded border border-slate-300 bg-white px-0.5 leading-4 text-slate-600";
 
 /** 資格バッジ。緑・細字ではなく、はっきり読める大きさにする */
-function QualBadge({ label }: { label: string }) {
+function QualBadge({ label, title }: { label: string; title?: string }) {
   return (
-    <span className="t-badge shrink-0 rounded border border-emerald-200 bg-emerald-50 px-0.5 leading-4 text-emerald-700">
+    <span
+      title={title}
+      className="t-badge shrink-0 rounded border border-emerald-200 bg-emerald-50 px-0.5 leading-4 text-emerald-700"
+    >
       {label}
     </span>
   );
@@ -86,13 +91,15 @@ export function Plate({ plate }: { plate: PlateView }) {
       ].join(" ")}
     >
       {/* 氏名の行。**ここには何も同居させない**（幅を氏名に全部使う） */}
-      <div className="t-plate truncate text-slate-900" title={plate.guard.name}>
-        {plate.guard.short_name}
+      <div className="t-plate break-all leading-tight text-slate-900" title={plate.guard.name}>
+        {plateName(plate.guard)}
       </div>
 
-      {/* バッジの行。入り切らない分は切れるので、**重要な順に置く**。
-          NG は枠線と地色でも出ているため、切れても気づけないことは無い */}
-      <div className="mt-0.5 flex min-h-[16px] items-center gap-0.5 overflow-hidden">
+      {/* バッジの行。重要な順に置く。
+          🔴 入り切らない分は**切らずに折り返す**（2026-10-05・柴山）。
+          以前は overflow-hidden で切っており、列車見張・日勤済が増えて情報が消えていた。
+          折り返した名札だけ背が伸びる（カードの行の高さが揃う）が、見えないよりよい */}
+      <div className="mt-0.5 flex min-h-[16px] flex-wrap items-center gap-0.5">
         {hasNg && (
           <span
             className="t-badge shrink-0 leading-4 font-bold text-rose-600"
@@ -134,22 +141,29 @@ export function Plate({ plate }: { plate: PlateView }) {
 }
 
 /** プール（未配置）に並べる版 */
-export function PoolPlate({ view }: { view: GuardView }) {
-  const { guard, isPartner, qualLabels: quals, doneLabel } = view;
+export function PoolPlate({ view, fill = false }: { view: GuardView; fill?: boolean }) {
+  const { guard, isPartner, qualLabels: quals, doneLabel, trainLabels } = view;
+  // 🔴 「列5」の中身（会社名）は乗せると出す（qual-labels.ts）
+  const trainTitle =
+    trainLabels && trainLabels.length > 0 ? `列車見張：${trainLabels.join("・")}` : undefined;
   return (
     <div
       className={[
-        PLATE_BOX,
+        // 🔴 プールでは列の幅いっぱいに広げる（fill・2026-10-05）。
+        //   4列 × 84px だと名前とバッジが入りきらず縦に伸びた。3列にして1枚を広げる（柴山）。
+        //   ドラッグ中の影（DragOverlay）は枠の中の名札と同じ 84px のまま
+        fill ? PLATE_BOX.replace("w-[84px]", "w-full") : PLATE_BOX,
         "cursor-grab select-none transition-all duration-150 ease-in-out hover:shadow-md",
         isPartner ? "border-slate-300 bg-slate-100" : "border-slate-300 bg-white",
       ].join(" ")}
     >
-      <div className="t-plate truncate text-slate-900" title={guard.name}>
-        {guard.short_name}
+      <div className="t-plate break-all leading-tight text-slate-900" title={guard.name}>
+        {plateName(guard)}
       </div>
-      <div className="mt-0.5 flex min-h-[16px] items-center gap-0.5 overflow-hidden">
+      {/* 🔴 切らずに折り返す（上の Plate と同じ理由） */}
+      <div className="mt-0.5 flex min-h-[16px] flex-wrap items-center gap-0.5">
         {quals.map((q) => (
-          <QualBadge key={q} label={q} />
+          <QualBadge key={q} label={q} title={q.startsWith(TRAIN_PREFIX) ? trainTitle : undefined} />
         ))}
         {isPartner && (
           <span className={NEUTRAL_BADGE} title="協力会社の隊員">
@@ -239,9 +253,9 @@ export function DraggablePoolPlate({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`shrink-0 touch-none ${isDragging ? DRAGGING : ""}`}
+      className={`touch-none ${isDragging ? DRAGGING : ""}`}
     >
-      <PoolPlate view={view} />
+      <PoolPlate view={view} fill />
     </div>
   );
 }

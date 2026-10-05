@@ -39,7 +39,7 @@ import {
   type ActionResult,
 } from "@/app/board/actions";
 import { callAction } from "@/lib/action-call";
-import { formatWeekDay } from "@/lib/board-format";
+import { formatWeekDay, plateName } from "@/lib/board-format";
 import { PoolPane } from "@/components/board/BoardPanes";
 import { WeekGrid } from "@/components/board/WeekGrid";
 import type { WeekBoardData, WeekPlate, WeekPoolGuard } from "@/lib/week-board";
@@ -67,8 +67,8 @@ function PoolCard({ p, editable }: { p: WeekPoolGuard; editable: boolean }) {
         p.isPartner ? "border-slate-300 bg-slate-100" : "border-slate-200 bg-white",
       ].join(" ")}
     >
-      <div className="truncate font-medium text-slate-900">
-        {p.guard.short_name || p.guard.name}
+      <div className="break-all leading-tight font-medium text-slate-900">
+        {plateName(p.guard)}
       </div>
       <div className="mt-0.5 flex flex-wrap items-center gap-1">
         {p.qualLabels.map((q) => (

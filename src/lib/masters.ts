@@ -214,7 +214,7 @@ export type GuardRow = {
 
 type GuardQualBadge = {
   expires_on: string | null;
-  qualification: { short_label: string; name: string } | null;
+  qualification: { short_label: string; name: string; category: "train" | null } | null;
 };
 
 /** 隊員一覧の並べ替え。既定はフリガナ順（休み画面と同じ） */
@@ -260,7 +260,7 @@ export async function listGuards(query: MasterQuery): Promise<MasterList<GuardRo
   if (rows.length > 0) {
     const { data: qd, error: qe } = await supabase
       .from("guard_qualifications")
-      .select("guard_id, expires_on, qualification:qualifications ( short_label, name )")
+      .select("guard_id, expires_on, qualification:qualifications ( short_label, name, category )")
       .in(
         "guard_id",
         rows.map((r) => r.id),

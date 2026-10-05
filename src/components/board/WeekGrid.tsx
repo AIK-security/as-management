@@ -22,7 +22,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { dayTone, formatTime, formatWeekDay } from "@/lib/board-format";
+import { dayTone, formatTime, formatWeekDay, plateName } from "@/lib/board-format";
 import type { WeekBoardData, WeekCell, WeekCellShift, WeekPlate } from "@/lib/week-board";
 
 /**
@@ -76,7 +76,7 @@ function PlateChip({ plate, editable }: { plate: WeekPlate; editable: boolean })
       {plate.role === "leader" && (
         <span className="mr-0.5 rounded bg-slate-700 px-1 text-[10px] font-bold text-white">L</span>
       )}
-      {plate.guard.short_name || plate.guard.name}
+      {plateName(plate.guard)}
     </div>
   );
 }
@@ -313,10 +313,10 @@ export function WeekGrid({
                         c.guards.map((g) => (
                           <div
                             key={g.id}
-                            className="truncate leading-snug text-slate-700"
+                            className="break-all leading-tight text-slate-700"
                             title={g.name}
                           >
-                            {g.short_name || g.name}
+                            {plateName(g)}
                           </div>
                         ))
                       )}

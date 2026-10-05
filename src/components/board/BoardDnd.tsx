@@ -683,7 +683,8 @@ export function BoardDnd({
                 ))}
             </div>
 
-            <div className="flex flex-wrap gap-2 px-3 pb-3">
+            {/* 🔴 3列（2026-10-05）。4列だと名札が狭く、名前やバッジが入りきらなかった */}
+            <div className="grid grid-cols-3 gap-2 px-3 pb-3">
               {visiblePool.map((view, i) => (
                 // 🔴 Enter で置かれる1名を光らせる。「どれが置かれるのか」が
                 //   見えないまま Enter を押させると、外れたときに原因が分からない

@@ -21,11 +21,13 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
 import { fetchAll } from "@/lib/fetch-all";
+import { foldQuals } from "@/lib/qual-labels";
 import {
   GROUP_WORK_KINDS,
   OFF_KIND_LABEL,
   WORK_KIND_LABEL,
   addDays,
+  compareByKana,
   startOfWeek,
   todayInJst,
   type BoardShiftGroup,
@@ -223,16 +225,18 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
 
       supabase
         .from("guards")
-        .select("id, staff_code, name, short_name, company_id, jurisdiction_id")
+        .select("id, staff_code, name, name_kana, short_name, company_id, jurisdiction_id")
         .eq("status", "active")
         .order("staff_code", { nullsFirst: false }),
       supabase.from("companies").select("id, kind, name"),
-      supabase.from("qualifications").select("id, code, name, short_label"),
+      supabase.from("qualifications").select("id, code, name, short_label, category"),
       // 🔴 資格は隊員 × 資格で育つ（250名 × 数種）。1,000行で切れないよう最後まで読む
+      // 🔴 期限切れは「持っていない」扱い（board.ts と同じ）。週表は基準日で見る
       fetchAll<{ guard_id: string; qualification_id: string }>((from, to) =>
         supabase
           .from("guard_qualifications")
           .select("guard_id, qualification_id")
+          .or(`expires_on.is.null,expires_on.gte.${baseDate}`)
           .order("guard_id")
           .order("qualification_id")
           .range(from, to),
@@ -245,7 +249,8 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
 
   const shifts = (shiftRes.data ?? []) as unknown as WeekShiftRaw[];
   const assignments = (assignRes.data ?? []) as AssignmentWithSpan[];
-  const guards = (guardsRes.data ?? []) as Guard[];
+  // 🔴 フリガナ順にしておく。プール（未配置）はこの順のまま出る（2026-10-05）
+  const guards = ((guardsRes.data ?? []) as Guard[]).sort(compareByKana);
   const companies = (companiesRes.data ?? []) as Company[];
   const qualifications = (qualsRes.data ?? []) as Qualification[];
   const guardQuals = (guardQualsRes.data ?? []) as {
@@ -264,10 +269,9 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     list.push(gq.qualification_id);
     qualIdsByGuard.set(gq.guard_id, list);
   }
+  // 🔴 週表は1枚に全現場が並ぶので、列車見張は「列N」に畳む（qual-labels.ts）
   const qualLabelsOf = (guardId: string) =>
-    (qualIdsByGuard.get(guardId) ?? [])
-      .map((id) => qualById.get(id)?.short_label)
-      .filter((v): v is string => Boolean(v));
+    foldQuals(qualIdsByGuard.get(guardId) ?? [], qualById, { kind: "pool" }).labels;
 
   const isPartnerOf = (g: Guard) => companyById.get(g.company_id)?.kind === "partner";
 

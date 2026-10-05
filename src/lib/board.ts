@@ -11,12 +11,14 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
 import { fetchAll } from "@/lib/fetch-all";
+import { foldQuals } from "@/lib/qual-labels";
 // 🔴 内部でも使う。再エクスポートしただけでは同一モジュール内から参照できない
 import {
   GROUP_WORK_KINDS,
   OFF_KIND_LABEL,
   WORK_KIND_LABEL,
   addDays,
+  compareByKana,
   daysBetween,
   formatSpanPlace,
   todayInJst,
@@ -241,16 +243,18 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     // マスタ（隊員・会社・資格・NG）
     supabase
       .from("guards")
-      .select("id, staff_code, name, short_name, company_id, jurisdiction_id")
+      .select("id, staff_code, name, name_kana, short_name, company_id, jurisdiction_id")
       .eq("status", "active")
       .order("staff_code", { nullsFirst: false }),
     supabase.from("companies").select("id, kind, name"),
-    supabase.from("qualifications").select("id, code, name, short_label"),
+    supabase.from("qualifications").select("id, code, name, short_label, category"),
     // 🔴 資格は隊員 × 資格で育つ（250名 × 数種）。1,000行で切れないよう最後まで読む
+    // 🔴 期限切れは「持っていない」扱い（2026-10-05）。列車見張は全件に期限がある
     fetchAll<{ guard_id: string; qualification_id: string }>((from, to) =>
       supabase
         .from("guard_qualifications")
         .select("guard_id, qualification_id")
+        .or(`expires_on.is.null,expires_on.gte.${workDate}`)
         .order("guard_id")
         .order("qualification_id")
         .range(from, to),
@@ -328,7 +332,8 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     shift: { work_kind: WorkKind } | null;
   })[];
 
-  const guards = (guardsRes.data ?? []) as Guard[];
+  // 🔴 フリガナ順にしておく。プール（未配置）はこの順のまま出る（2026-10-05）
+  const guards = ((guardsRes.data ?? []) as Guard[]).sort(compareByKana);
   const companies = (companiesRes.data ?? []) as Company[];
   const qualifications = (qualsRes.data ?? []) as Qualification[];
   const guardQuals = (guardQualsRes.data ?? []) as {
@@ -388,6 +393,8 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       });
     const coAssignedGuardIds = rowAssignments.map((a) => a.guard_id);
 
+    // 🔴 列車見張は「この現場が必要とする会社」のものだけ名札に出す（qual-labels.ts）
+    const requiredIds = new Set(site.site_required_qualifications.map((r) => r.qualification_id));
     const plates: PlateView[] = [];
     for (const a of rowAssignments) {
       const guard = guardById.get(a.guard_id);
@@ -397,9 +404,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       plates.push({
         assignmentId: a.id,
         guard,
-        qualLabels: qualIds
-          .map((id) => qualById.get(id)?.short_label)
-          .filter((v): v is string => Boolean(v)),
+        qualLabels: foldQuals(qualIds, qualById, { kind: "site", required: requiredIds }).labels,
         role: a.role,
         experienced: experienced.has(`${guard.id}:${site.id}`),
         ngReasons: ngReasonsFor(ngEntries, guardById, guard.id, site.id, coAssignedGuardIds),
@@ -595,14 +600,17 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
 
   const pool: GuardView[] = guards
     .filter((g) => !busy.has(g.id))
-    .map((g) => ({
-      guard: g,
-      qualLabels: (qualIdsByGuard.get(g.id) ?? [])
-        .map((id) => qualById.get(id)?.short_label)
-        .filter((v): v is string => Boolean(v)),
-      isPartner: companyById.get(g.company_id)?.kind === "partner",
-      doneLabel: doneOther.get(g.id),
-    }));
+    .map((g) => {
+      // 🔴 プールでは列車見張を「列N」に畳む（qual-labels.ts）
+      const q = foldQuals(qualIdsByGuard.get(g.id) ?? [], qualById, { kind: "pool" });
+      return {
+        guard: g,
+        qualLabels: q.labels,
+        trainLabels: q.train,
+        isPartner: companyById.get(g.company_id)?.kind === "partner",
+        doneLabel: doneOther.get(g.id),
+      };
+    });
 
   // ── 「現場を追加」の候補（取得は上の Promise.all 済み）──────
   const siteRows = sitePickRes.data;
