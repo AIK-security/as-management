@@ -97,6 +97,17 @@ def read_guards(wb):
     for s, n in short_count.items():
         if n > 1:
             del by_short[s]
+    # 🔴 先頭の「●」（社員の印）を外した略称でも引けるようにする（2026-10-05）。
+    #   社員 → アルバイトに変わると、マスタは最新（●なし）でも前の月のプレートは●付きのまま。
+    #   8月分で「●細井陽仁」4枚がこれで落ちた。外した結果が重なる場合は使わない（取り違え防止）
+    bare = collections.defaultdict(set)
+    for s, code in by_short.items():
+        bare[s.lstrip("●")].add(code)
+    for s, codes in bare.items():
+        if len(codes) == 1:
+            code = next(iter(codes))
+            by_short.setdefault(s, code)
+            by_short.setdefault("●" + s, code)
     return by_name, by_short
 
 
