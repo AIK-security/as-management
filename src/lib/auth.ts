@@ -64,9 +64,15 @@ export const getSessionProfile = cache(async function getSessionProfile(): Promi
   profile: SessionProfile | null;
 }> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // 🔴 getUser() ではなく getClaims()（2026-10-06）。
+  //   proxy.ts が**毎リクエスト** getUser() で Auth サーバに確かめ、セッションも更新している。
+  //   ここでもう一度 Auth サーバへ往復すると、1画面ごとに同じ確認を2回待つことになる。
+  //   getClaims() は手元のトークンの署名を検証する（公開鍵は一度取れば使い回す）。
+  //   署名方式が旧式（HS256）のプロジェクトでは、中で getUser() に落ちる＝遅くはならないが速くもならない。
+  //   このプロジェクトは新しい方式で、40〜140ms → 5〜19ms になった（柴山の手元で実測）。
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
+  const user = claims?.sub ? { id: claims.sub, email: claims.email } : null;
   if (!user) return { user: null, profile: null };
 
   const { data: profile } = await supabase
