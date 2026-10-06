@@ -156,9 +156,6 @@ export default async function BoardPage({
         ]
       : [];
 
-  // 🔴 まだ中身が無い操作。押せないことと理由が見た目で分かるようにする
-  const PENDING_BTN = `${HEADER_BTN} cursor-not-allowed border-dashed border-slate-300 bg-slate-50 text-slate-400`;
-
   const navBtn =
     "rounded-md border border-slate-300 px-2 py-1 text-slate-500 transition-all duration-150 ease-in-out hover:bg-slate-100 hover:text-slate-800";
 
@@ -269,17 +266,15 @@ export default async function BoardPage({
               >
                 連絡作成
               </Link>
-              <button
-                type="button"
-                disabled
-                title="確定した枠を18列CSVで出し、べんり君のコピーから ShiftMax へ送る工程。要否そのものが未判定で、事務側ヒアリングの結果しだいで不要になる"
-                className={PENDING_BTN}
+              {/* 🔴 2026-10-06 に中身を作った（/handoff）。日勤・夜勤の両方を1つの CSV にするので group は渡さない。
+                  工程の要否そのものは未判定で、事務側ヒアリングの結果しだいで不要になる */}
+              <Link
+                href={`/handoff?date=${board.date}&j=${board.jurisdiction.code}`}
+                title="確定した枠を18列CSVにして、べんり君のコピーから ShiftMax へ送る。必要かどうかは事務側の確認待ち"
+                className={`${HEADER_BTN} border-slate-300 bg-white text-slate-700 hover:bg-slate-100`}
               >
                 べんり君へ引き渡し
-                <span className="t-badge ml-1.5 rounded bg-slate-200 px-1 py-0.5 text-slate-500">
-                  未着手
-                </span>
-              </button>
+              </Link>
             </>
           )}
 
