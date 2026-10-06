@@ -17,17 +17,23 @@ type Supa = Awaited<ReturnType<typeof createClient>>;
 /**
  * 稼働中の現場を1件以上持つ管轄だけを残す（並び順は保つ）。
  * 1件も残らなければ（現場がまだ無い・取得に失敗）元の一覧をそのまま返す。
+ *
+ * 🔴 管轄の一覧を **Promise のまま**渡すと、現場の問い合わせを同時に投げる（2026-10-06）。
+ *   配置ボードでは日付を切り替えるたびにここを通り、2本を順番に待つと約45ms 積み上がっていた。
+ *   管轄が1つの場合も現場を引くことになるが、同時に投げているので待ち時間は増えない。
  */
 export async function keepSiteJurisdictions<T extends { id: string }>(
   supabase: Supa,
-  jurisdictions: T[],
+  jurisdictionsOrPromise: T[] | PromiseLike<T[]>,
 ): Promise<T[]> {
-  if (jurisdictions.length <= 1) return jurisdictions;
-  const { data, error } = await supabase
-    .from("sites")
-    .select("jurisdiction_id")
-    .eq("status", "active");
-  if (error) return jurisdictions;
+  if (Array.isArray(jurisdictionsOrPromise) && jurisdictionsOrPromise.length <= 1) {
+    return jurisdictionsOrPromise;
+  }
+  const [jurisdictions, { data, error }] = await Promise.all([
+    jurisdictionsOrPromise,
+    supabase.from("sites").select("jurisdiction_id").eq("status", "active"),
+  ]);
+  if (jurisdictions.length <= 1 || error) return jurisdictions;
   const used = new Set((data ?? []).map((r) => r.jurisdiction_id as string));
   const kept = jurisdictions.filter((j) => used.has(j.id));
   return kept.length > 0 ? kept : jurisdictions;

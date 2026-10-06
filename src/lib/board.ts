@@ -136,12 +136,25 @@ export type BoardParams = {
  *   7月の実データ（配置 2,901件）を入れた時点で約1,900件が**黙って落ち**、★ が付かなくなった。
  *   → ビュー guard_site_experience（20261002180000）で〈隊員 × 現場〉に畳み、
  *     さらに 1,000行ずつ**最後まで**取る（src/lib/fetch-all.ts）。
+ *
+ * 🔴 **その盤面に出ている現場だけ**に絞る（2026-10-06）。
+ *   ★ は枠の中のプレートにしか出ない（プールには出ない）ので、ほかの現場の経験は使っていなかった。
+ *   3か月分を入れた時点で全件が 1,231行＝2回に分けて順番に取っており、配置ボードでいちばん遅い問い合わせだった
+ *   （350〜580ms・柴山の手元で実測）。
  */
-function fetchExperience(supabase: Awaited<ReturnType<typeof createClient>>, workDate: string) {
+function fetchExperience(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workDate: string,
+  siteIds: string[],
+) {
+  if (siteIds.length === 0) {
+    return Promise.resolve({ data: [] as { guard_id: string; site_id: string }[], error: null });
+  }
   return fetchAll<{ guard_id: string; site_id: string }>((from, to) =>
     supabase
       .from("guard_site_experience")
       .select("guard_id, site_id")
+      .in("site_id", siteIds)
       .lt("first_date", workDate)
       .gte("last_date", addDays(workDate, -365))
       .order("guard_id")
@@ -156,16 +169,18 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   const workDate = params.workDate ?? todayInJst();
 
   // ── 管轄 ────────────────────────────────────────────
-  const { data: jurisdictionRows, error: jError } = await supabase
-    .from("jurisdictions")
-    .select("id, code, name, allow_cross_staff, allow_cross_site")
-    .order("code");
-  if (jError) throw jError;
-
   // 切り替えに出すのは現場を持つ管轄だけ（src/lib/site-jurisdictions.ts）
+  // 🔴 一覧を Promise のまま渡し、現場の問い合わせと同時に投げる（2026-10-06）
   const jurisdictions = await keepSiteJurisdictions(
     supabase,
-    (jurisdictionRows ?? []) as Jurisdiction[],
+    supabase
+      .from("jurisdictions")
+      .select("id, code, name, allow_cross_staff, allow_cross_site")
+      .order("code")
+      .then(({ data, error }) => {
+        if (error) throw error;
+        return (data ?? []) as Jurisdiction[];
+      }),
   );
   if (jurisdictions.length === 0) {
     // マイグレーションは通ったがダミー投入がまだ、という状態。
@@ -175,33 +190,11 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   const jurisdiction =
     jurisdictions.find((j) => j.code === params.jurisdictionCode) ?? jurisdictions[0];
 
-  // ── 取得：🔴 段数を2つに畳む（2026-09-08）────────────────
-  //
-  // 以前はここから下が**8回の直列**だった。1回ごとに Supabase への往復が
-  // まるごと積み上がり、日付の切り替えに約4秒かかっていた（柴山の実測）。
-  // 管轄以外はどれも他の結果を必要としないので、まとめて投げてよい。
-  // → 効くのは往復の**回数**ではなく**段数**。8段 → 2段。
-  //
-  // 🟠 経験（past）は以前「枠が1件以上あるときだけ」引いていた。
-  //   並列にすると先に投げることになるため、枠が0件の日は無駄打ちになる。
-  //   それでも直列に戻すと1段増えるので、**無駄打ちのほうを選ぶ**。
-  //
-  // 🔴 ここに足すクエリは「管轄が決まっていれば投げられる」ものだけ。
-  //   他の結果に依存するものを混ぜると、静かに壊れる。
-  const [
-    shiftRes,
-    assignRes,
-    guardsRes,
-    companiesRes,
-    qualsRes,
-    guardQualsRes,
-    ngRes,
-    pastRes,
-    spanRes,
-    sitePickRes,
-    customerPickRes,
-  ] = await Promise.all([
-    // 枠（現場・得意先・必要資格を同時に引く）
+  // 枠（現場・得意先・必要資格を同時に引く）
+  // 🔴 経験（★）がこの結果の現場で絞るので、Promise.all の外で先に投げておく（2026-10-06）
+  //   Promise.resolve で包むのは、supabase-js の問い合わせが**then を呼ぶたびに投げ直す**ため。
+  //   包まずに2か所から待つと、同じ問い合わせが2回飛ぶ
+  const shiftsQuery = Promise.resolve(
     supabase
       .from("shifts")
       .select(
@@ -224,6 +217,35 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .order("start_h")
       .order("start_m")
       .order("id"),
+  );
+
+  // ── 取得：🔴 段数を2つに畳む（2026-09-08）────────────────
+  //
+  // 以前はここから下が**8回の直列**だった。1回ごとに Supabase への往復が
+  // まるごと積み上がり、日付の切り替えに約4秒かかっていた（柴山の実測）。
+  // 管轄以外はどれも他の結果を必要としないので、まとめて投げてよい。
+  // → 効くのは往復の**回数**ではなく**段数**。8段 → 2段。
+  //
+  // 🔴 経験（past）だけは枠の結果を待つ（2026-10-06）。盤面の現場に絞るため。
+  //   枠（約100ms）のあとに小さい1回を足すほうが、全件を2回に分けて取るより速い。
+  //   ほかの問い合わせは待たせない（枠の Promise に .then でつないでいる）。
+  //
+  // 🔴 ここに足すクエリは「管轄が決まっていれば投げられる」ものだけ。
+  //   他の結果に依存するものを混ぜると、静かに壊れる。
+  const [
+    shiftRes,
+    assignRes,
+    guardsRes,
+    companiesRes,
+    qualsRes,
+    guardQualsRes,
+    ngRes,
+    pastRes,
+    spanRes,
+    sitePickRes,
+    customerPickRes,
+  ] = await Promise.all([
+    shiftsQuery,
 
     // その日の稼働（配置・非現場・貸出をまとめて1回で引く）
     // 🔴 data-model.md §4-2 が1テーブルに統合した意図がここで効く。
@@ -266,7 +288,9 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     // 経験（★）── 〈隊員 × 現場〉に畳んだビューから引く（fetchExperience）
     // 🔴 期間を切る。1年より前の経験を「行ったことがある」と言ってよいかは業務判断だが、
     //   誰にも確認していないので、まず1年で置く（gap-analysis A-1 に積む）。
-    fetchExperience(supabase, workDate),
+    shiftsQuery.then(({ data }) =>
+      fetchExperience(supabase, workDate, [...new Set((data ?? []).map((s) => s.site_id))]),
+    ),
 
     // 重なり判定に使う前後1日ぶんの稼働時間帯
     // 🔴 その日の実態で見る。管轄や日勤/夜勤で切ると見えない重なりが残る。
