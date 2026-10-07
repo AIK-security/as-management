@@ -127,6 +127,17 @@ function ShiftBlock({
         {shift.cancelled_at !== null && <span className="font-normal text-rose-600">中止</span>}
       </Link>
 
+      {/* 🔴 予定コメント（2026-10-07）。A表では集合場所・時間を付箋で貼っている。
+          読み込んでいたのに出していなかった。表記は日別（ShiftRowCard）に揃える */}
+      {shift.plan_comment && (
+        <div
+          className="mt-0.5 line-clamp-2 break-all px-1 text-[11px] leading-tight text-slate-500"
+          title={shift.plan_comment}
+        >
+          📝 {shift.plan_comment}
+        </div>
+      )}
+
       {plates.map((p) => (
         <PlateChip key={p.assignmentId} plate={p} editable={editable} />
       ))}
@@ -190,6 +201,24 @@ export function WeekGrid({
   editable: boolean;
 }) {
   const hasRows = data.groups.length > 0 || data.offRows.length > 0;
+
+  // 🔴 日ごとの合計人数（2026-10-07）。A表の実物は日付の下にその日の合計を手書きしている。
+  //   中止の枠は数えない（人を出さない枠を足すと、出す人数が実際より多く見える）。
+  //   🟠 A表の「37+1」の「+1」が何かは未確認（as-genjo-kansei.md §2 A表の実物）
+  const dayTotals = data.dates.map((_, i) => {
+    let placed = 0;
+    let required = 0;
+    for (const g of data.groups) {
+      for (const row of g.rows) {
+        for (const s of row.cells[i].shifts) {
+          if (s.shift.cancelled_at !== null) continue;
+          placed += s.plates.length;
+          required += s.shift.headcount;
+        }
+      }
+    }
+    return { placed, required };
+  });
 
   if (!hasRows) {
     return (
@@ -327,6 +356,29 @@ export function WeekGrid({
             </>
           )}
         </tbody>
+
+        <tfoot>
+          <tr className="print:break-inside-avoid">
+            <th
+              scope="row"
+              className="sticky bottom-0 left-0 z-20 border border-slate-200 bg-slate-100 px-2 py-1 text-left text-[12px] font-semibold text-slate-700 print:static"
+            >
+              合計（配置／必要）
+            </th>
+            {dayTotals.map((t, i) => (
+              <td
+                key={data.dates[i]}
+                className={[
+                  "sticky bottom-0 z-10 border border-slate-200 bg-slate-100 px-1.5 py-1 text-center text-[13px] font-semibold tabular-nums print:static",
+                  // rose＝足りない（1色1意味・§2-4b）
+                  t.placed < t.required ? "text-rose-700" : "text-slate-800",
+                ].join(" ")}
+              >
+                {t.required === 0 ? "—" : `${t.placed}／${t.required}名`}
+              </td>
+            ))}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
