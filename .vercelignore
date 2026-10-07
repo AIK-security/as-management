@@ -1,0 +1,25 @@
+# Vercel に送るファイルの許可リスト（2026-10-07）
+#
+# 🔴 Vercel CLI は .gitignore を見ない。これが無かったため、Git から外していた受領資料
+#   （べんり君＝ShiftMax の平文パスワード・社員の実名、列車資格の一覧＝LINGS の ID/PW・生年月日、
+#    経営層限定の roi-estimate.md、logs/）が毎回のデプロイで Vercel に送られていた。
+#   → 「送らないもの」を並べると、新しいフォルダを足したときにまた漏れる。
+#     **全部を外してから、ビルドに要るものだけを戻す**（許可リスト）。
+#
+# 🔴 ビルドに要るものを足したら、ここに `!/…` を1行足す。足さないとビルドが落ちる（＝気づける）。
+#   送られたファイルはデプロイ後に確かめられる：
+#     vercel api "/v6/deployments/<dpl_…>/files?teamId=<team_…>" --method GET --scope aik-security-manage
+#   `docs` `logs` `scripts` `supabase` が出てこなければよい。
+
+/*
+
+!/src
+!/public
+!/package.json
+!/package-lock.json
+!/next.config.ts
+!/next-env.d.ts
+!/tsconfig.json
+!/postcss.config.mjs
+!/eslint.config.mjs
+!/vercel.json
