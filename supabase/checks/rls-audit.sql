@@ -56,6 +56,22 @@ with problems as (
       select 1 from pg_policies p
       where p.schemaname = 'public' and p.tablename = c.relname
     )
+
+  union all
+
+  -- 🔴 security_invoker の付いていないビュー（2026-10-07 追加）
+  -- （ビューは既定で「作った人」の権限で元の表を読む＝RLS を素通りする）
+  select
+    c.relname,
+    '🔴 ビューに security_invoker が無い（RLS を素通りする）'
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind = 'v'
+    and not exists (
+      select 1 from unnest(coalesce(c.reloptions, '{}'::text[])) o
+      where lower(o) in ('security_invoker=true', 'security_invoker=on', 'security_invoker=1')
+    )
 ),
 -- 参考：テーブル数とポリシー数（数が合わないときの当たりを付けるため）
 counts as (

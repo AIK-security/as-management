@@ -253,10 +253,13 @@
   **警備番頭からの流用時はここだけ形が違う**（あちらは旧規約のまま）。根拠は
   `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md`
 - 🔴 **認可は3枚重ね**：① DB の RLS（最後の砦）② 各ページの `requireRole()`（関門）③ `proxy.ts`（導線であって認可ではない）。
-  **テーブルを追加したら `supabase/checks/rls-audit.sql` を実行する**（0行でなければ要件 S-2 違反）
+  **テーブル・ビューを追加したら `supabase/checks/rls-audit.sql` を実行する**（✅ 1行でなければ要件 S-2 違反。10/7 からビューの `security_invoker` も見る）
 - 🔴 **ソースは GitHub `AIK-security/as-management`（private・2026-10-05〜）**。
   **push しても本番には出ない**（デプロイは Vercel CLI のみ）。push は自動モードで止められるので柴山が `! git push` を打つ
 - 🔴 **本番は実データ（7〜9月分・2026-10-05 時点）**。手順・件数は `docs/cutover-runbook.md`。
+  - 🔴 **開発サーバ（localhost）も本番と同じ Supabase につながっている**（2026-10-07 判明・`requirements.md` §6 S-5 違反）。
+    **開発サーバでは配置の操作・保存をしない（見るだけ）。** 試し操作が管制の本番の配置を書き換えるため。
+    **`S-20` のマイグレーションに着手する前に、開発用の Supabase を別に作る**（期限つきで受容・柴山）
   - 取込用の CSV と過去配置の SQL は `scripts/extract-sites.py` / `scripts/extract-assignments.py` が `local/` に出す。
     🔴 **`local/` は Git に入れない**（実名・取引先名が入る）。取込が済んだら消す（10/5 に削除済み）
   - 列車見張の資格は `scripts/extract-train-quals.py`。🔴 受領した一覧には **LINGS の ID・PW・生年月日・電話番号**が
