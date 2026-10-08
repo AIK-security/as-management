@@ -30,11 +30,12 @@ export const GROUP_WORK_KINDS: Record<BoardShiftGroup, WorkKind[]> = {
   night: ["nightA", "nightB", "nightCancel"],
 };
 
+// 🔴 A表の下段の5つ（研修・講習等／健康診断／管制／振替休日／有給休暇）は A表の書き方に揃える（2026-10-08）
 export const OFF_KIND_LABEL: Record<OffKind, string> = {
-  paid_leave: "有給",
+  paid_leave: "有給休暇",
   day_off: "休み",
-  training: "研修・講習",
-  medical: "健診",
+  training: "研修・講習等",
+  medical: "健康診断",
   absent_self: "自欠",
   absent_company: "会欠",
   night_duty: "宿直",
@@ -46,6 +47,18 @@ export const OFF_KIND_LABEL: Record<OffKind, string> = {
 
 /** A表の紙（2026-10-08）。日勤は東京本部と神奈川支部で別の紙 */
 export const A_SHEET_LABEL: Record<ASheet, string> = { tokyo: "東京本部", kanagawa: "神奈川支部" };
+
+/**
+ * A表の下段に**いつも印刷されている**5つ。この順で、空でも週表に行を出す（2026-10-08・柴山）。
+ * 紙に手で書き足す欄にもなる。ほかの休み（休み・自欠 など）はある週だけ、この下に出す
+ */
+export const A_SHEET_OFF_KINDS: OffKind[] = [
+  "training",
+  "medical",
+  "control",
+  "substitute_holiday",
+  "paid_leave",
+];
 
 // ─────────────────────────────────────────────────────────
 // 職種（2026-10-08）

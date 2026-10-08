@@ -22,7 +22,7 @@
 //   例外は**配置と休みが同じ日に立っている**とき ── これは事故なので rose を使う。
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { setOff } from "@/app/offs/actions";
 import { callAction } from "@/lib/action-call";
@@ -89,8 +89,9 @@ type Paint = {
   offWorkKind: OffWorkKind | null;
 };
 
-// 🔴 第1弾はここに出す6つだけ。研修・内勤などの区分は DB にはあるが、
-//   まず「休み」を入れられるようにするのが目的なので増やさない。
+// 🔴 第1弾はまず「休み」を入れられるようにした（9/16）。
+//   10/8：A表の下段の4つ（研修・健康診断・管制・振替休日）も入れられるようにした。
+//   A表にいつも欄があるのに、入れる手段が無かった（柴山）。並びは「休み」の後ろに「業務外」でまとめる
 const PAINTS: Paint[] = [
   {
     key: "paid_leave",
@@ -117,8 +118,15 @@ const PAINTS: Paint[] = [
     offKind: "day_off",
     offWorkKind: "nightB",
   },
+  { key: "training", label: "研修", offKind: "training", offWorkKind: null },
+  { key: "medical", label: "健康診断", offKind: "medical", offWorkKind: null },
+  { key: "control", label: "管制", offKind: "control", offWorkKind: null },
+  { key: "substitute_holiday", label: "振替休日", offKind: "substitute_holiday", offWorkKind: null },
   { key: "clear", label: "消す", offKind: null, offWorkKind: null },
 ];
+
+/** ここから先が「業務外」（見出しを挟んで分ける） */
+const FIRST_NON_LEAVE = "training";
 
 const WEEK_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -229,6 +237,11 @@ export function OffGrid({
             <span className="t-meta shrink-0 text-slate-500">入れるもの</span>
             <div className="flex shrink-0 flex-wrap gap-1">
               {PAINTS.map((p) => (
+                <Fragment key={p.key}>
+                {p.key === FIRST_NON_LEAVE && (
+                  <span className="t-meta ml-2 self-center text-slate-400">業務外</span>
+                )}
+                {p.key === "clear" && <span className="ml-2" />}
                 <button
                   key={p.key}
                   type="button"
@@ -243,6 +256,7 @@ export function OffGrid({
                 >
                   {p.label}
                 </button>
+                </Fragment>
               ))}
             </div>
             <span className="t-meta shrink-0 text-slate-400">

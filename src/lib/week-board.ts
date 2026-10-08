@@ -25,6 +25,7 @@ import { foldQuals } from "@/lib/qual-labels";
 import {
   GROUP_WORK_KINDS,
   OFF_KIND_LABEL,
+  A_SHEET_OFF_KINDS,
   WORK_KIND_LABEL,
   addDays,
   compareByKana,
@@ -421,13 +422,31 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     entry.byDate.set(a.work_date, list);
     offMap.set(key, entry);
   }
+  // 🔴 A表の下段の5つは、空でも A表と同じ順で必ず出す（2026-10-08・柴山）
+  for (const kind of A_SHEET_OFF_KINDS) {
+    const key = `${kind}:`;
+    if (!offMap.has(key)) {
+      offMap.set(key, { offKind: kind, label: OFF_KIND_LABEL[kind], byDate: new Map() });
+    }
+  }
+  // 並び：A表の5つ（その順・区分つきはそれぞれの直後）→ それ以外（名前順）
+  const orderOf = (k: OffKind) => {
+    const i = A_SHEET_OFF_KINDS.indexOf(k);
+    return i === -1 ? A_SHEET_OFF_KINDS.length : i;
+  };
   const offRows: WeekOffRow[] = [...offMap.values()]
     .map(({ offKind, label, byDate }) => ({
       offKind,
       label,
       cells: dates.map((d) => ({ date: d, guards: byDate.get(d) ?? [] })),
     }))
-    .sort((a, b) => a.label.localeCompare(b.label, "ja"));
+    .sort(
+      (a, b) =>
+        orderOf(a.offKind) - orderOf(b.offKind) ||
+        // 同じ種類の中は終日（区分なし＝名前が短い）を先に
+        a.label.length - b.label.length ||
+        a.label.localeCompare(b.label, "ja"),
+    );
 
   // ── プール（基準日に稼働が無い隊員）──────────────────
   //
