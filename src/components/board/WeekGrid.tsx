@@ -204,7 +204,8 @@ export function WeekGrid({
 
   // 🔴 日ごとの合計人数（2026-10-07）。A表の実物は日付の下にその日の合計を手書きしている。
   //   中止の枠は数えない（人を出さない枠を足すと、出す人数が実際より多く見える）。
-  //   🟠 A表の「37+1」の「+1」が何かは未確認（as-genjo-kansei.md §2 A表の実物）
+  //   🔴 A表の「37+1」の「+1」は研修など**請求が発生しない稼働**の人数（2026-10-08・管制）。
+  //     休みの「研修・講習」の人数を「＋研修N」として添える。配置の人数には混ぜない。
   const dayTotals = data.dates.map((_, i) => {
     let placed = 0;
     let required = 0;
@@ -217,7 +218,11 @@ export function WeekGrid({
         }
       }
     }
-    return { placed, required };
+    let training = 0;
+    for (const row of data.offRows) {
+      if (row.offKind === "training") training += row.cells[i].guards.length;
+    }
+    return { placed, required, training };
   });
 
   if (!hasRows) {
@@ -375,6 +380,9 @@ export function WeekGrid({
                 ].join(" ")}
               >
                 {t.required === 0 ? "—" : `${t.placed}／${t.required}名`}
+                {t.training > 0 && (
+                  <span className="ml-1 text-[11px] font-medium text-slate-500">＋研修{t.training}</span>
+                )}
               </td>
             ))}
           </tr>
