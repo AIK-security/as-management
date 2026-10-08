@@ -55,6 +55,8 @@ export type WeekPlate = {
   role: AssignmentRole;
   /** 職種（K・R・D）。null＝交通誘導 */
   jobType: JobType | null;
+  /** この人だけ現着中止（2026-10-08） */
+  onsiteCancelled: boolean;
   isPartner: boolean;
   /**
    * 🔴 同じ隊員が同じ時間帯の別の枠にもいる。
@@ -212,7 +214,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         supabase
           .from("assignments")
           .select(
-            `id, guard_id, work_date, kind, shift_id, role, job_type, is_long_distance, position,
+            `id, guard_id, work_date, kind, shift_id, role, job_type, onsite_cancelled, is_long_distance, position,
            off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
            planned_start_at, planned_end_at`,
           )
@@ -341,6 +343,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
           qualLabels: qualLabelsOf(guard.id),
           role: a.role,
           jobType: a.job_type,
+          onsiteCancelled: a.onsite_cancelled,
           isPartner: isPartnerOf(guard),
           overlapping: overlapIds.has(a.id),
         };

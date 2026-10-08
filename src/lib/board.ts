@@ -256,7 +256,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     supabase
       .from("assignments")
       .select(
-        `id, guard_id, work_date, kind, shift_id, role, job_type, is_long_distance, position,
+        `id, guard_id, work_date, kind, shift_id, role, job_type, onsite_cancelled, is_long_distance, position,
        off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
        shift:shifts ( work_kind )`,
       )
@@ -440,6 +440,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
         role: a.role,
         jobType: a.job_type,
         jobQualMissing: lacksJobQual(a.job_type, qualIds, qualById, requiredIds, hasKenteiMaster),
+        onsiteCancelled: a.onsite_cancelled,
         experienced: experienced.has(`${guard.id}:${site.id}`),
         ngReasons: ngReasonsFor(ngEntries, guardById, guard.id, site.id, coAssignedGuardIds),
         isPartner: company?.kind === "partner",

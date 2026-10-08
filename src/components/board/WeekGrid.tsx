@@ -81,6 +81,14 @@ function PlateChip({ plate, editable }: { plate: WeekPlate; editable: boolean })
       ].join(" ")}
     >
       {plate.overlapping && <span className="mr-0.5 text-[10px] font-bold">重複</span>}
+      {plate.onsiteCancelled && (
+        <span
+          className="mr-0.5 rounded border border-slate-400 px-0.5 text-[10px] text-slate-600"
+          title="現着中止（この人だけ）"
+        >
+          中
+        </span>
+      )}
       {plate.role === "leader" && (
         <span className="mr-0.5 rounded bg-slate-700 px-1 text-[10px] font-bold text-white">L</span>
       )}

@@ -90,8 +90,15 @@ export function Plate({ plate }: { plate: PlateView }) {
             : "border-slate-300 bg-white",
       ].join(" ")}
     >
-      {/* 氏名の行。**ここには何も同居させない**（幅を氏名に全部使う） */}
-      <div className="t-plate break-all leading-tight text-slate-900" title={plate.guard.name}>
+      {/* 氏名の行。**ここには何も同居させない**（幅を氏名に全部使う）。
+          🔴 現着中止の人は名前を薄くする（行ったが稼働していない・2026-10-08） */}
+      <div
+        className={[
+          "t-plate break-all leading-tight",
+          plate.onsiteCancelled ? "text-slate-400" : "text-slate-900",
+        ].join(" ")}
+        title={plate.guard.name}
+      >
         {plateName(plate.guard)}
       </div>
 
@@ -100,6 +107,15 @@ export function Plate({ plate }: { plate: PlateView }) {
           以前は overflow-hidden で切っており、列車見張・日勤済が増えて情報が消えていた。
           折り返した名札だけ背が伸びる（カードの行の高さが揃う）が、見えないよりよい */}
       <div className="mt-0.5 flex min-h-[16px] flex-wrap items-center gap-0.5">
+        {/* 🔴 現着中止（2026-10-08）。A表の黄緑の付箋にあたる。いちばん前に出す */}
+        {plate.onsiteCancelled && (
+          <span
+            className="t-badge shrink-0 rounded border border-slate-400 bg-slate-100 px-1 leading-4 text-slate-700"
+            title="現着中止（この人だけ）"
+          >
+            中
+          </span>
+        )}
         {hasNg && (
           <span
             className="t-badge shrink-0 leading-4 font-bold text-rose-600"

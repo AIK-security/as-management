@@ -67,6 +67,7 @@ export default async function HandoffPage({
 
   const partnerCount = data.rows.filter((r) => r.note === "partner").length;
   const vacantCount = data.rows.filter((r) => r.note === "vacant").length;
+  const onsiteCancelCount = data.rows.filter((r) => r.onsiteCancelled).length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -162,10 +163,11 @@ export default async function HandoffPage({
           </p>
         )}
 
-        {(partnerCount > 0 || vacantCount > 0) && (
+        {(partnerCount > 0 || vacantCount > 0 || onsiteCancelCount > 0) && (
           <p className="t-meta text-slate-600">
             {partnerCount > 0 && <>協力会社の隊員 {partnerCount} 名は「応援」の行にまとめ、会社名を予定コメントに足しています。</>}
             {vacantCount > 0 && <>　人が入っていない {vacantCount} 名ぶんは、個人コード 0 の行で出しています。</>}
+            {onsiteCancelCount > 0 && <>　現着中止の {onsiteCancelCount} 名は、区分「現中」の警備先番号で出しています。</>}
           </p>
         )}
 
@@ -203,6 +205,12 @@ export default async function HandoffPage({
                       ].join(" ")}
                     >
                       {c}
+                      {/* 🔴 現着中止の人（2026-10-08）。番号だけでは見分けられないので、現場名の横に出す */}
+                      {j === 3 && r.onsiteCancelled && (
+                        <span className="ml-1.5 rounded border border-slate-400 bg-slate-100 px-1 text-[11px] font-semibold text-slate-700">
+                          現中
+                        </span>
+                      )}
                     </td>
                   ))}
                 </tr>

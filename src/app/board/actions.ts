@@ -297,6 +297,29 @@ export async function setAssignmentJobType(input: {
 }
 
 // ─────────────────────────────────────────────────────────
+// その人だけ現着中止（2026-10-08）
+//
+// 🔴 一部の隊員だけ現着中止になることがある（5名手配で1名現着中止 など・管制）。
+//   枠は分けず、名札に印を付ける（カードを増やさない＝見やすさ優先・柴山）。
+//   18列CSV ではその人の行だけ「現中」の区分で出す（handoff.ts）。
+// ─────────────────────────────────────────────────────────
+export async function setAssignmentOnsiteCancelled(input: {
+  assignmentId: string;
+  cancelled: boolean;
+}): Promise<ActionResult> {
+  const supabase = await editorClient();
+
+  const { error } = await supabase
+    .from("assignments")
+    .update({ onsite_cancelled: input.cancelled })
+    .eq("id", input.assignmentId);
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
 // 仮組み ⇄ 確定
 //
 // 🔴 確定を取り消せるようにする（差し戻し・screen-design.md §2-6）。

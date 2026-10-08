@@ -158,6 +158,8 @@ export type Assignment = {
   shift_id: string | null;
   role: AssignmentRole;
   job_type: JobType | null;
+  /** 🔴 この人だけ現着中止（2026-10-08）。配置人数には数える */
+  onsite_cancelled: boolean;
   is_long_distance: boolean;
   /** プレートの並び順 */
   position: number;
@@ -202,6 +204,8 @@ export type PlateView = {
   jobType: JobType | null;
   /** 🔴 職種に要る資格を持っていない（検定なのに検定が無い 等）。止めはせず名札で知らせる */
   jobQualMissing: boolean;
+  /** 🔴 この人だけ現着中止（2026-10-08）。名札に「中」 */
+  onsiteCancelled: boolean;
   /** この現場に入った経験があるか（★の有無）。assignments の履歴から引く */
   experienced: boolean;
   /** この枠に対して成立している NG */

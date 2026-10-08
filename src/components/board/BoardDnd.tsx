@@ -44,6 +44,7 @@ import {
   placeGuard,
   setAssignmentRole,
   setAssignmentJobType,
+  setAssignmentOnsiteCancelled,
   deleteShift,
   setShiftCancelled,
   setShiftStatus,
@@ -70,6 +71,8 @@ type Move =
   | { type: "role"; assignmentId: string; role: AssignmentRole }
   /** 職種（K・R・D）の付け外し（2026-10-08） */
   | { type: "job"; assignmentId: string; jobType: JobType | null }
+  /** その人だけ現着中止（2026-10-08） */
+  | { type: "onsiteCancel"; assignmentId: string; cancelled: boolean }
   | { type: "status"; shiftId: string; status: "draft" | "confirmed" }
   /** 枠の中止／取り消し（2026-09-07） */
   | { type: "cancel"; shiftId: string; cancelled: boolean }
@@ -108,6 +111,7 @@ function reduce(state: BoardState, move: Move): BoardState {
         role: "member",
         jobType: null,
         jobQualMissing: false,
+        onsiteCancelled: false,
         // 経験・NG はサーバでしか分からない。再取得で正しい値に置き換わる
         experienced: false,
         ngReasons: [],
@@ -177,6 +181,17 @@ function reduce(state: BoardState, move: Move): BoardState {
           ...r,
           plates: r.plates.map((p) =>
             p.assignmentId === move.assignmentId ? { ...p, jobType: move.jobType } : p,
+          ),
+        })),
+      };
+
+    case "onsiteCancel":
+      return {
+        pool: state.pool,
+        rows: state.rows.map((r) => ({
+          ...r,
+          plates: r.plates.map((p) =>
+            p.assignmentId === move.assignmentId ? { ...p, onsiteCancelled: move.cancelled } : p,
           ),
         })),
       };
@@ -562,6 +577,12 @@ export function BoardDnd({
     run({ type: "role", assignmentId, role }, () => setAssignmentRole({ assignmentId, role }));
   }
 
+  function handleSetOnsiteCancelled(assignmentId: string, cancelled: boolean) {
+    run({ type: "onsiteCancel", assignmentId, cancelled }, () =>
+      setAssignmentOnsiteCancelled({ assignmentId, cancelled }),
+    );
+  }
+
   function handleSetJobType(assignmentId: string, jobType: JobType | null) {
     run({ type: "job", assignmentId, jobType }, () =>
       setAssignmentJobType({ assignmentId, jobType }),
@@ -635,6 +656,7 @@ export function BoardDnd({
                   onSelect={handleSelect}
                   onSetRole={handleSetRole}
                   onSetJobType={handleSetJobType}
+                  onSetOnsiteCancelled={handleSetOnsiteCancelled}
                 />
               ))}
             </div>

@@ -11,7 +11,10 @@
 //
 // 2026-10-06 に決めたこと（柴山）：
 //   1. 協力会社の隊員は個人で出さず「応援」の行として出す。会社名は予定コメントに足す
-//   2. 中止にした枠は区分を「日勤現中／夜勤現中」に読み替える
+//   2. ~~中止にした枠は区分を「日勤現中／夜勤現中」に読み替える~~
+//      → 🔴 2026-10-08 訂正：**中止にした枠は出さない**。管制の答え（美土路さん経由）で、
+//        前日・当日朝の中止は A表で ×、**べんり君からは消している**と分かった。
+//        現着中止は区分「日勤現中／夜勤現中」の枠として別に持つ（その枠はそのまま出る）
 //   3. 警備先番号が引けない枠が1つでもあれば、ダウンロードさせない（べんり君は送信ごと止まるため）
 //   4. 休み・内勤・教育は出さない（事務が ShiftMax で使っているかを先に聞く）
 //   5. 貸出（AS の隊員を協力会社へ出す）は出さない（べんり君での扱いが未確認）
@@ -54,6 +57,8 @@ export type HandoffRow = {
   shiftId: string;
   /** 画面で「応援に寄せた」「空き」を見分けるための印。CSV には出ない */
   note: "partner" | "vacant" | null;
+  /** 🔴 この人だけ現着中止（2026-10-08）。画面で「現中」と見せるための印。CSV には出ない */
+  onsiteCancelled: boolean;
   cells: string[];
 };
 
@@ -99,6 +104,8 @@ type ShiftRaw = {
     role: string;
     is_long_distance: boolean;
     position: number;
+    /** 🔴 この人だけ現着中止（2026-10-08）。行の区分を「現中」にして出す */
+    onsite_cancelled: boolean;
     guard: {
       staff_code: string | null;
       guard_no: string | null;
@@ -107,8 +114,6 @@ type ShiftRaw = {
     } | null;
   }[];
 };
-
-const NIGHT_KINDS: readonly WorkKind[] = ["nightA", "nightB", "nightCancel"];
 
 /** 夜勤を後ろに置く並び（べんり君は日勤→夜勤の順で1日を作っている） */
 const KIND_ORDER: Record<WorkKind, number> = {
@@ -121,13 +126,24 @@ const KIND_ORDER: Record<WorkKind, number> = {
 
 /**
  * 勤務マスタ（duty_codes）を引くときの区分の名前。
- * 🔴 中止にした枠（cancelled_at あり）は「現中」に読み替える（決定2）。
- *   日勤現中 217件・夜勤現中 211件が得意先ごとに揃っている（data-gap-20260917.md §2-1）。
+ * 現着中止は区分「日勤現中／夜勤現中」の枠なので、そのまま引ける
+ *   （日勤現中 217件・夜勤現中 211件が得意先ごとに揃っている・data-gap-20260917.md §2-1）。
  */
-function kindLabelOf(shift: Pick<ShiftRaw, "work_kind" | "cancelled_at">): string {
-  if (shift.cancelled_at === null) return WORK_KIND_LABEL[shift.work_kind];
-  return NIGHT_KINDS.includes(shift.work_kind) ? "夜勤現中" : "日勤現中";
+function kindLabelOf(shift: Pick<ShiftRaw, "work_kind">): string {
+  return WORK_KIND_LABEL[shift.work_kind];
 }
+
+/**
+ * 🔴 人ごとの現着中止（2026-10-08）。その人の行だけ「現中」の区分で引く。
+ *   べんり君では、現着中止の人は現中の区分の行として送っている。
+ */
+const ONSITE_CANCEL_KIND: Record<WorkKind, WorkKind> = {
+  day: "dayCancel",
+  dayCancel: "dayCancel",
+  nightA: "nightCancel",
+  nightB: "nightCancel",
+  nightCancel: "nightCancel",
+};
 
 const flag = (b: boolean) => (b ? "1" : "0");
 
@@ -152,7 +168,7 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
          start_h, start_m, end_h, end_m, break_min, plan_comment, billing_note,
          site:sites ( name, customer:customers ( staff_code, name ) ),
          assignments (
-           kind, status, role, is_long_distance, position,
+           kind, status, role, is_long_distance, position, onsite_cancelled,
            guard:guards ( staff_code, guard_no, name, company:companies ( kind, name ) )
          )`,
       )
@@ -174,7 +190,10 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
   if (supportRes.error) throw new Error(`応援の隊員の取得に失敗しました: ${supportRes.error.message}`);
 
   const allShifts = (shiftRes.data ?? []) as unknown as ShiftRaw[];
-  const shifts = allShifts
+  // 🔴 中止（前日・当日朝）は出さない。べんり君では消している（決定2・2026-10-08 訂正）。
+  //   仮組みの件数にも数えない（確定しても出ないものを「確定してください」と言わない）
+  const liveShifts = allShifts.filter((s) => s.cancelled_at === null);
+  const shifts = liveShifts
     .filter((s) => s.status === "confirmed")
     // 日勤→夜勤の順。同じ区分の中は取得時の順（開始時刻順）のまま（sort は安定）
     .sort((a, b) => KIND_ORDER[a.work_kind] - KIND_ORDER[b.work_kind]);
@@ -220,15 +239,30 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
   const missing: HandoffMissing[] = [];
   let partnerGuardMissing = false;
 
-  for (const s of shifts) {
-    const kindLabel = kindLabelOf(s);
-    const customer = s.site?.customer ?? null;
-    const duty = customer ? dutyByKey.get(`${customer.staff_code}:${kindLabel}`) : undefined;
-    if (!duty) {
-      missing.push({ siteName: s.site?.name ?? "（現場不明）", customerName: customer?.name ?? null, kindLabel });
-    }
+  const missingKeys = new Set<string>();
 
-    const common = (personal: [string, string, string], comment: string, leader: boolean, sub: boolean, far: boolean) => [
+  for (const s of shifts) {
+    const customer = s.site?.customer ?? null;
+    // 🔴 警備先番号は〈得意先 × 区分〉で引く。人ごとの現着中止があると、同じ枠の中で区分が変わる
+    const dutyFor = (kind: WorkKind) => {
+      const kindLabel = kindLabelOf({ work_kind: kind });
+      const duty = customer ? dutyByKey.get(`${customer.staff_code}:${kindLabel}`) : undefined;
+      const key = `${s.id}:${kindLabel}`;
+      if (!duty && !missingKeys.has(key)) {
+        missingKeys.add(key);
+        missing.push({ siteName: s.site?.name ?? "（現場不明）", customerName: customer?.name ?? null, kindLabel });
+      }
+      return duty;
+    };
+
+    const common = (
+      duty: ReturnType<typeof dutyFor>,
+      personal: [string, string, string],
+      comment: string,
+      leader: boolean,
+      sub: boolean,
+      far: boolean,
+    ) => [
       date,
       duty?.sm_site_code ?? "",
       duty?.guard_target_no ?? "",
@@ -274,7 +308,15 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
       rows.push({
         shiftId: s.id,
         note: isPartner ? "partner" : null,
-        cells: common(personal, comment, a.role === "leader", a.role === "sub", a.is_long_distance),
+        onsiteCancelled: a.onsite_cancelled,
+        cells: common(
+          dutyFor(a.onsite_cancelled ? ONSITE_CANCEL_KIND[s.work_kind] : s.work_kind),
+          personal,
+          comment,
+          a.role === "leader",
+          a.role === "sub",
+          a.is_long_distance,
+        ),
       });
     }
 
@@ -284,7 +326,8 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
       rows.push({
         shiftId: s.id,
         note: "vacant",
-        cells: common(["0", "0", ""], s.plan_comment ?? "", false, false, false),
+        onsiteCancelled: false,
+        cells: common(dutyFor(s.work_kind), ["0", "0", ""], s.plan_comment ?? "", false, false, false),
       });
     }
   }
@@ -293,7 +336,7 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
     date: workDate,
     rows,
     confirmedShifts: shifts.length,
-    draftShifts: allShifts.length - shifts.length,
+    draftShifts: liveShifts.length - shifts.length,
     missing,
     partnerGuardMissing,
   };

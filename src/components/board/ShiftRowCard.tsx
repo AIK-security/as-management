@@ -56,13 +56,14 @@ import { DraggablePlate, EmptySlot } from "@/components/board/Plate";
 import {
   JOB_TYPE_LABEL,
   JOB_TYPE_MARK,
+  JOB_TYPES,
   WORK_KIND_LABEL,
   formatTime,
   jobCountsMark,
   jobShortages,
-  nextJobType,
+  plateName,
 } from "@/lib/board-format";
-import type { AssignmentRole, JobType, ShiftRow } from "@/lib/types";
+import type { AssignmentRole, JobType, PlateView, ShiftRow } from "@/lib/types";
 
 export function ShiftRowCard({
   row,
@@ -77,6 +78,7 @@ export function ShiftRowCard({
   onSelect,
   onSetRole,
   onSetJobType,
+  onSetOnsiteCancelled,
 }: {
   row: ShiftRow;
   showCustomer?: boolean;
@@ -99,6 +101,8 @@ export function ShiftRowCard({
   onSetRole?: (assignmentId: string, role: AssignmentRole) => void;
   /** 職種（K・R・D）の付け外し（2026-10-08） */
   onSetJobType?: (assignmentId: string, jobType: JobType | null) => void;
+  /** その人だけ現着中止（2026-10-08） */
+  onSetOnsiteCancelled?: (assignmentId: string, cancelled: boolean) => void;
 }) {
   const { shift, site, customer, plates, missingQualifications } = row;
   const isDraft = shift.status === "draft";
@@ -112,6 +116,7 @@ export function ShiftRowCard({
   // 🔴 A表の `K1R1`（2026-10-08）。必要数に対し、その職種を付けた人が足りないか
   const jobMark = jobCountsMark(shift);
   const jobShort = cancelled ? [] : jobShortages(shift, plates);
+  const pickedPlate = plates.find((p) => p.assignmentId === selectedPlateId) ?? null;
 
   // 🔴 カード**全体**をドロップ先にする。プレート置き場だけにすると、
   //   1名の枠では的が 84×46px しかなく、40枚並んだ画面では狙えない。
@@ -136,7 +141,10 @@ export function ShiftRowCard({
       }}
       onClick={() => onSelect?.(shift.id, null)}
       className={[
-        "flex h-full flex-col overflow-hidden rounded-lg border-2 bg-white shadow-sm",
+        "flex h-full flex-col rounded-lg border-2 bg-white shadow-sm",
+        // 🔴 名札の上に操作の吹き出しを出している間だけ、はみ出しを許して手前に出す（2026-10-08）。
+        //   普段は角丸の外へ中身が出ないよう切る
+        pickedPlate && editable ? "relative z-20 overflow-visible" : "overflow-hidden",
         // 🔴 ドロップ先は**藍**で示す（1色1意味：藍＝操作）。
         //   状態を表す橙・赤・緑と混ぜない。掴んでいる間だけ出るので
         //   「今ここに置ける」以外の意味に読まれる余地がない
@@ -159,7 +167,7 @@ export function ShiftRowCard({
         // 🔴 仮組みの地色（bg-amber-50）をやめた。カード1枚ぶんの面積が
         //    色で塗られると、画面全体では最も目立つ要素になってしまう。
         //    状態は左の色帯とバッジで足りる。
-        className="border-b border-slate-200 bg-slate-50 px-3 py-2"
+        className="rounded-tr-md border-b border-slate-200 bg-slate-50 px-3 py-2"
       >
         {/* 得意先は現場名の**上**に小さく置く。
             会社 → 現場 の順で読め、主役（現場名）の大きさを譲らずに済む */}
@@ -401,8 +409,8 @@ export function ShiftRowCard({
       {/* ── プレート置き場 ──
           🔴 mt-auto で下端に寄せる。同じ行の箱は高さが揃うため、
              プレートの位置が箱ごとにばらつくと目で追えなくなる */}
-      <div className="mt-auto flex flex-wrap content-end gap-1.5 bg-slate-50/70 px-3 py-2.5">
-        {plates.map((plate) => {
+      <div className="mt-auto flex flex-wrap content-end gap-1.5 rounded-br-md bg-slate-50/70 px-3 py-2.5">
+        {plates.map((plate, index) => {
           const picked = plate.assignmentId === selectedPlateId;
           return (
             // 🔴 選択の枠線と隊長ボタンは、ドラッグの取っ手の**外側**に置く。
@@ -420,50 +428,23 @@ export function ShiftRowCard({
                 <DraggablePlate plate={plate} disabled={!editable} />
               </div>
 
-              {/* 🔴 隊長の付け外しは**選んだ1枚にだけ**出す。
-                  全プレートに出すと 84px の中がボタンで埋まり、氏名が読めなくなる。
-                  キーボードでは `L`（useBoardKeys）。同じことを2つの経路で出す */}
-              {picked && editable && onSetRole && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSetRole(plate.assignmentId, plate.role === "leader" ? "member" : "leader");
-                  }}
-                  title={plate.role === "leader" ? "隊長を外す（L）" : "隊長にする（L）"}
-                  className={[
-                    "absolute -top-2 -right-1.5 z-10 cursor-pointer rounded border px-1",
-                    "t-badge leading-4 shadow-sm transition-all duration-150 ease-in-out",
-                    plate.role === "leader"
-                      ? "border-slate-700 bg-slate-700 text-white hover:bg-slate-800"
-                      : "border-slate-400 bg-white text-slate-600 hover:bg-slate-100",
-                  ].join(" ")}
-                >
-                  L
-                </button>
+              {/* ── 選んだ名札の操作（2026-10-08） ──
+                  🔴 名札の角にボタンを重ねていた（左上 職・右上 L・右下 中）のをやめ、
+                     名札の**真上に吹き出し**で出す（柴山「ごちゃごちゃする」→ 案2）。
+                     角のボタンは1文字で意味が読めず、職種は押すたびに順に変わっていた。
+                     ここでは**言葉で書き**、職種は4つ並べて**押したものが今の値**にする。
+                  選んでいないときは何も出ない。キーボード（L・K・R・D）は今のまま */}
+              {picked && editable && (
+                <PlateActions
+                  plate={plate}
+                  // 名札は1行に3枚並ぶ（Plate.tsx の 84px の根拠）。端の名札では吹き出しを内側へ寄せる
+                  align={index % 3 === 0 ? "left" : index % 3 === 2 ? "right" : "center"}
+                  onSetRole={onSetRole}
+                  onSetJobType={onSetJobType}
+                  onSetOnsiteCancelled={onSetOnsiteCancelled}
+                />
               )}
 
-              {/* 🔴 職種（2026-10-08）。隊長と同じく**選んだ1枚にだけ**出す。
-                  押すたびに 交通誘導 → K → R → D → 交通誘導。キーボードでは K・R・D */}
-              {picked && editable && onSetJobType && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSetJobType(plate.assignmentId, nextJobType(plate.jobType));
-                  }}
-                  title={`職種：${plate.jobType ? JOB_TYPE_LABEL[plate.jobType] : "交通誘導"}（押すと切り替え／K・R・D キー）`}
-                  className={[
-                    "absolute -top-2 -left-1.5 z-10 cursor-pointer rounded border px-1",
-                    "t-badge leading-4 shadow-sm transition-all duration-150 ease-in-out",
-                    plate.jobType
-                      ? "border-slate-700 bg-slate-700 text-white hover:bg-slate-800"
-                      : "border-slate-400 bg-white text-slate-600 hover:bg-slate-100",
-                  ].join(" ")}
-                >
-                  {plate.jobType ? JOB_TYPE_MARK[plate.jobType] : "職"}
-                </button>
-              )}
             </div>
           );
         })}
@@ -471,6 +452,107 @@ export function ShiftRowCard({
           <EmptySlot key={`empty-${shift.id}-${i}`} />
         ))}
       </div>
+
     </section>
   );
 }
+
+// ─────────────────────────────────────────────────────────
+// 選んだ名札の操作の吹き出し（2026-10-08）
+// ─────────────────────────────────────────────────────────
+const ACTION_BTN =
+  "cursor-pointer rounded border px-2 py-0.5 text-[12px] font-medium transition-all duration-150 ease-in-out";
+/** 吹き出しの中は狭いので短く（A表の言い方：R＝列車） */
+const JOB_SHORT: Record<JobType, string> = { kentei: "検定", train: "列車", driver: "ドライバー" };
+// 🔴 押してある状態は藍（1色1意味：藍＝操作）。灰だけだと、どれが押してあるか読みにくかった（柴山）
+const ON = "border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700";
+const OFF = "border-slate-300 bg-white text-slate-700 hover:border-indigo-300 hover:bg-indigo-50";
+
+const ALIGN = {
+  left: { box: "left-0", tail: "left-8" },
+  center: { box: "left-1/2 -translate-x-1/2", tail: "left-1/2 -translate-x-1/2" },
+  right: { box: "right-0", tail: "right-8" },
+} as const;
+
+function PlateActions({
+  plate,
+  align,
+  onSetRole,
+  onSetJobType,
+  onSetOnsiteCancelled,
+}: {
+  plate: PlateView;
+  align: keyof typeof ALIGN;
+  onSetRole?: (assignmentId: string, role: AssignmentRole) => void;
+  onSetJobType?: (assignmentId: string, jobType: JobType | null) => void;
+  onSetOnsiteCancelled?: (assignmentId: string, cancelled: boolean) => void;
+}) {
+  const id = plate.assignmentId;
+  // 🔴 帯の中のクリックで枠の選択が動かないようにする（カード全体がクリックで選択になる）
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  return (
+    <div
+      className={[
+        "absolute bottom-full z-30 mb-2.5 w-max rounded-md border border-slate-300 bg-white p-2 shadow-md",
+        ALIGN[align].box,
+      ].join(" ")}
+      onClick={stop}
+      // 🔴 吹き出しの上でつかんでもドラッグを始めない（名札の取っ手の外側に置いてある）
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {/* 吹き出しの尾。どの名札の操作かを指す */}
+      <span
+        className={[
+          "absolute -bottom-1.5 h-3 w-3 rotate-45 border-r border-b border-slate-300 bg-white",
+          ALIGN[align].tail,
+        ].join(" ")}
+      />
+
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[12px] font-semibold text-slate-800">{plateName(plate.guard)}</span>
+        <span className="flex gap-1">
+          {onSetRole && (
+            <button
+              type="button"
+              onClick={() => onSetRole(id, plate.role === "leader" ? "member" : "leader")}
+              title="キーボードでは L"
+              className={[ACTION_BTN, plate.role === "leader" ? ON : OFF].join(" ")}
+            >
+              隊長
+            </button>
+          )}
+          {onSetOnsiteCancelled && (
+            <button
+              type="button"
+              onClick={() => onSetOnsiteCancelled(id, !plate.onsiteCancelled)}
+              className={[ACTION_BTN, plate.onsiteCancelled ? ON : OFF].join(" ")}
+            >
+              現着中止
+            </button>
+          )}
+        </span>
+      </div>
+
+      {onSetJobType && (
+        // 🔴 1行に収める（折り返すと「ドライバー」だけ次の行に落ちた）。幅は中身に合わせる（w-max）
+        <span className="mt-1.5 flex items-center gap-1 whitespace-nowrap">
+          <span className="text-[11px] font-medium text-slate-500">職種</span>
+          {([null, ...JOB_TYPES] as (JobType | null)[]).map((j) => (
+            <button
+              key={j ?? "none"}
+              type="button"
+              onClick={() => onSetJobType(id, j)}
+              title={j ? `${JOB_TYPE_LABEL[j]}（キーボードでは ${JOB_TYPE_MARK[j]}）` : "交通誘導（印なし）"}
+              className={[ACTION_BTN, plate.jobType === j ? ON : OFF].join(" ")}
+            >
+              {j ? `${JOB_TYPE_MARK[j]} ${JOB_SHORT[j]}` : "なし"}
+            </button>
+          ))}
+        </span>
+      )}
+
+    </div>
+  );
+}
+
