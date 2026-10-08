@@ -14,7 +14,7 @@
 //
 // 🔴 ここには「取ってくる処理」を書かない。書いた時点で壁が意味を失う。
 
-import type { OffKind, WorkKind } from "@/lib/types";
+import type { JobType, OffKind, Shift, WorkKind } from "@/lib/types";
 
 export type BoardShiftGroup = "day" | "night";
 
@@ -43,6 +43,52 @@ export const OFF_KIND_LABEL: Record<OffKind, string> = {
   office: "内勤",
   standby: "緊急対応要員",
 };
+
+// ─────────────────────────────────────────────────────────
+// 職種（2026-10-08）
+//
+// 🔴 記号は A表と同じ K・R・D。管制が毎日書いている文字をそのまま使う。
+//   漢字（検・列）にすると、プールの「列5」（列車見張の資格を5社持つ）と読み違える。
+// ─────────────────────────────────────────────────────────
+export const JOB_TYPES: JobType[] = ["kentei", "train", "driver"];
+
+export const JOB_TYPE_MARK: Record<JobType, string> = { kentei: "K", train: "R", driver: "D" };
+
+export const JOB_TYPE_LABEL: Record<JobType, string> = {
+  kentei: "検定",
+  train: "列車見張",
+  driver: "ドライバー",
+};
+
+const JOB_COUNT_KEY = {
+  kentei: "kentei_count",
+  train: "train_count",
+  driver: "driver_count",
+} as const satisfies Record<JobType, keyof Shift>;
+
+/** 枠の必要数を A表の書き方で返す（例 `K1R1`）。0 のものは書かない。全部 0 なら空文字 */
+export function jobCountsMark(shift: Pick<Shift, "kentei_count" | "train_count" | "driver_count">): string {
+  return JOB_TYPES.map((j) => (shift[JOB_COUNT_KEY[j]] > 0 ? `${JOB_TYPE_MARK[j]}${shift[JOB_COUNT_KEY[j]]}` : "")).join("");
+}
+
+/** 枠の必要数に対し、その職種を付けた人が足りないもの */
+export function jobShortages(
+  shift: Pick<Shift, "kentei_count" | "train_count" | "driver_count">,
+  plates: { jobType: JobType | null }[],
+): { jobType: JobType; label: string; need: number; have: number }[] {
+  return JOB_TYPES.flatMap((j) => {
+    const need = shift[JOB_COUNT_KEY[j]];
+    const have = plates.filter((p) => p.jobType === j).length;
+    return have < need ? [{ jobType: j, label: JOB_TYPE_LABEL[j], need, have }] : [];
+  });
+}
+
+/** 名札の操作で順に切り替える（交通誘導 → K → R → D → 交通誘導） */
+export function nextJobType(current: JobType | null): JobType | null {
+  if (current === null) return JOB_TYPES[0];
+  const i = JOB_TYPES.indexOf(current);
+  return i === JOB_TYPES.length - 1 ? null : JOB_TYPES[i + 1];
+}
 
 export const WORK_KIND_LABEL: Record<WorkKind, string> = {
   day: "日勤",

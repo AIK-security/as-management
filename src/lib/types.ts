@@ -38,8 +38,9 @@ export type Qualification = {
   name: string;
   /** 配置ボードのバッジに出す短い表記（例: 交1, 交2） */
   short_label: string;
-  /** 🔴 'train' = 列車見張（鉄道会社ごと）。名札での出し方が違う（qual-labels.ts） */
-  category: "train" | null;
+  /** 🔴 'train' = 列車見張（鉄道会社ごと）。名札での出し方が違う（qual-labels.ts）
+      'kentei' = 交通誘導の検定。職種「検定」の人が持っているかの判定に使う（2026-10-08） */
+  category: "train" | "kentei" | null;
 };
 
 export type Guard = {
@@ -92,6 +93,10 @@ export type Shift = {
   work_kind: WorkKind;
   /** 必要人数 */
   headcount: number;
+  /** 🔴 必要人数のうち検定・列車見張・ドライバーの人数（A表の `K1R1`・内数・2026-10-08） */
+  kentei_count: number;
+  train_count: number;
+  driver_count: number;
   start_h: number;
   start_m: number;
   end_h: number;
@@ -120,6 +125,15 @@ export type AssignmentKind = "site" | "lent_out" | "off";
  */
 export type AssignmentRole = "leader" | "member";
 
+/**
+ * 配置の職種（2026-10-08）。null＝交通誘導（大半。例外だけ付ける）。
+ * 🔴 手当の支給に使うので「枠の誰が」まで持つ（管制）。A表の K・R・D。
+ */
+export type JobType = "kentei" | "train" | "driver";
+
+/** 枠の職種の人数（画面 ⇄ 保存処理の受け渡し用）。DB では shifts.kentei_count 等の3列 */
+export type JobCounts = Record<JobType, number>;
+
 export type OffKind =
   | "paid_leave"
   /** 🔴 公休（2026-09-16 追加）。有給でも欠勤でもない「ただの休み」。
@@ -143,6 +157,7 @@ export type Assignment = {
   /** kind === "site" のときのみ */
   shift_id: string | null;
   role: AssignmentRole;
+  job_type: JobType | null;
   is_long_distance: boolean;
   /** プレートの並び順 */
   position: number;
@@ -184,6 +199,9 @@ export type PlateView = {
   guard: Guard;
   qualLabels: QualLabels;
   role: AssignmentRole;
+  jobType: JobType | null;
+  /** 🔴 職種に要る資格を持っていない（検定なのに検定が無い 等）。止めはせず名札で知らせる */
+  jobQualMissing: boolean;
   /** この現場に入った経験があるか（★の有無）。assignments の履歴から引く */
   experienced: boolean;
   /** この枠に対して成立している NG */

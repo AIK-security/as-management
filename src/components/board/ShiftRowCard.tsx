@@ -53,8 +53,16 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { DraggablePlate, EmptySlot } from "@/components/board/Plate";
-import { WORK_KIND_LABEL, formatTime } from "@/lib/board-format";
-import type { AssignmentRole, ShiftRow } from "@/lib/types";
+import {
+  JOB_TYPE_LABEL,
+  JOB_TYPE_MARK,
+  WORK_KIND_LABEL,
+  formatTime,
+  jobCountsMark,
+  jobShortages,
+  nextJobType,
+} from "@/lib/board-format";
+import type { AssignmentRole, JobType, ShiftRow } from "@/lib/types";
 
 export function ShiftRowCard({
   row,
@@ -68,6 +76,7 @@ export function ShiftRowCard({
   onEdit,
   onSelect,
   onSetRole,
+  onSetJobType,
 }: {
   row: ShiftRow;
   showCustomer?: boolean;
@@ -88,6 +97,8 @@ export function ShiftRowCard({
   /** クリックでも選べるようにする。assignmentId が null なら枠だけの選択 */
   onSelect?: (shiftId: string, assignmentId: string | null) => void;
   onSetRole?: (assignmentId: string, role: AssignmentRole) => void;
+  /** 職種（K・R・D）の付け外し（2026-10-08） */
+  onSetJobType?: (assignmentId: string, jobType: JobType | null) => void;
 }) {
   const { shift, site, customer, plates, missingQualifications } = row;
   const isDraft = shift.status === "draft";
@@ -98,6 +109,9 @@ export function ShiftRowCard({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // 🔴 中止の枠では人数不足を数えない。誰も行かないので「足りない」に意味が無い。
   const shortage = cancelled ? 0 : Math.max(0, shift.headcount - plates.length);
+  // 🔴 A表の `K1R1`（2026-10-08）。必要数に対し、その職種を付けた人が足りないか
+  const jobMark = jobCountsMark(shift);
+  const jobShort = cancelled ? [] : jobShortages(shift, plates);
 
   // 🔴 カード**全体**をドロップ先にする。プレート置き場だけにすると、
   //   1名の枠では的が 84×46px しかなく、40枚並んだ画面では狙えない。
@@ -302,6 +316,21 @@ export function ShiftRowCard({
             {WORK_KIND_LABEL[shift.work_kind]}
           </span>
           <span className="t-meta shrink-0 text-slate-500">休{shift.break_min}</span>
+          {jobMark && (
+            <span
+              title={
+                jobShort.length > 0
+                  ? jobShort.map((j) => `${j.label} 必要${j.need}に対し${j.have}名`).join(" / ")
+                  : "必要人数のうち 検定(K)・列車見張(R)・ドライバー(D)"
+              }
+              className={[
+                "t-badge shrink-0 font-mono",
+                jobShort.length > 0 ? "text-rose-600" : "text-slate-600",
+              ].join(" ")}
+            >
+              {jobMark}
+            </span>
+          )}
 
           <span
             className={
@@ -411,6 +440,28 @@ export function ShiftRowCard({
                   ].join(" ")}
                 >
                   L
+                </button>
+              )}
+
+              {/* 🔴 職種（2026-10-08）。隊長と同じく**選んだ1枚にだけ**出す。
+                  押すたびに 交通誘導 → K → R → D → 交通誘導。キーボードでは K・R・D */}
+              {picked && editable && onSetJobType && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSetJobType(plate.assignmentId, nextJobType(plate.jobType));
+                  }}
+                  title={`職種：${plate.jobType ? JOB_TYPE_LABEL[plate.jobType] : "交通誘導"}（押すと切り替え／K・R・D キー）`}
+                  className={[
+                    "absolute -top-2 -left-1.5 z-10 cursor-pointer rounded border px-1",
+                    "t-badge leading-4 shadow-sm transition-all duration-150 ease-in-out",
+                    plate.jobType
+                      ? "border-slate-700 bg-slate-700 text-white hover:bg-slate-800"
+                      : "border-slate-400 bg-white text-slate-600 hover:bg-slate-100",
+                  ].join(" ")}
+                >
+                  {plate.jobType ? JOB_TYPE_MARK[plate.jobType] : "職"}
                 </button>
               )}
             </div>

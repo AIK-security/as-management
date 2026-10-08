@@ -21,7 +21,7 @@ import { requireRole } from "@/lib/auth";
 import { addDays, formatSpanPlace, OFF_KIND_LABEL, WORK_KIND_LABEL } from "@/lib/board-format";
 import { findOverlaps, type Span } from "@/lib/overlap";
 import { createClient } from "@/lib/supabase/server";
-import type { OffKind, OffWorkKind, WorkKind } from "@/lib/types";
+import type { JobCounts, JobType, OffKind, OffWorkKind, WorkKind } from "@/lib/types";
 
 /**
  * 🔴 `details` は「なぜ落ちたか」を**名前で**並べたもの（2026-09-04 追加）。
@@ -46,7 +46,16 @@ function toMessage(error: { code?: string; message: string }): string {
     // RLS に弾かれた。ボタンが出ていないはずの操作が届いた場合
     return "この操作の権限がありません。";
   }
+  if (error.code === "23514" && error.message.includes("shifts_job_counts_within_headcount")) {
+    return "検定・列車・ドライバーの人数の合計が、必要人数を超えています（必要人数の内数です）。";
+  }
   return `保存できませんでした（${error.message}）`;
+}
+
+/** 枠の職種の人数（A表の `K1R1`）。画面から来た値を DB の列に直す */
+function jobCountColumns(c: JobCounts | undefined) {
+  const n = (v: number | undefined) => (Number.isFinite(v) && (v as number) > 0 ? Math.floor(v as number) : 0);
+  return { kentei_count: n(c?.kentei), train_count: n(c?.train), driver_count: n(c?.driver) };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -266,6 +275,28 @@ export async function setAssignmentRole(input: {
 }
 
 // ─────────────────────────────────────────────────────────
+// 職種（検定・列車見張・ドライバー）の付け外し（2026-10-08）
+//
+// 🔴 資格を持っていなくても止めない。資格の登録漏れがありうるため（名札で知らせる）。
+// 🔴 確定済みの枠なら仮組みへ戻る（隊長と同じ・20261008000000_job_type.sql）。
+// ─────────────────────────────────────────────────────────
+export async function setAssignmentJobType(input: {
+  assignmentId: string;
+  jobType: JobType | null;
+}): Promise<ActionResult> {
+  const supabase = await editorClient();
+
+  const { error } = await supabase
+    .from("assignments")
+    .update({ job_type: input.jobType })
+    .eq("id", input.assignmentId);
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
 // 仮組み ⇄ 確定
 //
 // 🔴 確定を取り消せるようにする（差し戻し・screen-design.md §2-6）。
@@ -420,6 +451,8 @@ export async function addShift(input: {
   endM: number;
   breakMin: number;
   headcount: number;
+  /** 必要人数のうち検定・列車・ドライバー（A表の `K1R1`・2026-10-08）。省略時は 0 */
+  jobCounts?: JobCounts;
   // 🔴 2026-09-09 追加。現行の入力UI（`管制雛形` D〜U列）にあって、こちらに無かった項目。
   //   予定コメント・請求備考は手入力（§8-2）。投入CSV 18列のうち 14・18列目に対応する。
   //   🔴 班名（5列目）は 2026-10-02 に削除。実データで1行も使われていなかった（空で出す）。
@@ -480,6 +513,7 @@ export async function addShift(input: {
       jurisdiction_id: input.jurisdictionId,
       work_kind: input.workKind,
       headcount: input.headcount,
+      ...jobCountColumns(input.jobCounts),
       start_h: input.startH,
       start_m: input.startM,
       end_h: input.endH,
@@ -548,6 +582,7 @@ export async function updateShift(input: {
   shiftId: string;
   workKind: WorkKind;
   headcount: number;
+  jobCounts: JobCounts;
   startH: number;
   startM: number;
   endH: number;
@@ -567,6 +602,7 @@ export async function updateShift(input: {
     .update({
       work_kind: input.workKind,
       headcount: input.headcount,
+      ...jobCountColumns(input.jobCounts),
       start_h: input.startH,
       start_m: input.startM,
       end_h: input.endH,
@@ -649,7 +685,8 @@ export async function copyDay(input: {
   const { data: srcData, error: srcErr } = await supabase
     .from("shifts")
     .select(
-      `id, site_id, work_kind, headcount, start_h, start_m, end_h, end_m, break_min,
+      `id, site_id, work_kind, headcount, kentei_count, train_count, driver_count,
+       start_h, start_m, end_h, end_m, break_min,
        plan_comment, billing_note, site:sites ( short_name )`,
     )
     .eq("work_date", fromDate)
@@ -666,6 +703,9 @@ export async function copyDay(input: {
     site_id: string;
     work_kind: WorkKind;
     headcount: number;
+    kentei_count: number;
+    train_count: number;
+    driver_count: number;
     start_h: number;
     start_m: number;
     end_h: number;
@@ -725,6 +765,9 @@ export async function copyDay(input: {
       jurisdiction_id: jurisdictionId,
       work_kind: src.work_kind,
       headcount: src.headcount,
+      kentei_count: src.kentei_count,
+      train_count: src.train_count,
+      driver_count: src.driver_count,
       start_h: src.start_h,
       start_m: src.start_m,
       end_h: src.end_h,
@@ -759,7 +802,7 @@ export async function copyDay(input: {
   const planBySrc = new Map(plan.map((p) => [p.src.id, p]));
   const { data: srcAsg, error: saErr } = await supabase
     .from("assignments")
-    .select("shift_id, guard_id, role, position")
+    .select("shift_id, guard_id, role, job_type, position")
     .in("shift_id", [...planBySrc.keys()])
     .eq("kind", "site")
     .eq("status", "planned")
@@ -770,6 +813,7 @@ export async function copyDay(input: {
     shift_id: string;
     guard_id: string;
     role: string;
+    job_type: JobType | null;
     position: number;
   }[];
   if (asgRows.length === 0) {
@@ -866,6 +910,7 @@ export async function copyDay(input: {
     work_date: string;
     kind: "site";
     role: string;
+    job_type: JobType | null;
     position: number;
     status: "planned";
   }[] = [];
@@ -912,6 +957,8 @@ export async function copyDay(input: {
       work_date: toDate,
       kind: "site",
       role: a.role,
+      // 🔴 職種も写す。同じ人が同じ現場に入るなら、役も同じであることが多い
+      job_type: a.job_type,
       position: a.position,
       status: "planned",
     });

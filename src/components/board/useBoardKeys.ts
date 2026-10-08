@@ -22,7 +22,10 @@
 "use client";
 
 import { useEffect, useState, type KeyboardEvent, type RefObject } from "react";
-import type { AssignmentRole, GuardView, ShiftRow } from "@/lib/types";
+import type { AssignmentRole, GuardView, JobType, ShiftRow } from "@/lib/types";
+
+/** 職種のキー。A表の K・R・D と同じ文字 */
+const JOB_BY_KEY: Record<string, JobType> = { K: "kentei", R: "train", D: "driver" };
 
 /** いま操作対象になっている枠とプレート。プレート単独の選択は無い（必ず枠に属する） */
 export type BoardSelection = {
@@ -77,6 +80,8 @@ export type BoardKeysOptions = {
   onPlace: (guardId: string, shiftId: string) => void;
   onUnplace: (assignmentId: string) => void;
   onSetRole: (assignmentId: string, role: AssignmentRole) => void;
+  /** 職種の付け外し（2026-10-08）。K・R・D キー */
+  onSetJobType: (assignmentId: string, jobType: JobType | null) => void;
   onConfirm: (shiftId: string) => void;
   /** 検索欄を空にする（配置したら次の氏名を打てる状態に戻す） */
   onClearQuery: () => void;
@@ -90,6 +95,7 @@ export function useBoardKeys({
   onPlace,
   onUnplace,
   onSetRole,
+  onSetJobType,
   onConfirm,
   onClearQuery,
 }: BoardKeysOptions) {
@@ -225,6 +231,25 @@ export function useBoardKeys({
             return;
           }
           onSetRole(plate.assignmentId, plate.role === "leader" ? "member" : "leader");
+          setNotice(null);
+          return;
+        }
+
+        // 🔴 職種（2026-10-08）。A表と同じ文字のキーで付ける。同じキーをもう一度で外す
+        case "k":
+        case "K":
+        case "r":
+        case "R":
+        case "d":
+        case "D": {
+          e.preventDefault();
+          const plate = selectedRow?.plates.find((p) => p.assignmentId === selection.assignmentId);
+          if (!plate) {
+            setNotice("職種を付けるプレートを ←→ で選んでください");
+            return;
+          }
+          const job = JOB_BY_KEY[e.key.toUpperCase()];
+          onSetJobType(plate.assignmentId, plate.jobType === job ? null : job);
           setNotice(null);
           return;
         }

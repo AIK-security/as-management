@@ -163,7 +163,7 @@
 
 | # | 対象 | 追加 | 理由 |
 |---|---|---|---|
-| 1 | `assignments` | **`job_type`**（予定の職種。既定＝交通誘導） | A表に書かれている予定。**例外だけ付ける**ので管制の手数はほぼ増えない |
+| 1 | `assignments` | **`job_type`**（予定の職種。既定＝交通誘導） | A表に書かれている予定。**例外だけ付ける**ので管制の手数はほぼ増えない<br>✅ **2026-10-08 に前倒しで作った**（`20261008000000_job_type.sql`）。値は 検定・列車見張・**ドライバー**（警備もする＝必要人数に入る）。<br>枠にも `kentei_count` / `train_count` / `driver_count`（A表の `K1R1`・必要人数の内数）。手当の支給に使う（管制） |
 | 2 | **`assignment_actuals`**（新） | `job_type`・`start_at`・`end_at`・`break_min`・`overtime_min`・`billable`・`payable`・`entered_by`・`entered_at` | **空欄＝予定どおり**（§6-2）。<br>`billable`（請求）・`payable`（支払い）は**空欄＝中止区分の初期値どおり** |
 | 3 | **`charge_items`**（新・マスタ） | 品目名・単位（人／台／時間／式） | 諸経費の品目は得意先ごとに増える。**文字列の自由入力にしない**（集計で割れる） |
 | 4 | **`shift_charges`**（新） | `shift_id`・`charge_item_id`・`quantity`・`entered_by` | 作業所 × 日 × 日夜 の単位。日報チェック表の行と一致 |

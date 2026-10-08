@@ -22,7 +22,15 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { dayTone, formatTime, formatWeekDay, plateName } from "@/lib/board-format";
+import {
+  JOB_TYPE_LABEL,
+  JOB_TYPE_MARK,
+  dayTone,
+  formatTime,
+  formatWeekDay,
+  jobCountsMark,
+  plateName,
+} from "@/lib/board-format";
 import type { WeekBoardData, WeekCell, WeekCellShift, WeekPlate } from "@/lib/week-board";
 
 /**
@@ -76,6 +84,15 @@ function PlateChip({ plate, editable }: { plate: WeekPlate; editable: boolean })
       {plate.role === "leader" && (
         <span className="mr-0.5 rounded bg-slate-700 px-1 text-[10px] font-bold text-white">L</span>
       )}
+      {/* 職種（2026-10-08）。A表と同じ K・R・D */}
+      {plate.jobType && (
+        <span
+          className="mr-0.5 rounded bg-slate-700 px-1 text-[10px] font-bold text-white"
+          title={JOB_TYPE_LABEL[plate.jobType]}
+        >
+          {JOB_TYPE_MARK[plate.jobType]}
+        </span>
+      )}
       {plateName(plate.guard)}
     </div>
   );
@@ -123,6 +140,8 @@ function ShiftBlock({
       >
         {shift.status === "draft" && <span className="hidden print:inline">仮</span>}
         <span>{circled(shift.headcount)}</span>
+        {/* 🔴 A表の人数欄の `K1R1`（2026-10-08・必要人数の内数） */}
+        {jobCountsMark(shift) && <span className="font-mono">{jobCountsMark(shift)}</span>}
         <span>{formatTime(shift.start_h, shift.start_m)}</span>
         {shift.cancelled_at !== null && <span className="font-normal text-rose-600">中止</span>}
       </Link>

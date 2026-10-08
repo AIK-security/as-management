@@ -11,7 +11,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
 import { fetchAll } from "@/lib/fetch-all";
-import { foldQuals } from "@/lib/qual-labels";
+import { foldQuals, lacksJobQual } from "@/lib/qual-labels";
 // 🔴 内部でも使う。再エクスポートしただけでは同一モジュール内から参照できない
 import {
   GROUP_WORK_KINDS,
@@ -23,6 +23,7 @@ import {
   formatSpanPlace,
   todayInJst,
   type BoardShiftGroup,
+  jobShortages,
 } from "@/lib/board-format";
 import { findOverlaps } from "@/lib/overlap";
 import type {
@@ -199,6 +200,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .from("shifts")
       .select(
         `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
+       kentei_count, train_count, driver_count,
        start_h, start_m, end_h, end_m, break_min,
        plan_comment, billing_note, status, cancelled_at,
        site:sites!inner (
@@ -254,7 +256,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     supabase
       .from("assignments")
       .select(
-        `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
+        `id, guard_id, work_date, kind, shift_id, role, job_type, is_long_distance, position,
        off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
        shift:shifts ( work_kind )`,
       )
@@ -369,6 +371,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   const guardById = new Map(guards.map((g) => [g.id, g]));
   const companyById = new Map(companies.map((c) => [c.id, c]));
   const qualById = new Map(qualifications.map((q) => [q.id, q]));
+  const hasKenteiMaster = qualifications.some((q) => q.category === "kentei");
 
   const qualIdsByGuard = new Map<string, string[]>();
   for (const gq of guardQuals) {
@@ -430,6 +433,8 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
         guard,
         qualLabels: foldQuals(qualIds, qualById, { kind: "site", required: requiredIds }).labels,
         role: a.role,
+        jobType: a.job_type,
+        jobQualMissing: lacksJobQual(a.job_type, qualIds, qualById, requiredIds, hasKenteiMaster),
         experienced: experienced.has(`${guard.id}:${site.id}`),
         ngReasons: ngReasonsFor(ngEntries, guardById, guard.id, site.id, coAssignedGuardIds),
         isPartner: company?.kind === "partner",
@@ -459,6 +464,15 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
         kind: "shortage",
         message: `${site.name}：必要${shift.headcount}に対し${plates.length}名（${shift.headcount - plates.length}名不足）`,
       });
+    }
+    // 🔴 A表の `K1R1`（2026-10-08）。必要数に対し、その職種を付けた人が足りない
+    if (!cancelled) {
+      for (const j of jobShortages(shift, plates)) {
+        warnings.push({
+          kind: "qualification",
+          message: `${site.name}：${j.label} 必要${j.need}に対し${j.have}名`,
+        });
+      }
     }
     for (const q of cancelled ? [] : missingQualifications) {
       warnings.push({

@@ -43,13 +43,14 @@ import {
   moveAssignment,
   placeGuard,
   setAssignmentRole,
+  setAssignmentJobType,
   deleteShift,
   setShiftCancelled,
   setShiftStatus,
   unplaceAssignment,
   type ActionResult,
 } from "@/app/board/actions";
-import type { AssignmentRole, GuardView, PlateView, ShiftRow } from "@/lib/types";
+import type { AssignmentRole, GuardView, JobType, PlateView, ShiftRow } from "@/lib/types";
 import { callAction } from "@/lib/action-call";
 
 // ─────────────────────────────────────────────────────────
@@ -67,6 +68,8 @@ type Move =
   | { type: "unplace"; assignmentId: string }
   /** 隊長の付け外し */
   | { type: "role"; assignmentId: string; role: AssignmentRole }
+  /** 職種（K・R・D）の付け外し（2026-10-08） */
+  | { type: "job"; assignmentId: string; jobType: JobType | null }
   | { type: "status"; shiftId: string; status: "draft" | "confirmed" }
   /** 枠の中止／取り消し（2026-09-07） */
   | { type: "cancel"; shiftId: string; cancelled: boolean }
@@ -103,6 +106,8 @@ function reduce(state: BoardState, move: Move): BoardState {
         guard: view.guard,
         qualLabels: view.qualLabels,
         role: "member",
+        jobType: null,
+        jobQualMissing: false,
         // 経験・NG はサーバでしか分からない。再取得で正しい値に置き換わる
         experienced: false,
         ngReasons: [],
@@ -160,6 +165,18 @@ function reduce(state: BoardState, move: Move): BoardState {
           ...r,
           plates: r.plates.map((p) =>
             p.assignmentId === move.assignmentId ? { ...p, role: move.role } : p,
+          ),
+        })),
+      };
+
+    // 🔴 資格が足りるか（jobQualMissing）はサーバでしか分からない。再取得で正しい値になる
+    case "job":
+      return {
+        pool: state.pool,
+        rows: state.rows.map((r) => ({
+          ...r,
+          plates: r.plates.map((p) =>
+            p.assignmentId === move.assignmentId ? { ...p, jobType: move.jobType } : p,
           ),
         })),
       };
@@ -532,6 +549,7 @@ export function BoardDnd({
       run({ type: "unplace", assignmentId }, () => unplaceAssignment({ assignmentId })),
     onSetRole: (assignmentId, role) =>
       run({ type: "role", assignmentId, role }, () => setAssignmentRole({ assignmentId, role })),
+    onSetJobType: handleSetJobType,
     onConfirm: (shiftId) => handleToggleStatus(shiftId, "confirmed"),
   });
 
@@ -542,6 +560,12 @@ export function BoardDnd({
 
   function handleSetRole(assignmentId: string, role: AssignmentRole) {
     run({ type: "role", assignmentId, role }, () => setAssignmentRole({ assignmentId, role }));
+  }
+
+  function handleSetJobType(assignmentId: string, jobType: JobType | null) {
+    run({ type: "job", assignmentId, jobType }, () =>
+      setAssignmentJobType({ assignmentId, jobType }),
+    );
   }
 
   return (
@@ -610,6 +634,7 @@ export function BoardDnd({
                   onEdit={setEditingShiftId}
                   onSelect={handleSelect}
                   onSetRole={handleSetRole}
+                  onSetJobType={handleSetJobType}
                 />
               ))}
             </div>

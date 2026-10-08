@@ -16,7 +16,8 @@
 import { useEffect, useState } from "react";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
 import { updateShift } from "@/app/board/actions";
-import type { Shift, WorkKind } from "@/lib/types";
+import type { JobCounts, Shift, WorkKind } from "@/lib/types";
+import { JobCountsInput } from "@/components/board/JobCountsInput";
 import { callAction } from "@/lib/action-call";
 
 const FIELD =
@@ -40,6 +41,11 @@ export function ShiftEditDialog({
   const [endM, setEndM] = useState(shift.end_m);
   const [breakMin, setBreakMin] = useState(shift.break_min);
   const [headcount, setHeadcount] = useState(shift.headcount);
+  const [jobCounts, setJobCounts] = useState<JobCounts>({
+    kentei: shift.kentei_count,
+    train: shift.train_count,
+    driver: shift.driver_count,
+  });
   const [planComment, setPlanComment] = useState(shift.plan_comment ?? "");
   const [billingNote, setBillingNote] = useState(shift.billing_note ?? "");
 
@@ -62,6 +68,7 @@ export function ShiftEditDialog({
       shiftId: shift.id,
       workKind,
       headcount,
+      jobCounts,
       startH,
       startM,
       endH,
@@ -167,6 +174,8 @@ export function ShiftEditDialog({
               className={FIELD + " w-16 text-right font-mono"}
             />
           </label>
+
+          <JobCountsInput value={jobCounts} onChange={setJobCounts} headcount={headcount} />
 
         </div>
 

@@ -36,6 +36,7 @@ import { findOverlaps } from "@/lib/overlap";
 import type {
   Assignment,
   AssignmentRole,
+  JobType,
   Company,
   Customer,
   Guard,
@@ -52,6 +53,8 @@ export type WeekPlate = {
   guard: Guard;
   qualLabels: string[];
   role: AssignmentRole;
+  /** 職種（K・R・D）。null＝交通誘導 */
+  jobType: JobType | null;
   isPartner: boolean;
   /**
    * 🔴 同じ隊員が同じ時間帯の別の枠にもいる。
@@ -187,6 +190,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         .from("shifts")
         .select(
           `id, site_id, work_date, jurisdiction_id, work_kind, headcount,
+         kentei_count, train_count, driver_count,
          start_h, start_m, end_h, end_m, break_min,
          plan_comment, billing_note, status, cancelled_at,
          site:sites!inner (
@@ -208,7 +212,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         supabase
           .from("assignments")
           .select(
-            `id, guard_id, work_date, kind, shift_id, role, is_long_distance, position,
+            `id, guard_id, work_date, kind, shift_id, role, job_type, is_long_distance, position,
            off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
            planned_start_at, planned_end_at`,
           )
@@ -336,6 +340,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
           guard,
           qualLabels: qualLabelsOf(guard.id),
           role: a.role,
+          jobType: a.job_type,
           isPartner: isPartnerOf(guard),
           overlapping: overlapIds.has(a.id),
         };

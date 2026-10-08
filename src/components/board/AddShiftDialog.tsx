@@ -19,7 +19,8 @@ import { addShift } from "@/app/board/actions";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
 import { addDays } from "@/lib/board-format";
 import type { BoardShiftGroup, SitePick } from "@/lib/board";
-import type { WorkKind } from "@/lib/types";
+import type { JobCounts, WorkKind } from "@/lib/types";
+import { JobCountsInput } from "@/components/board/JobCountsInput";
 import { callAction } from "@/lib/action-call";
 import { HEADER_BTN } from "@/components/board/header-ui";
 
@@ -61,6 +62,7 @@ export function AddShiftDialog({
   const [endM, setEndM] = useState(0);
   const [breakMin, setBreakMin] = useState(60);
   const [headcount, setHeadcount] = useState(1);
+  const [jobCounts, setJobCounts] = useState<JobCounts>({ kentei: 0, train: 0, driver: 0 });
   // 🔴 2026-09-09 追加。現行の入力UI（`管制雛形` D〜U列）にあって無かった項目。
   //   これが無いと、作った枠を直すのにマスタまで行くしかなかった。
   const [planComment, setPlanComment] = useState("");
@@ -149,6 +151,7 @@ export function AddShiftDialog({
       endM,
       breakMin,
       headcount,
+      jobCounts,
       planComment,
       billingNote,
     }));
@@ -459,6 +462,7 @@ export function AddShiftDialog({
             />
           </label>
 
+          <JobCountsInput value={jobCounts} onChange={setJobCounts} headcount={headcount} />
         </div>
 
         {/* 🔴 予定コメントと請求備考は手入力（現場マスタには無い）。

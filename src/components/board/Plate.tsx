@@ -25,7 +25,7 @@ import { useRouter } from "next/navigation";
 import { useDraggable } from "@dnd-kit/core";
 import type { GuardView, PlateView } from "@/lib/types";
 import { TRAIN_PREFIX } from "@/lib/qual-labels";
-import { plateName } from "@/lib/board-format";
+import { JOB_TYPE_LABEL, JOB_TYPE_MARK, plateName } from "@/lib/board-format";
 
 // 🔴 隊長だけバッジを出す。「それ以外」は何も出さない（2026-09-02）。
 //   全員に何かを出すと、出ていること自体が情報でなくなる。
@@ -114,6 +114,25 @@ export function Plate({ plate }: { plate: PlateView }) {
             title="隊長"
           >
             {ROLE_LABEL[plate.role]}
+          </span>
+        )}
+        {/* 🔴 職種（2026-10-08）。隊長と同じ濃い地。A表と同じ K・R・D。
+            資格の登録が無ければ amber（警告）にする。止めはしない */}
+        {plate.jobType && (
+          <span
+            className={[
+              "t-badge shrink-0 rounded px-1 leading-4",
+              plate.jobQualMissing
+                ? "border border-amber-500 bg-amber-50 text-amber-800"
+                : "bg-slate-700 text-white",
+            ].join(" ")}
+            title={
+              JOB_TYPE_LABEL[plate.jobType] +
+              (plate.jobQualMissing ? "（この人には資格の登録がありません）" : "")
+            }
+          >
+            {JOB_TYPE_MARK[plate.jobType]}
+            {plate.jobQualMissing && "!"}
           </span>
         )}
         {quals.map((q) => (
