@@ -16,8 +16,9 @@
   ・休み・内勤・教育など現場ではない行（過去の休みは使い道が無い ─ 10/2 柴山）
   ・「応援」プレート（協力会社のまとめ枠。新システムは協力会社を個人で持つため）
 
-🔴 区分「夜勤」（A／B の無いもの）は開始時刻で振り分ける
-  夜A＝23:00 より前に開始／夜B＝23:00 以降（as-genjo-kansei.md §4-4）。
+🔴 区分「夜勤」（A／B の無いもの）は夜A として入れる
+  管制の答え（2026-10-08）：「夜勤（夜勤管制）は A夜勤と同じ」。
+  7〜9月分は開始時刻で振り分けていた（23:00 以降に始まるものは夜B）。取込済みの分は直していない。
 
 🔴 これは「一度きりの初期データ作成」。scripts/extract-sites.py と同じく開発ツール。
   出力は Git に入れない（local/ は .gitignore 済み）。実名・現場名が入るため。
@@ -56,7 +57,6 @@ SML = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 REL_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 EMU_PER_PT = 12700
 PLATE_COLS = (18, 19, 20)          # S/T/U（0始まり）
-NIGHT_A_BEFORE = 23 * 60           # 23:00 より前に始まる夜勤は夜A
 
 KIND_MAP = {
     "日勤": "day", "日": "day",
@@ -223,13 +223,8 @@ def main():
                 sh, sm = to_int(r[es.C_SH]), to_int(r[es.C_SM]) or 0
                 eh, em = to_int(r[es.C_EH]), to_int(r[es.C_EM]) or 0
                 if raw_kind in NIGHT_UNSPLIT:
-                    if sh is None:
-                        kind = "nightA"
-                    else:
-                        # 0〜11時に始まる夜勤は「翌日の深夜」＝23:00 以降の扱い
-                        start = sh * 60 + sm + (24 * 60 if sh < 12 else 0)
-                        kind = "nightA" if start < NIGHT_A_BEFORE else "nightB"
-                    stat["夜勤 → %s" % kind] += 1
+                    kind = "nightA"
+                    stat["夜勤 → nightA"] += 1
                 else:
                     kind = KIND_MAP.get(raw_kind)
                 if kind is None:
