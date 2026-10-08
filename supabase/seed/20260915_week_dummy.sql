@@ -54,7 +54,6 @@ begin
     for s in
       select st.id,
              st.jurisdiction_id,
-             st.band_name,
              coalesce(st.plan_start_h, 8)  as sh,
              coalesce(st.plan_start_m, 0)  as sm,
              coalesce(st.plan_end_h,  17)  as eh,
@@ -83,13 +82,12 @@ begin
       insert into public.shifts (
         site_id, work_date, jurisdiction_id, work_kind, headcount,
         start_h, start_m, end_h, end_m, break_min,
-        band_name, plan_comment, billing_note, status
+        plan_comment, billing_note, status
       ) values (
         s.id, d, s.jurisdiction_id, v_kind, need,
         case when v_kind = 'nightA' then 20 else s.sh end, s.sm,
         case when v_kind = 'nightA' then  6 else s.eh end, s.em,
         s.bk,
-        s.band_name,
         null,
         '[週ダミー]',
         -- 🔴 ここでは必ず draft で作る。確定にするのは**配置を入れ終わってから**
