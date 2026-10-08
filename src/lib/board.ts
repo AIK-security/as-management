@@ -451,13 +451,17 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     const held = new Set(
       rowAssignments.flatMap((a) => qualIdsByGuard.get(a.guard_id) ?? []),
     );
+    const shift = toShift(raw);
+
+    // 🔴 列車見張は**その日の枠に R（列車の人数）が入っているときだけ**見る（2026-10-08）。
+    //   「たまに要る」現場（藤沢・海老名など）では、要らない日にも毎日「資格不足」が出ていた。
+    //   A表でも要る日にだけ R1 と書く。現場の「必要な資格」は、名札に出す会社と R! の判定に使う
     const missingQualifications = site.site_required_qualifications
       .map((r) => r.qualification_id)
       .filter((id) => !held.has(id))
       .map((id) => qualById.get(id))
-      .filter((q): q is Qualification => Boolean(q));
-
-    const shift = toShift(raw);
+      .filter((q): q is Qualification => Boolean(q))
+      .filter((q) => q.category !== "train" || shift.train_count > 0);
 
     // 🔴 中止の枠は警告を出さない。誰も稼働しないので「不足」も「資格」も意味を持たない。
     //   ここで消さないと、中止にした瞬間に⚠要確認が増える＝中止にするほど画面が汚れる。
