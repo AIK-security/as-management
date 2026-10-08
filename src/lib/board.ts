@@ -371,7 +371,6 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
   const guardById = new Map(guards.map((g) => [g.id, g]));
   const companyById = new Map(companies.map((c) => [c.id, c]));
   const qualById = new Map(qualifications.map((q) => [q.id, q]));
-  const hasKenteiMaster = qualifications.some((q) => q.category === "kentei");
 
   const qualIdsByGuard = new Map<string, string[]>();
   for (const gq of guardQuals) {
@@ -379,6 +378,12 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     list.push(gq.qualification_id);
     qualIdsByGuard.set(gq.guard_id, list);
   }
+  // 🔴 検定の資格を持つ隊員が**1人もいない**なら、検定の判定はしない（2026-10-08）。
+  //   本番は交1・交2 の持ち主が 0名（検定の一覧をまだ受け取っていない）。
+  //   判定すると K を付けた名札が全員「K!」になり、印が意味を失う。取り込めば自動で効き始める
+  const hasKenteiMaster = guardQuals.some(
+    (gq) => qualById.get(gq.qualification_id)?.category === "kentei",
+  );
 
   // ── 経験（★）── 取得は上の Promise.all 済み。ここは組み立てるだけ
   const experienced = new Set<string>();
