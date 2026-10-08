@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteCustomer, updateCustomer } from "@/app/masters/customers/actions";
 import type { CustomerDetail, CustomerRefs } from "@/lib/masters";
+import type { ASheet } from "@/lib/types";
 import { FIELD, Field, Section } from "@/components/masters/FormBits";
 import { callAction } from "@/lib/action-call";
 
@@ -34,6 +35,7 @@ export function CustomerEditForm({
   const [billingName, setBillingName] = useState(customer.billing_name ?? "");
   const [jurisdictionId, setJurisdictionId] = useState(customer.jurisdiction_id ?? "");
   const [departmentId, setDepartmentId] = useState(customer.department_id ?? "");
+  const [aSheet, setASheet] = useState<ASheet>(customer.a_sheet);
 
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -64,6 +66,7 @@ export function CustomerEditForm({
       billingName,
       jurisdictionId,
       departmentId,
+      aSheet,
     }));
     setPending(false);
     if (!r.ok) {
@@ -230,6 +233,18 @@ export function CustomerEditForm({
                     {j.name}
                   </option>
                 ))}
+              </select>
+            </Field>
+            {/* 🔴 A表の紙（2026-10-08）。神奈川支部の紙は得意先で分けている（管制）。
+                管轄とは別 ─ 神奈川の紙に東京の現場も載る。週表の分け方にだけ使う */}
+            <Field label="A表の紙" hint="週表を東京本部／神奈川支部に分ける">
+              <select
+                value={aSheet}
+                onChange={(e) => edit(setASheet)(e.target.value as ASheet)}
+                className={FIELD}
+              >
+                <option value="tokyo">東京本部</option>
+                <option value="kanagawa">神奈川支部</option>
               </select>
             </Field>
             <Field label="部署">

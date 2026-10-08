@@ -14,6 +14,7 @@
 //   （配置ボードの現場候補は全件送りのままで、実データ移行時の宿題として残っている）。
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import type { ASheet } from "@/lib/types";
 
 /** 1ページの件数。密度優先（共通デザインルール）で多めに出す。 */
 export const PAGE_SIZE = 50;
@@ -770,6 +771,7 @@ export type CustomerDetail = {
   billing_name: string | null;
   jurisdiction_id: string | null;
   department_id: string | null;
+  a_sheet: ASheet;
 };
 
 export async function getCustomer(id: string): Promise<CustomerDetail | null> {
@@ -778,7 +780,7 @@ export async function getCustomer(id: string): Promise<CustomerDetail | null> {
     .from("customers")
     .select(
       `id, staff_code, name, name_kana, contact_name, billing_no, billing_name,
-       jurisdiction_id, department_id`,
+       jurisdiction_id, department_id, a_sheet`,
     )
     .eq("id", id)
     .maybeSingle();

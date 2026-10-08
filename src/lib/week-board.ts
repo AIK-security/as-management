@@ -36,6 +36,7 @@ import { findOverlaps } from "@/lib/overlap";
 import type {
   Assignment,
   AssignmentRole,
+  ASheet,
   JobType,
   Company,
   Customer,
@@ -92,6 +93,8 @@ export type WeekSiteRow = {
 /** 得意先ごとのまとまり。A表の実物が得意先で束ねている（2026-09-09 実物解析） */
 export type WeekGroup = {
   customer: Customer | null;
+  /** A表の紙（2026-10-08）。得意先から引く。得意先が無ければ東京本部 */
+  sheet: ASheet;
   rows: WeekSiteRow[];
 };
 
@@ -121,6 +124,13 @@ export type WeekBoardData = {
   jurisdiction: Jurisdiction;
   jurisdictions: Jurisdiction[];
   group: BoardShiftGroup;
+  /**
+   * 🔴 いま見ている A表の紙（2026-10-08）。日勤だけ東京本部／神奈川支部で分ける。
+   *   夜勤は1枚に上下で並べる（A表の実物）ので null。
+   */
+  sheet: ASheet | null;
+  /** その週に神奈川支部の得意先の枠があるか。無ければ切り替えを出さない（見やすさ優先） */
+  hasKanagawa: boolean;
   groups: WeekGroup[];
   offRows: WeekOffRow[];
   pool: WeekPoolGuard[];
@@ -134,6 +144,8 @@ export type WeekBoardParams = {
   baseDate?: string;
   jurisdictionCode?: string;
   group?: BoardShiftGroup;
+  /** 日勤で見る A表の紙。省略時は東京本部 */
+  sheet?: ASheet;
 };
 
 /**
@@ -197,7 +209,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
          plan_comment, billing_note, status, cancelled_at,
          site:sites!inner (
            id, site_code, name, short_name, customer_id, jurisdiction_id,
-           customer:customers ( id, staff_code, name, name_kana )
+           customer:customers ( id, staff_code, name, name_kana, a_sheet )
          )`,
         )
         .gte("work_date", startDate)
@@ -363,16 +375,27 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   const groupMap = new Map<string, WeekGroup>();
   for (const row of rowBySite.values()) {
     const key = row.customer?.id ?? "";
-    const g = groupMap.get(key) ?? { customer: row.customer, rows: [] };
+    const g =
+      groupMap.get(key) ??
+      { customer: row.customer, sheet: row.customer?.a_sheet ?? "tokyo", rows: [] };
     g.rows.push(row);
     groupMap.set(key, g);
   }
-  const groups = [...groupMap.values()]
-    .sort((a, b) => (a.customer?.name ?? "").localeCompare(b.customer?.name ?? "", "ja"))
+  const allGroups = [...groupMap.values()]
+    // 🔴 東京本部 → 神奈川支部 の順（夜勤は1枚に上下で並べる・A表の実物）。紙の中は得意先名順
+    .sort(
+      (a, b) =>
+        Number(a.sheet === "kanagawa") - Number(b.sheet === "kanagawa") ||
+        (a.customer?.name ?? "").localeCompare(b.customer?.name ?? "", "ja"),
+    )
     .map((g) => ({
       ...g,
       rows: g.rows.sort((a, b) => a.site.name.localeCompare(b.site.name, "ja")),
     }));
+  const hasKanagawa = allGroups.some((g) => g.sheet === "kanagawa");
+  // 🔴 日勤は紙を分ける（A表の実物：日勤は東京本部と神奈川支部で別の紙）。夜勤は分けない
+  const sheet: ASheet | null = group === "day" ? (params.sheet ?? "tokyo") : null;
+  const groups = sheet ? allGroups.filter((g) => g.sheet === sheet) : allGroups;
 
   // ── 業務外の行（研修・有給 など）────────────────────
   // 🔴 一部勤務可（2026-09-16）は行を分ける。
@@ -447,7 +470,8 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   let confirmed = 0;
   let shortage = 0;
   let overlap = 0;
-  for (const row of rowBySite.values()) {
+  // 🔴 数えるのは**いま見ている紙**の枠だけ（日勤で神奈川を見ているのに東京の未充足が出ないように）
+  for (const row of groups.flatMap((g) => g.rows)) {
     for (const cell of row.cells) {
       for (const s of cell.shifts) {
         if (s.shift.status === "confirmed") confirmed += 1;
@@ -465,6 +489,8 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     jurisdiction,
     jurisdictions,
     group,
+    sheet,
+    hasKanagawa,
     groups,
     offRows,
     pool,
@@ -485,6 +511,8 @@ function emptyWeek(
     jurisdiction: { id: "", code: "", name: "—", allow_cross_staff: true, allow_cross_site: true },
     jurisdictions: [],
     group,
+    sheet: group === "day" ? "tokyo" : null,
+    hasKanagawa: false,
     groups: [],
     offRows: [],
     pool: [],

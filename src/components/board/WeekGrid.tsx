@@ -23,6 +23,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import {
+  A_SHEET_LABEL,
   JOB_TYPE_LABEL,
   JOB_TYPE_MARK,
   dayTone,
@@ -311,8 +312,22 @@ export function WeekGrid({
         </thead>
 
         <tbody>
-          {data.groups.map((g) => (
+          {data.groups.map((g, gi) => (
             <Fragment key={g.customer?.id ?? "__none__"}>
+              {/* 🔴 夜勤は1枚に東京本部・神奈川支部を上下で並べる（A表の実物・2026-10-08）。
+                  紙が切り替わる所に1本だけ見出しを入れる。日勤は紙ごとに画面を分けているので出さない */}
+              {data.sheet === null &&
+                data.hasKanagawa &&
+                (gi === 0 || data.groups[gi - 1].sheet !== g.sheet) && (
+                  <tr>
+                    <th
+                      colSpan={8}
+                      className="sticky left-0 border border-slate-300 bg-slate-700 px-2 py-1 text-left text-[13px] font-semibold text-white print:static"
+                    >
+                      {A_SHEET_LABEL[g.sheet]}
+                    </th>
+                  </tr>
+                )}
               {/* 得意先の見出し。A表の実物が得意先で束ねている */}
               <tr>
                 <th

@@ -18,7 +18,7 @@ import { requireStaff, canEdit } from "@/lib/auth";
 import { WeekDnd } from "@/components/board/WeekDnd";
 import { PrintButton } from "@/components/PrintButton";
 import { addDays, formatWeekDay, startOfWeek, todayInJst, type BoardShiftGroup } from "@/lib/board";
-import { jstHm } from "@/lib/board-format";
+import { A_SHEET_LABEL, jstHm } from "@/lib/board-format";
 import { getWeekBoardData } from "@/lib/week-board";
 
 function CountChip({
@@ -52,7 +52,7 @@ function CountChip({
 export default async function WeekPage({
   searchParams,
 }: {
-  searchParams: Promise<{ group?: string; start?: string; base?: string; j?: string }>;
+  searchParams: Promise<{ group?: string; start?: string; base?: string; j?: string; sheet?: string }>;
 }) {
   // 🔴 事務ロールは閲覧のみ（requirements.md §3 決定 #2）。つかめないようにする
   const { profile } = await requireStaff();
@@ -70,13 +70,17 @@ export default async function WeekPage({
     baseDate: isIso(sp.base) ? sp.base : undefined,
     jurisdictionCode: sp.j,
     group,
+    sheet: sp.sheet === "kanagawa" ? "kanagawa" : "tokyo",
   });
 
   /** 現在の絞り込みを保ったまま、一部だけ差し替えた URL を作る */
-  const hrefWith = (patch: { start?: string; base?: string; group?: string; j?: string }) => {
+  const hrefWith = (patch: { start?: string; base?: string; group?: string; j?: string; sheet?: string }) => {
     const q = new URLSearchParams();
     q.set("start", patch.start ?? week.startDate);
     q.set("group", patch.group ?? group);
+    // 🔴 A表の紙（2026-10-08）。週を送っても同じ紙のまま見られるよう引き継ぐ
+    const sheet = patch.sheet ?? week.sheet;
+    if (sheet === "kanagawa") q.set("sheet", sheet);
     // 週を動かすときは基準日を引きずらない（別の週の日付になってしまう）
     if (patch.base) q.set("base", patch.base);
     else if (!patch.start) q.set("base", week.baseDate);
@@ -100,7 +104,9 @@ export default async function WeekPage({
   //   「いつの時点の表か」を必ず刷る。印刷した時刻ではなく**データを取った時刻**
   //   （画面を開いたまま後で刷ると、その間の変更は紙に載らない）。
   const printHeading = {
-    title: `A表（${group === "day" ? "日勤" : "夜勤"}）${
+    title: `A表（${group === "day" ? "日勤" : "夜勤"}${
+      week.sheet && week.hasKanagawa ? `・${A_SHEET_LABEL[week.sheet]}` : ""
+    }）${
       // 管轄が1つのあいだは出さない（s20-output-design.md §7）
       week.jurisdictions.length > 1 ? `　${week.jurisdiction.name}` : ""
     }　${formatWeekDay(week.startDate)} 〜 ${formatWeekDay(week.dates[6])}`,
@@ -172,6 +178,25 @@ export default async function WeekPage({
             </Link>
           ))}
         </div>
+
+        {/* 🔴 A表の紙（2026-10-08）。日勤だけ、神奈川支部の得意先があるときだけ出す（見やすさ優先）。
+            夜勤は1枚に上下で並べるので切り替えは要らない */}
+        {week.sheet && week.hasKanagawa && (
+          <div className="flex overflow-hidden rounded-md border-2 border-slate-300">
+            {(["tokyo", "kanagawa"] as const).map((s) => (
+              <Link
+                key={s}
+                href={hrefWith({ sheet: s })}
+                className={[
+                  "px-3 py-1 text-[15px] font-semibold transition-all duration-150 ease-in-out",
+                  s === week.sheet ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-100",
+                ].join(" ")}
+              >
+                {A_SHEET_LABEL[s]}
+              </Link>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <CountChip label="仮組み" value={week.counts.draft} tone="draft" />

@@ -62,7 +62,12 @@ export type Customer = {
   name: string;
   /** 五十音順に並べるためのフリガナ。無ければ name で代用する */
   name_kana: string | null;
+  /** 🔴 A表の紙（2026-10-08）。週表でだけ引く。他の画面の select には含めていない */
+  a_sheet?: ASheet;
 };
+
+/** A表の紙。日勤は東京本部と神奈川支部で別の紙（得意先で分ける・管制 2026-10-08） */
+export type ASheet = "tokyo" | "kanagawa";
 
 export type Site = {
   id: string;

@@ -14,7 +14,7 @@
 //
 // 🔴 ここには「取ってくる処理」を書かない。書いた時点で壁が意味を失う。
 
-import type { JobType, OffKind, Shift, WorkKind } from "@/lib/types";
+import type { ASheet, JobType, OffKind, Shift, WorkKind } from "@/lib/types";
 
 export type BoardShiftGroup = "day" | "night";
 
@@ -43,6 +43,9 @@ export const OFF_KIND_LABEL: Record<OffKind, string> = {
   office: "内勤",
   standby: "緊急対応要員",
 };
+
+/** A表の紙（2026-10-08）。日勤は東京本部と神奈川支部で別の紙 */
+export const A_SHEET_LABEL: Record<ASheet, string> = { tokyo: "東京本部", kanagawa: "神奈川支部" };
 
 // ─────────────────────────────────────────────────────────
 // 職種（2026-10-08）

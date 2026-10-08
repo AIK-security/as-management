@@ -52,6 +52,8 @@ export type CustomerInput = {
   billingName: string;
   jurisdictionId: string;
   departmentId: string;
+  /** A表の紙（2026-10-08） */
+  aSheet: "tokyo" | "kanagawa";
 };
 
 export async function updateCustomer(input: CustomerInput): Promise<ActionResult> {
@@ -75,6 +77,7 @@ export async function updateCustomer(input: CustomerInput): Promise<ActionResult
       // 管轄・部署は未設定を許す（customers は jurisdiction_id も nullable）
       jurisdiction_id: input.jurisdictionId || null,
       department_id: input.departmentId || null,
+      a_sheet: input.aSheet === "kanagawa" ? "kanagawa" : "tokyo",
     })
     .eq("id", input.id);
   if (error) return { ok: false, message: toMessage(error) };
