@@ -17,6 +17,7 @@
 import { refresh } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { DUTY_OFF_KINDS, OFF_KIND_LABEL } from "@/lib/board-format";
 import type { OffKind, OffWorkKind } from "@/lib/types";
 
 export type ActionResult = { ok: true } | { ok: false; message: string };
@@ -42,6 +43,25 @@ export async function setOff(input: {
   }
 
   const supabase = await createClient();
+
+  // 🔴 研修・健康診断・管制は休みではなく業務。この画面では入れず、消しもしない（2026-10-08）。
+  //   その日に入っていたら、休みを入れる前に止めて、週表で外すよう言う
+  if (input.offKind !== null && DUTY_OFF_KINDS.includes(input.offKind)) {
+    return { ok: false, message: "研修・健康診断・管制は週表（A表）の業務外の欄で入れてください。" };
+  }
+  const { data: duty, error: dErr } = await supabase
+    .from("assignments")
+    .select("off_kind")
+    .eq("guard_id", input.guardId)
+    .eq("work_date", input.workDate)
+    .eq("kind", "off")
+    .in("off_kind", DUTY_OFF_KINDS)
+    .limit(1);
+  if (dErr) return { ok: false, message: `確認できませんでした：${dErr.message}` };
+  if (duty && duty.length > 0) {
+    const label = OFF_KIND_LABEL[duty[0].off_kind as OffKind];
+    return { ok: false, message: `その日は「${label}」が入っています。週表（A表）の業務外の欄で外してから入れてください。` };
+  }
 
   // 🔴 消す範囲は kind='off' に限る。配置（'site'）や貸出（'lent_out'）まで消さない。
   function delOff() {

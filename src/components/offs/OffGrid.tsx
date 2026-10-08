@@ -89,9 +89,10 @@ type Paint = {
   offWorkKind: OffWorkKind | null;
 };
 
-// 🔴 第1弾はまず「休み」を入れられるようにした（9/16）。
-//   10/8：A表の下段の4つ（研修・健康診断・管制・振替休日）も入れられるようにした。
-//   A表にいつも欄があるのに、入れる手段が無かった（柴山）。並びは「休み」の後ろに「業務外」でまとめる
+// 🔴 ここで入れるのは**休みだけ**（2026-10-08）。
+//   A表の下段のうち、振替休日は休みなのでここ。研修・健康診断・管制は**業務**なので
+//   週表の業務外の欄へプールから引っぱって入れる（柴山「休みじゃないのに休みの画面で扱うのはおかしい」）。
+//   マスには今までどおり「研修」などと出る（休みを入れるときに、その日がふさがっていると分かるように）
 const PAINTS: Paint[] = [
   {
     key: "paid_leave",
@@ -118,15 +119,9 @@ const PAINTS: Paint[] = [
     offKind: "day_off",
     offWorkKind: "nightB",
   },
-  { key: "training", label: "研修", offKind: "training", offWorkKind: null },
-  { key: "medical", label: "健康診断", offKind: "medical", offWorkKind: null },
-  { key: "control", label: "管制", offKind: "control", offWorkKind: null },
   { key: "substitute_holiday", label: "振替休日", offKind: "substitute_holiday", offWorkKind: null },
   { key: "clear", label: "消す", offKind: null, offWorkKind: null },
 ];
-
-/** ここから先が「業務外」（見出しを挟んで分ける） */
-const FIRST_NON_LEAVE = "training";
 
 const WEEK_LABEL = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -238,9 +233,6 @@ export function OffGrid({
             <div className="flex shrink-0 flex-wrap gap-1">
               {PAINTS.map((p) => (
                 <Fragment key={p.key}>
-                {p.key === FIRST_NON_LEAVE && (
-                  <span className="t-meta ml-2 self-center text-slate-400">業務外</span>
-                )}
                 {p.key === "clear" && <span className="ml-2" />}
                 <button
                   key={p.key}

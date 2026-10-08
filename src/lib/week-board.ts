@@ -103,7 +103,10 @@ export type WeekGroup = {
 export type WeekOffRow = {
   offKind: OffKind;
   label: string;
-  cells: { date: string; guards: Guard[] }[];
+  /** 🔴 終日の行か（一部勤務可の行は false）。週表で入れられるのは終日の業務だけ */
+  allDay: boolean;
+  /** guards と assignmentIds は同じ並び。assignmentIds は週表から外すときに使う */
+  cells: { date: string; guards: Guard[]; assignmentIds: string[] }[];
 };
 
 /** プールの隊員。🔴 週の稼働日数を持つのが日別との違い（設計 §7-2-4） */
@@ -403,7 +406,13 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   //   「有給」と「有給（夜A）」を同じ行に混ぜると、
   //   その日その隊員が**出られるのか出られないのか**が週表から読めなくなる。
   //   キーは区分まで含める（offKind だけだと一部と終日が同じ行に落ちる）。
-  const offMap = new Map<string, { offKind: OffKind; label: string; byDate: Map<string, Guard[]> }>();
+  type OffEntryRow = {
+    offKind: OffKind;
+    label: string;
+    allDay: boolean;
+    byDate: Map<string, { guard: Guard; assignmentId: string }[]>;
+  };
+  const offMap = new Map<string, OffEntryRow>();
   for (const a of assignments) {
     if (a.kind !== "off" || !a.off_kind) continue;
     const guard = guardById.get(a.guard_id);
@@ -415,10 +424,11 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
       {
         offKind: a.off_kind,
         label: a.off_work_kind ? `${base}（${WORK_KIND_LABEL[a.off_work_kind]}）` : base,
-        byDate: new Map<string, Guard[]>(),
+        allDay: a.off_work_kind === null,
+        byDate: new Map(),
       };
     const list = entry.byDate.get(a.work_date) ?? [];
-    list.push(guard);
+    list.push({ guard, assignmentId: a.id });
     entry.byDate.set(a.work_date, list);
     offMap.set(key, entry);
   }
@@ -426,7 +436,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
   for (const kind of A_SHEET_OFF_KINDS) {
     const key = `${kind}:`;
     if (!offMap.has(key)) {
-      offMap.set(key, { offKind: kind, label: OFF_KIND_LABEL[kind], byDate: new Map() });
+      offMap.set(key, { offKind: kind, label: OFF_KIND_LABEL[kind], allDay: true, byDate: new Map() });
     }
   }
   // 並び：A表の5つ（その順・区分つきはそれぞれの直後）→ それ以外（名前順）
@@ -435,10 +445,14 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     return i === -1 ? A_SHEET_OFF_KINDS.length : i;
   };
   const offRows: WeekOffRow[] = [...offMap.values()]
-    .map(({ offKind, label, byDate }) => ({
+    .map(({ offKind, label, allDay, byDate }) => ({
       offKind,
       label,
-      cells: dates.map((d) => ({ date: d, guards: byDate.get(d) ?? [] })),
+      allDay,
+      cells: dates.map((d) => {
+        const list = byDate.get(d) ?? [];
+        return { date: d, guards: list.map((x) => x.guard), assignmentIds: list.map((x) => x.assignmentId) };
+      }),
     }))
     .sort(
       (a, b) =>

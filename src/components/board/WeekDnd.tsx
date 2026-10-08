@@ -1,7 +1,8 @@
 // S-07 A表（週表）の D&D。設計は docs/screen-design.md §7-2-4／§7-2-5。
 //
-// 🔴 Server Action は1本も書き足していない。
+// 🔴 現場の配置は Server Action を書き足していない。
 //   placeGuard / moveAssignment / unplaceAssignment をそのまま使う。
+//   （業務外の研修・健康診断・管制だけは placeDuty / removeDuty ─ 2026-10-08）
 //   **日をまたぐ移動も既存のままで成立する** ─ assignments_fill_planned_times
 //   （20260903000000）が `before update of shift_id` で発火し、
 //   `new.work_date := s.work_date` で日付を枠に合わせるため。
@@ -34,10 +35,13 @@ import {
 } from "@dnd-kit/core";
 import {
   moveAssignment,
+  placeDuty,
   placeGuard,
+  removeDuty,
   unplaceAssignment,
   type ActionResult,
 } from "@/app/board/actions";
+import type { Guard, OffKind } from "@/lib/types";
 import { callAction } from "@/lib/action-call";
 import { formatWeekDay, plateName } from "@/lib/board-format";
 import { PoolPane } from "@/components/board/BoardPanes";
@@ -133,6 +137,9 @@ export function WeekDnd({
     } else if (d.type === "plate") {
       const p = d.plate as WeekPlate;
       setDragging({ label: p.guard.short_name || p.guard.name });
+    } else if (d.type === "dutyPlate") {
+      const g = d.guard as Guard;
+      setDragging({ label: g.short_name || g.name });
     }
   }
 
@@ -163,6 +170,29 @@ export function WeekDnd({
           position: over.plateCount as number,
         }),
       );
+      return;
+    }
+
+    // 🔴 業務外（研修・健康診断・管制）。2026-10-08
+    // プール → 業務外の欄
+    if (active.type === "pool" && over.type === "duty") {
+      const guardId = (active.pool as WeekPoolGuard).guard.id;
+      run(() => placeDuty({ guardId, workDate: over.date as string, offKind: over.offKind as OffKind }));
+      return;
+    }
+    // 業務外の欄 → プール（外す）
+    if (active.type === "dutyPlate" && over.type === "pool") {
+      run(() => removeDuty({ assignmentId: active.assignmentId as string }));
+      return;
+    }
+    // 業務外の欄 → 別の業務外の欄（日や種類を変える）。外してから入れ直す
+    if (active.type === "dutyPlate" && over.type === "duty") {
+      const guardId = (active.guard as Guard).id;
+      run(async () => {
+        const r = await removeDuty({ assignmentId: active.assignmentId as string });
+        if (!r.ok) return r;
+        return placeDuty({ guardId, workDate: over.date as string, offKind: over.offKind as OffKind });
+      });
       return;
     }
 

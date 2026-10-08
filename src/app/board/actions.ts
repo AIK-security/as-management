@@ -18,7 +18,13 @@
 
 import { refresh } from "next/cache";
 import { requireRole } from "@/lib/auth";
-import { addDays, formatSpanPlace, OFF_KIND_LABEL, WORK_KIND_LABEL } from "@/lib/board-format";
+import {
+  addDays,
+  DUTY_OFF_KINDS,
+  formatSpanPlace,
+  OFF_KIND_LABEL,
+  WORK_KIND_LABEL,
+} from "@/lib/board-format";
 import { findOverlaps, type Span } from "@/lib/overlap";
 import { createClient } from "@/lib/supabase/server";
 import type { JobCounts, JobType, OffKind, OffWorkKind, WorkKind } from "@/lib/types";
@@ -290,6 +296,77 @@ export async function setAssignmentJobType(input: {
     .from("assignments")
     .update({ job_type: input.jobType })
     .eq("id", input.assignmentId);
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 業務外の業務（研修・健康診断・管制）を週表から入れる／外す（2026-10-08）
+//
+// 🔴 休みではなく業務なので、休みの画面ではなく週表の業務外の欄で扱う（柴山）。
+//   紙の A表でもこの欄に名前を書いている。保存先は休みと同じ assignments（kind='off'）。
+// 🔴 その日に現場の配置・応援・ほかの休みがあれば入れない。研修と現場に同じ人がいる状態を作らない
+// ─────────────────────────────────────────────────────────
+export async function placeDuty(input: {
+  guardId: string;
+  workDate: string;
+  offKind: OffKind;
+}): Promise<ActionResult> {
+  const supabase = await editorClient();
+
+  if (!DUTY_OFF_KINDS.includes(input.offKind)) {
+    return { ok: false, message: "ここで入れられるのは研修・健康診断・管制だけです。休みは休みの画面で入れてください。" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.workDate)) {
+    return { ok: false, message: "日付を選んでください。" };
+  }
+
+  const { data: same, error: sErr } = await supabase
+    .from("assignments")
+    .select("kind, off_kind, shift:shifts ( site:sites ( short_name ) )")
+    .eq("guard_id", input.guardId)
+    .eq("work_date", input.workDate)
+    .eq("status", "planned");
+  if (sErr) return { ok: false, message: toMessage(sErr) };
+
+  type SameDay = { kind: string; off_kind: OffKind | null; shift: { site: { short_name: string } | null } | null };
+  for (const a of (same ?? []) as unknown as SameDay[]) {
+    if (a.kind === "off" && a.off_kind === input.offKind) return { ok: true }; // もう入っている
+    if (a.kind === "site") {
+      return { ok: false, message: `その日は現場（${a.shift?.site?.short_name ?? "別の現場"}）に配置されています。先に外してください。` };
+    }
+    if (a.kind === "lent_out") return { ok: false, message: "その日は応援に出ています。" };
+    if (a.kind === "off" && a.off_kind) {
+      return { ok: false, message: `その日は「${OFF_KIND_LABEL[a.off_kind]}」が入っています。` };
+    }
+  }
+
+  const { error } = await supabase.from("assignments").insert({
+    guard_id: input.guardId,
+    work_date: input.workDate,
+    kind: "off",
+    off_kind: input.offKind,
+    off_work_kind: null,
+    status: "planned",
+  });
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+export async function removeDuty(input: { assignmentId: string }): Promise<ActionResult> {
+  const supabase = await editorClient();
+
+  // 🔴 消すのは研修・健康診断・管制だけ。有給などの休みを週表から消せないようにする
+  const { error } = await supabase
+    .from("assignments")
+    .delete()
+    .eq("id", input.assignmentId)
+    .eq("kind", "off")
+    .in("off_kind", DUTY_OFF_KINDS);
   if (error) return { ok: false, message: toMessage(error) };
 
   refresh();

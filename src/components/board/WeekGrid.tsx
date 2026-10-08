@@ -24,6 +24,7 @@ import Link from "next/link";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import {
   A_SHEET_LABEL,
+  DUTY_OFF_KINDS,
   JOB_TYPE_LABEL,
   JOB_TYPE_MARK,
   dayTone,
@@ -32,7 +33,8 @@ import {
   jobCountsMark,
   plateName,
 } from "@/lib/board-format";
-import type { WeekBoardData, WeekCell, WeekCellShift, WeekPlate } from "@/lib/week-board";
+import type { WeekBoardData, WeekCell, WeekCellShift, WeekOffRow, WeekPlate } from "@/lib/week-board";
+import type { Guard, OffKind } from "@/lib/types";
 
 /**
  * A表の書式に合わせた丸囲み数字（①②③…）。
@@ -378,7 +380,12 @@ export function WeekGrid({
                   >
                     {row.label}
                   </th>
-                  {row.cells.map((c) => (
+                  {row.cells.map((c) =>
+                    // 🔴 研修・健康診断・管制は、ここへプールから引っぱって入れる（2026-10-08）。
+                    //   休みではなく業務なので、休みの画面ではなく A表の欄で扱う（柴山）
+                    editable && row.allDay && DUTY_OFF_KINDS.includes(row.offKind) ? (
+                      <DutyCell key={c.date} offKind={row.offKind} cell={c} />
+                    ) : (
                     <td
                       key={c.date}
                       className={`border border-slate-200 px-1.5 py-1 align-top text-[13px] ${dayTone(c.date)}`}
@@ -397,7 +404,8 @@ export function WeekGrid({
                         ))
                       )}
                     </td>
-                  ))}
+                    ),
+                  )}
                 </tr>
               ))}
             </>
@@ -433,3 +441,55 @@ export function WeekGrid({
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────
+// 業務外の欄（研修・健康診断・管制）のマス。ここが落とし先（2026-10-08）
+// ─────────────────────────────────────────────────────────
+function DutyCell({ offKind, cell }: { offKind: OffKind; cell: WeekOffRow["cells"][number] }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `duty-${offKind}-${cell.date}`,
+    data: { type: "duty", offKind, date: cell.date },
+  });
+  return (
+    <td
+      ref={setNodeRef}
+      className={[
+        "border border-slate-200 px-1.5 py-1 align-top text-[13px]",
+        dayTone(cell.date),
+        // 🔴 落とせる場所であることを、落とす前に見せる（枠と同じ藍）
+        isOver ? "outline outline-2 -outline-offset-2 outline-indigo-500" : "",
+      ].join(" ")}
+    >
+      {cell.guards.length === 0 ? (
+        <span className="block text-center text-slate-300">—</span>
+      ) : (
+        cell.guards.map((g, i) => (
+          <DutyName key={cell.assignmentIds[i]} guard={g} assignmentId={cell.assignmentIds[i]} />
+        ))
+      )}
+    </td>
+  );
+}
+
+/** 業務外の欄の名前。プールへ戻すと外れる */
+function DutyName({ guard, assignmentId }: { guard: Guard; assignmentId: string }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `duty-plate-${assignmentId}`,
+    data: { type: "dutyPlate", assignmentId, guard },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      title={`${guard.name}（プールへ戻すと外れます）`}
+      className={[
+        "cursor-grab break-all rounded px-1 leading-tight text-slate-700 active:cursor-grabbing hover:bg-slate-100",
+        isDragging ? "opacity-30" : "",
+      ].join(" ")}
+    >
+      {plateName(guard)}
+    </div>
+  );
+}
+
