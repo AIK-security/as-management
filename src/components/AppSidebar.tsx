@@ -49,6 +49,11 @@ const NAV: { heading: string; items: Item[] }[] = [
       { href: "/masters/import", label: "取込", match: "/masters/import", short: "取込" },
     ],
   },
+  {
+    // 🔴 S-20（2026-10-09）。請求・労務へ渡すデータ。いまは配置明細だけ（s20-output-design.md §5 ①）
+    heading: "出力",
+    items: [{ href: "/export", label: "配置明細", match: "/export", short: "明細" }],
+  },
 ];
 
 export function AppSidebar({
