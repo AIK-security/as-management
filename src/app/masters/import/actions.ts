@@ -62,6 +62,8 @@ function chunk<T>(rows: T[], size = CHUNK): T[][] {
  * 🔴 **必ず範囲を送って全件取る。** PostgREST は既定で 1,000 行しか返さないため、
  *   素直に `select()` すると勤務マスター1,593件のうち**後ろが黙って落ちる**
  *   ＝ 既存の現場が「新規」と判定され、コードの重複で取込が丸ごと失敗する。
+ * 🔴 **order も必ず付ける**（2026-10-09）。順序が決まっていないとページの境目で
+ *   行が重複・欠落する（`src/lib/fetch-all.ts` と同じ理由）。この節の範囲取得4か所すべて。
  */
 async function codeToId(supabase: Supa, table: string, col: string) {
   const map = new Map<string, string>();
@@ -70,6 +72,7 @@ async function codeToId(supabase: Supa, table: string, col: string) {
     const { data, error } = await supabase
       .from(table)
       .select(`id, ${col}`)
+      .order("id")
       .range(from, from + size - 1);
     if (error) return { ok: false as const, message: toMessage(error) };
     // 🔴 列名を変数で渡すため、supabase-js の型パーサが select 文字列を読めない。
@@ -102,6 +105,7 @@ async function guardsByStaffCode(supabase: Supa) {
     const { data, error } = await supabase
       .from("guards")
       .select("id, staff_code, company_id")
+      .order("id")
       .range(from, from + size - 1);
     if (error) return { ok: false as const, message: toMessage(error) };
     for (const r of data ?? []) {
@@ -197,6 +201,7 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
       const { data, error } = await supabase
         .from("duty_codes")
         .select("guard_target_no")
+        .order("guard_target_no")
         .range(from, from + 999);
       if (error) return { ok: false, message: toMessage(error) };
       for (const r of data ?? []) existing.add(r.guard_target_no);
@@ -384,6 +389,7 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
     const { data, error } = await supabase
       .from("sites")
       .select("name, customer_id")
+      .order("id")
       .range(from, from + 999);
     if (error) return { ok: false, message: toMessage(error) };
     for (const r of data ?? []) existing.add(keyOf(r.name, r.customer_id));
