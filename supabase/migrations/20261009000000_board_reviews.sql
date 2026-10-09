@@ -117,7 +117,11 @@ create policy board_reviews_write on public.board_reviews
   using ((select public.can_edit()))
   with check ((select public.can_edit()) and reviewed_by = (select auth.uid()));
 
--- 確認用（2 が出ればトリガーが2本ある）
-select count(*) as board_review_triggers
-  from pg_trigger
- where tgname in ('shifts_mark_board_changed', 'assignments_mark_board_changed');
+-- 確認用（triggers = 2 かつ columns = 2 なら入っている）
+-- 🔴 2026-10-09：本番に入っていないままデプロイしてボードが落ちた。rls-audit は列の有無を見ないので、ここで確かめる
+select
+  (select count(*) from pg_trigger
+    where tgname in ('shifts_mark_board_changed', 'assignments_mark_board_changed')) as triggers,
+  (select count(*) from information_schema.columns
+    where table_schema = 'public' and table_name = 'board_reviews'
+      and column_name in ('reviewer_name', 'changed_at'))                           as columns;
