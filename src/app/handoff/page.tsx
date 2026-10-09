@@ -3,7 +3,8 @@
 // 設計は docs/screen-design.md §3。**1画面 = 1日 × 1管轄**（べんり君の送信単位と同じ）。
 // 確定した枠を 18列CSV にして、中身を見せてからダウンロードさせる。
 //
-// 🔴 この工程が要るかどうかは未判定（requirements.md §8-1）。画面にもそう書いておく。
+// 🔴 この工程は要る（2026-10-09 決着・requirements.md §8-1）。ShiftMax が勤怠・給与を計算しているため。
+//   研修・欠勤はまだ出していない（入れ方を確認中）ので、画面にもそう書いておく。
 // 🔴 事務（office）も開ける。出力のダウンロードは事務の権限に入っている（requirements.md §3）。
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
@@ -130,7 +131,7 @@ export default async function HandoffPage({
 
       <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
         <p className="t-meta text-slate-500">
-          確定した枠を、べんり君と同じ18列の CSV にします。1行が隊員1人です。この工程が必要かどうかは、事務側の確認待ちです。
+          確定した枠を、べんり君と同じ18列の CSV にします。1行が隊員1人です。ShiftMax の勤怠・給与の計算に使われます。研修・欠勤はまだ入りません（べんり君での入れ方を確認中です）。
         </p>
 
         {data.draftShifts > 0 && (
