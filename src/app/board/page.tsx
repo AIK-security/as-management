@@ -27,7 +27,7 @@ import { BoardReviewButton } from "@/components/board/BoardReviewButton";
 import { getBoardReview } from "@/lib/board-review";
 import { AddShiftDialog } from "@/components/board/AddShiftDialog";
 import { CopyDayDialog } from "@/components/board/CopyDayDialog";
-import { DateJump } from "@/components/DateJump";
+import { DatePickerLabel } from "@/components/DatePickerLabel";
 import { HEADER_BTN } from "@/components/board/header-ui";
 import {
   addDays,
@@ -176,30 +176,19 @@ export default async function BoardPage({
           <Link href={hrefWith({ date: addDays(workDate, -1) })} className={navBtn} aria-label="前日">
             ◀
           </Link>
-          <span className="px-1 text-[18px] font-bold tracking-tight whitespace-nowrap text-slate-900 tabular-nums">
-            {formatBoardDate(board.date)}
-          </span>
+          {/* 🔴 日付を押すとカレンダー（2026-10-09）。入力欄・［表示］・［今日］は外した ──
+              同じ日付が2回出て邪魔だった（柴山）。今日へはカレンダーの［今日］で移る。
+              管轄と日勤夜勤は引き継ぐ。得意先の絞り込みは外す（別の日には無い得意先がある） */}
+          <DatePickerLabel
+            action="/board"
+            name="date"
+            value={workDate}
+            label={formatBoardDate(board.date)}
+            keep={{ group, ...(board.jurisdiction.code ? { j: board.jurisdiction.code } : {}) }}
+          />
           <Link href={hrefWith({ date: addDays(workDate, 1) })} className={navBtn} aria-label="翌日">
             ▶
           </Link>
-          {workDate !== todayInJst() && (
-            <Link
-              href={hrefWith({ date: todayInJst() })}
-              className="ml-1 rounded-md border border-slate-300 px-2 py-1 text-[13px] font-medium text-slate-600 transition-all duration-150 ease-in-out hover:bg-slate-100"
-            >
-              今日
-            </Link>
-          )}
-          {/* 🔴 管轄と日勤夜勤は引き継ぐ。得意先の絞り込みは外す（別の日には無い得意先がある） */}
-          <span className="ml-1">
-            <DateJump
-              action="/board"
-              name="date"
-              type="date"
-              value={workDate}
-              keep={{ group, ...(board.jurisdiction.code ? { j: board.jurisdiction.code } : {}) }}
-            />
-          </span>
         </div>
 
         {/* 🔴 管轄（東京／千葉）の切り替えは**画面から外した**（2026-09-16・管制の要望）。
@@ -234,14 +223,6 @@ export default async function BoardPage({
           <CountChip label="未充足" value={board.counts.shortage} tone="shortage" />
         </div>
 
-        {/* 🔴 確認は事務にも見せる（押せるのは管制・管理者）。確認担当は control（requirements.md §3） */}
-        <BoardReviewButton
-          workDate={board.date}
-          jurisdictionId={board.jurisdiction.id}
-          review={review}
-          editable={editable}
-        />
-
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {/* 編集系は管制・管理者のみ。事務には出さない（requirements.md §3 決定 #2）。
               ⚠️ 出し分けは見た目の話。実際の防御は RLS と Server Action 側で行う。 */}
@@ -270,14 +251,8 @@ export default async function BoardPage({
                   **これから何ができるようになるかが見える**ほうがよいと判断し、
                   押せない状態＋説明（title）で残す。
                   🔴 実装したら disabled と「準備中」を外すこと。 */}
-              {/* 🔴 いま見ている日・管轄・日勤夜勤をそのまま引き継ぐ。
-                  連絡は「この盤面の人たちへ」出すものなので、条件を選び直させない */}
-              <Link
-                href={`/notices?date=${board.date}&j=${board.jurisdiction.code}&group=${board.group}`}
-                className={`${HEADER_BTN} border-slate-300 bg-white text-slate-700 hover:bg-slate-100`}
-              >
-                連絡作成
-              </Link>
+              {/* 🔴 ［連絡作成］は見出しから外した（2026-10-09・柴山）。サイドバーにあり重複していた。
+                  連絡の画面にも日付の選択がある */}
               {/* 🔴 2026-10-06 に中身を作った（/handoff）。日勤・夜勤の両方を1つの CSV にするので group は渡さない。
                   工程は要る（2026-10-09 決着・ShiftMax が勤怠・給与を計算しているため） */}
               <Link
@@ -289,6 +264,18 @@ export default async function BoardPage({
               </Link>
             </>
           )}
+
+          {/* 🔴 確認は右端に、区切り線を挟んで1枚の札で置く（2026-10-09・柴山）。
+              作る → 確定 → 連絡 → 引き渡し の流れの最後＝「最後に見て確認する」。
+              事務にも見せる（押せるのは管制・管理者）。確認担当は control（requirements.md §3） */}
+          {editable && <span aria-hidden className="mx-1 h-6 w-px bg-slate-300" />}
+          <BoardReviewButton
+            workDate={board.date}
+            dateLabel={formatBoardDate(board.date)}
+            jurisdictionId={board.jurisdiction.id}
+            review={review}
+            editable={editable}
+          />
 
           {/* 🔴 行き先（マスタ）・氏名・ログアウトは**左サイドバーへ移した**（2026-09-09）。
               ここに残すのは「この画面の操作」だけ。 */}
