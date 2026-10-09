@@ -55,6 +55,7 @@ type Raw = {
     company: { kind: string; name: string } | null;
   } | null;
   shift: {
+    id: string;
     work_kind: WorkKind;
     status: "draft" | "confirmed";
     cancelled_at: string | null;
@@ -110,7 +111,7 @@ export async function getAssignmentDetail(from: string, to: string): Promise<Exp
         `work_date, role, job_type, onsite_cancelled, position,
          guard:guards ( staff_code, name, company:companies ( kind, name ) ),
          shift:shifts (
-           work_kind, status, cancelled_at, start_h, start_m, end_h, end_m, break_min,
+           id, work_kind, status, cancelled_at, start_h, start_m, end_h, end_m, break_min,
            plan_comment, billing_note,
            jurisdiction:jurisdictions ( name ),
            site:sites ( site_code, name, customer:customers ( staff_code, name, billing_no ) )
@@ -137,6 +138,10 @@ export async function getAssignmentDetail(from: string, to: string): Promise<Exp
       Number(isNight(sa.work_kind)) - Number(isNight(sb.work_kind)) ||
       (sa.site?.customer?.staff_code ?? "").localeCompare(sb.site?.customer?.staff_code ?? "") ||
       (sa.site?.name ?? "").localeCompare(sb.site?.name ?? "", "ja") ||
+      // 🔴 同じ名前の作業所・同じ現場の枠が2つあっても、枠ごとにまとめる（名札の順だけだと交互に混ざる）
+      (sa.site?.site_code ?? "").localeCompare(sb.site?.site_code ?? "") ||
+      sa.start_h * 60 + sa.start_m - (sb.start_h * 60 + sb.start_m) ||
+      sa.id.localeCompare(sb.id) ||
       a.position - b.position
     );
   });
