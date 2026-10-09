@@ -1075,3 +1075,35 @@ export async function copyDay(input: {
   refresh();
   return result;
 }
+
+// ─────────────────────────────────────────────────────────
+// 確認（第二の目・2026-10-09）
+//
+// 🔴 日付 × 管轄で1件。もう一度押すと「確認しました」を今の時刻・今の人で付け直し、
+//   「確認後に変更あり」（changed_at）を消す。
+// 🔴 reviewed_by は RLS が「自分」しか許さない。名前は確認した時点の表示名を写す
+//   （profiles は本人と管理者しか読めないため ─ 20261009000000_board_reviews.sql）。
+// ─────────────────────────────────────────────────────────
+export async function reviewBoard(input: {
+  workDate: string;
+  jurisdictionId: string;
+}): Promise<ActionResult> {
+  const { user, profile } = await requireRole("control", "admin");
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("board_reviews").upsert(
+    {
+      work_date: input.workDate,
+      jurisdiction_id: input.jurisdictionId,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user.id,
+      reviewer_name: profile.display_name,
+      changed_at: null,
+    },
+    { onConflict: "work_date,jurisdiction_id" },
+  );
+  if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}

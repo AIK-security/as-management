@@ -23,6 +23,8 @@ import { requireStaff, canEdit } from "@/lib/auth";
 import { WarningsPane } from "@/components/board/BoardPanes";
 import { BoardDnd } from "@/components/board/BoardDnd";
 import { ConfirmAllButton } from "@/components/board/ConfirmAllButton";
+import { BoardReviewButton } from "@/components/board/BoardReviewButton";
+import { getBoardReview } from "@/lib/board-review";
 import { AddShiftDialog } from "@/components/board/AddShiftDialog";
 import { CopyDayDialog } from "@/components/board/CopyDayDialog";
 import { DateJump } from "@/components/DateJump";
@@ -86,6 +88,8 @@ export default async function BoardPage({
     jurisdictionCode: sp.j,
     group,
   });
+  // 🔴 確認（第二の目・2026-10-09）は日付 × 管轄で1件。日勤・夜勤どちらの盤面でも同じものを出す
+  const review = await getBoardReview(board.date, board.jurisdiction.id);
 
   const placed = board.rows.reduce((n, r) => n + r.plates.length, 0);
 
@@ -230,6 +234,14 @@ export default async function BoardPage({
           <CountChip label="未充足" value={board.counts.shortage} tone="shortage" />
         </div>
 
+        {/* 🔴 確認は事務にも見せる（押せるのは管制・管理者）。確認担当は control（requirements.md §3） */}
+        <BoardReviewButton
+          workDate={board.date}
+          jurisdictionId={board.jurisdiction.id}
+          review={review}
+          editable={editable}
+        />
+
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {/* 編集系は管制・管理者のみ。事務には出さない（requirements.md §3 決定 #2）。
               ⚠️ 出し分けは見た目の話。実際の防御は RLS と Server Action 側で行う。 */}
@@ -267,10 +279,10 @@ export default async function BoardPage({
                 連絡作成
               </Link>
               {/* 🔴 2026-10-06 に中身を作った（/handoff）。日勤・夜勤の両方を1つの CSV にするので group は渡さない。
-                  工程の要否そのものは未判定で、事務側ヒアリングの結果しだいで不要になる */}
+                  工程は要る（2026-10-09 決着・ShiftMax が勤怠・給与を計算しているため） */}
               <Link
                 href={`/handoff?date=${board.date}&j=${board.jurisdiction.code}`}
-                title="確定した枠を18列CSVにして、べんり君のコピーから ShiftMax へ送る。必要かどうかは事務側の確認待ち"
+                title="確定した枠を18列CSVにして、べんり君のコピーから ShiftMax へ送る（勤怠・給与の計算に使われる）"
                 className={`${HEADER_BTN} border-slate-300 bg-white text-slate-700 hover:bg-slate-100`}
               >
                 べんり君へ引き渡し

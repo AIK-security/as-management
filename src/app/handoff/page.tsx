@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { keepSiteJurisdictions } from "@/lib/site-jurisdictions";
 import { addDays, formatBoardDate, todayInJst } from "@/lib/board-format";
 import { HANDOFF_HEADER, getHandoffData, toHandoffCsv } from "@/lib/handoff";
+import { getBoardReview } from "@/lib/board-review";
 import { DateJump } from "@/components/DateJump";
 import { HandoffDownload } from "@/components/handoff/HandoffDownload";
 
@@ -48,7 +49,10 @@ export default async function HandoffPage({
     );
   }
 
-  const data = await getHandoffData(workDate, jurisdiction.id);
+  const [data, review] = await Promise.all([
+    getHandoffData(workDate, jurisdiction.id),
+    getBoardReview(workDate, jurisdiction.id),
+  ]);
   const csv = toHandoffCsv(data.rows);
 
   // 🔴 べんり君は現場コードが1件でも引けないと送信ごと止まる。先に止めて、直す場所を見せる
@@ -133,6 +137,16 @@ export default async function HandoffPage({
         <p className="t-meta text-slate-500">
           確定した枠を、べんり君と同じ18列の CSV にします。1行が隊員1人です。ShiftMax の勤怠・給与の計算に使われます。研修・欠勤はまだ入りません（べんり君での入れ方を確認中です）。
         </p>
+
+        {/* 🔴 未確認のまま引き渡そうとしたら知らせる（requirements.md §4-3）。止めはしない ──
+            当日変更が常態で、確認担当を待てない場面がある */}
+        {data.rows.length > 0 && (review === null || review.changedAt !== null) && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-[13px] leading-snug text-amber-900">
+            {review === null
+              ? "この日の配置は、まだ確認されていません。配置ボードで確認してから出すと安心です。"
+              : "確認の後に配置が変わっています。配置ボードでもう一度確認してから出すと安心です。"}
+          </p>
+        )}
 
         {data.draftShifts > 0 && (
           <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-[13px] leading-snug text-amber-900">
