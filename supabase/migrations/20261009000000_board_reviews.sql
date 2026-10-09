@@ -19,19 +19,16 @@
 --   正は reviewed_by（RLS で本人しか入れられない）。名前は表示のためのスナップショット（s20 §6-1 原則3）。
 -- =============================================================
 
-create table if not exists public.board_reviews (
-  work_date        date not null,
-  jurisdiction_id  uuid not null references public.jurisdictions (id),
-  reviewed_at      timestamptz not null default now(),
-  reviewed_by      uuid not null references public.profiles (id),
-  reviewer_name    text,
+-- 🔴 テーブル自体は 9/2 に作ってある（20260902000000_board_core.sql §4-1b・中身は空のまま未使用）。
+--   ここでは列を2本足すだけ。id・note・updated_at・unique(work_date, jurisdiction_id) は既存のものを使う。
+--   （10/9 に create table で書いて開発用 DB で「changed_at が無い」と落ちた。既存を確かめずに書いたため）
+alter table public.board_reviews
+  add column if not exists reviewer_name text,
   -- 確認の後に、その日その管轄の枠・配置が最初に変わった時刻。null＝確認後に変更なし
-  changed_at       timestamptz,
-  primary key (work_date, jurisdiction_id)
-);
+  add column if not exists changed_at timestamptz;
 
 comment on table public.board_reviews is
-  '確認（第二の目）。日付×管轄で1件。確認後に配置が変わると changed_at が入る（2026-10-09）';
+  '確認（第二の目）。日付×管轄で1件。確認後に配置が変わると changed_at が入る（2026-10-09・トリガー）。updated_at の比較はやめた（削除が残らないため）';
 
 -- -------------------------------------------------------------
 -- 確認後の変更を記録する
@@ -102,7 +99,7 @@ create trigger assignments_mark_board_changed
   for each row execute function public.assignments_mark_board_changed();
 
 -- -------------------------------------------------------------
--- RLS
+-- RLS（9/2 に作ったポリシーを、自分の名前でしか入れられない形に置き換える）
 --   閲覧：職員全員（事務も「確認済みか」は見られる）
 --   確認：管制・管理者（確認担当は control ─ requirements.md §3）。**自分の名前でしか入れられない**
 --   🔴 関数は (select …) で包む（20261005000000_rls_initplan.sql）
