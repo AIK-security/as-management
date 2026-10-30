@@ -120,6 +120,9 @@ const PAINTS: Paint[] = [
     offWorkKind: "nightB",
   },
   { key: "substitute_holiday", label: "振替休日", offKind: "substitute_holiday", offWorkKind: null },
+  // 🔴 会社都合欠勤（2026-10-30）。18列 CSV に「会社欠」の行で出る（handoff.ts）。
+  //   ShiftMax の給与計算が見ているため入口が要る。入れるのは確認担当（control）の想定
+  { key: "absent_company", label: "会社都合欠勤", offKind: "absent_company", offWorkKind: null },
   { key: "clear", label: "消す", offKind: null, offWorkKind: null },
 ];
 

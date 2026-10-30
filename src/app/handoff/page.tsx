@@ -4,7 +4,7 @@
 // 確定した枠を 18列CSV にして、中身を見せてからダウンロードさせる。
 //
 // 🔴 この工程は要る（2026-10-09 決着・requirements.md §8-1）。ShiftMax が勤怠・給与を計算しているため。
-//   研修・欠勤はまだ出していない（入れ方を確認中）ので、画面にもそう書いておく。
+//   会社都合欠勤は出す（2026-10-13）。研修はまだ出していない（研修をした現場名・時刻を持っていない）ので、画面にもそう書いておく。
 // 🔴 事務（office）も開ける。出力のダウンロードは事務の権限に入っている（requirements.md §3）。
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
@@ -73,6 +73,7 @@ export default async function HandoffPage({
   const partnerCount = data.rows.filter((r) => r.note === "partner").length;
   const vacantCount = data.rows.filter((r) => r.note === "vacant").length;
   const onsiteCancelCount = data.rows.filter((r) => r.onsiteCancelled).length;
+  const absentCompanyCount = data.rows.filter((r) => r.note === "absentCompany").length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -135,7 +136,7 @@ export default async function HandoffPage({
 
       <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
         <p className="t-meta text-slate-500">
-          確定した枠を、べんり君と同じ18列の CSV にします。1行が隊員1人です。ShiftMax の勤怠・給与の計算に使われます。研修・欠勤はまだ入りません（べんり君での入れ方を確認中です）。
+          確定した枠を、べんり君と同じ18列の CSV にします。1行が隊員1人です。ShiftMax の勤怠・給与の計算に使われます。休みの画面で入れた会社都合欠勤も、べんり君と同じ形の行で最後に入ります。研修はまだ入りません。
         </p>
 
         {/* 🔴 未確認のまま引き渡そうとしたら知らせる（requirements.md §4-3）。止めはしない ──
@@ -178,11 +179,12 @@ export default async function HandoffPage({
           </p>
         )}
 
-        {(partnerCount > 0 || vacantCount > 0 || onsiteCancelCount > 0) && (
+        {(partnerCount > 0 || vacantCount > 0 || onsiteCancelCount > 0 || absentCompanyCount > 0) && (
           <p className="t-meta text-slate-600">
             {partnerCount > 0 && <>協力会社の隊員 {partnerCount} 名は「応援」の行にまとめ、会社名を予定コメントに足しています。</>}
             {vacantCount > 0 && <>　人が入っていない {vacantCount} 名ぶんは、個人コード 0 の行で出しています。</>}
             {onsiteCancelCount > 0 && <>　現着中止の {onsiteCancelCount} 名は、区分「現中」の警備先番号で出しています。</>}
+            {absentCompanyCount > 0 && <>　会社都合欠勤の {absentCompanyCount} 名は、最後に「会社欠」の行で出しています。</>}
           </p>
         )}
 

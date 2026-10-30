@@ -18,13 +18,16 @@
 //   3. 警備先番号が引けない枠が1つでもあれば、ダウンロードさせない（べんり君は送信ごと止まるため）
 //   4. 休み・内勤・教育は出さない（事務が ShiftMax で使っているかを先に聞く）
 //      → 🔴 2026-10-09：**研修・会社都合欠勤は給与計算で見ている**と分かった。足す。
-//        べんり君での入れ方（行か備考か）を確認中なので、答えが来るまでは出していない
+//      → 2026-10-13：べんり君での入れ方が分かった（hearing-jimu.md 確認・Slack 版の末尾）。
+//        どちらも「得意先 And Security × 勤務（教育／会社欠）」の行を隊員1人1行で作り、備考に「研修」等。
+//        **会社都合欠勤は出す**（下の ABSENT_COMPANY）。確定の概念が無いので、入っていれば出す（柴山）。
+//        研修は、勤務名＝研修をした現場名・時刻を新システムが持っていないため**まだ出さない**
 //   5. 貸出（AS の隊員を協力会社へ出す）は出さない（べんり君での扱いが未確認）
 //   6. 班名は空、サブは role='sub' のときだけ 1
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAll } from "@/lib/fetch-all";
-import { WORK_KIND_LABEL, toShiftMaxDate } from "@/lib/board-format";
+import { WORK_KIND_LABEL, compareByKana, toShiftMaxDate } from "@/lib/board-format";
 import type { WorkKind } from "@/lib/types";
 
 /**
@@ -56,9 +59,10 @@ export const HANDOFF_HEADER = [
 
 /** 画面で並べる1行（CSV の1行と一対一）。cells が CSV にそのまま出る */
 export type HandoffRow = {
-  shiftId: string;
-  /** 画面で「応援に寄せた」「空き」を見分けるための印。CSV には出ない */
-  note: "partner" | "vacant" | null;
+  /** 休みの行（会社都合欠勤）は枠が無いので null */
+  shiftId: string | null;
+  /** 画面で「応援に寄せた」「空き」「会社都合欠勤」を見分けるための印。CSV には出ない */
+  note: "partner" | "vacant" | "absentCompany" | null;
   /** 🔴 この人だけ現着中止（2026-10-08）。画面で「現中」と見せるための印。CSV には出ない */
   onsiteCancelled: boolean;
   cells: string[];
@@ -147,6 +151,20 @@ const ONSITE_CANCEL_KIND: Record<WorkKind, WorkKind> = {
   nightCancel: "nightCancel",
 };
 
+/**
+ * 🔴 会社都合欠勤の行（2026-10-13・確認担当がべんり君で作っている形）。
+ *   得意先は ㈱And Security（担当コード 107）、勤務は区分「会社欠」（警備先番号 107）。
+ *   本番の customers・duty_codes にあることを 10/13 に確かめた。
+ *   番号はコードに書かず、〈担当コード × 区分〉で duty_codes から引く（現場の行と同じ引き方）。
+ *   時刻・休憩は空（べんり君でも空）。勤務名と備考（＝予定コメント）は「会社都合欠勤」。
+ */
+const ABSENT_COMPANY = {
+  customerStaffCode: "107",
+  customerName: "㈱And Security",
+  kindLabel: "会社欠",
+  label: "会社都合欠勤",
+} as const;
+
 const flag = (b: boolean) => (b ? "1" : "0");
 
 /**
@@ -162,7 +180,7 @@ export function toHandoffCsv(rows: readonly HandoffRow[]): string {
 export async function getHandoffData(workDate: string, jurisdictionId: string): Promise<HandoffData> {
   const supabase = await createClient();
 
-  const [shiftRes, supportRes] = await Promise.all([
+  const [shiftRes, supportRes, absentRes] = await Promise.all([
     supabase
       .from("shifts")
       .select(
@@ -187,9 +205,19 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
       .select("staff_code, guard_no, name, jurisdiction_id")
       .like("name", "応援%")
       .eq("status", "active"),
+    // 会社都合欠勤（休みの画面の「会欠」）。休みは枠に属さないので、隊員の管轄で絞る
+    supabase
+      .from("assignments")
+      .select("guard:guards!inner ( staff_code, guard_no, name, name_kana, jurisdiction_id )")
+      .eq("work_date", workDate)
+      .eq("kind", "off")
+      .eq("off_kind", "absent_company")
+      .eq("status", "planned")
+      .eq("guard.jurisdiction_id", jurisdictionId),
   ]);
   if (shiftRes.error) throw new Error(`枠の取得に失敗しました: ${shiftRes.error.message}`);
   if (supportRes.error) throw new Error(`応援の隊員の取得に失敗しました: ${supportRes.error.message}`);
+  if (absentRes.error) throw new Error(`会社都合欠勤の取得に失敗しました: ${absentRes.error.message}`);
 
   const allShifts = (shiftRes.data ?? []) as unknown as ShiftRaw[];
   // 🔴 中止（前日・当日朝）は出さない。べんり君では消している（決定2・2026-10-08 訂正）。
@@ -211,8 +239,20 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
 
   // ── 警備先番号（〈得意先の担当コード × 区分〉→ 番号）──────────────
   // 🔴 duty_codes は 1,593行あり、1,000行で切れる。必要な得意先だけに絞ったうえで最後まで読む
+  const absents = (
+    (absentRes.data ?? []) as unknown as {
+      guard: { staff_code: string | null; guard_no: string | null; name: string; name_kana: string | null };
+    }[]
+  )
+    .map((a) => a.guard)
+    // フリガナ順（プールと同じ並び）。同じ人が区分違いで2行あっても、べんり君と同じく行のまま出す
+    .sort(compareByKana);
+
   const customerCodes = [
-    ...new Set(shifts.map((s) => s.site?.customer?.staff_code).filter((c): c is string => !!c)),
+    ...new Set([
+      ...shifts.map((s) => s.site?.customer?.staff_code).filter((c): c is string => !!c),
+      ...(absents.length > 0 ? [ABSENT_COMPANY.customerStaffCode] : []),
+    ]),
   ];
   const dutyRes =
     customerCodes.length === 0
@@ -330,6 +370,45 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
         note: "vacant",
         onsiteCancelled: false,
         cells: common(dutyFor(s.work_kind), ["0", "0", ""], s.plan_comment ?? "", false, false, false),
+      });
+    }
+  }
+
+  // ── 会社都合欠勤（2026-10-13）── 日勤→夜勤の後ろに置く ──────────────
+  if (absents.length > 0) {
+    const duty = dutyByKey.get(`${ABSENT_COMPANY.customerStaffCode}:${ABSENT_COMPANY.kindLabel}`);
+    if (!duty) {
+      missing.push({
+        siteName: ABSENT_COMPANY.label,
+        customerName: ABSENT_COMPANY.customerName,
+        kindLabel: ABSENT_COMPANY.kindLabel,
+      });
+    }
+    for (const g of absents) {
+      rows.push({
+        shiftId: null,
+        note: "absentCompany",
+        onsiteCancelled: false,
+        cells: [
+          date,
+          duty?.sm_site_code ?? "",
+          duty?.guard_target_no ?? "",
+          ABSENT_COMPANY.label,
+          "",
+          "", // 開始時間〜昼休憩は空（べんり君でも空）
+          "",
+          "",
+          "",
+          "",
+          g.staff_code ?? "",
+          g.guard_no ?? "",
+          g.name,
+          ABSENT_COMPANY.label, // べんり君の「備考」＝予定コメント
+          "0",
+          "0",
+          "0",
+          "",
+        ],
       });
     }
   }
