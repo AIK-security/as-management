@@ -105,8 +105,28 @@ export type WeekOffRow = {
   label: string;
   /** 🔴 終日の行か（一部勤務可の行は false）。週表で入れられるのは終日の業務だけ */
   allDay: boolean;
-  /** guards と assignmentIds は同じ並び。assignmentIds は週表から外すときに使う */
-  cells: { date: string; guards: Guard[]; assignmentIds: string[] }[];
+  /**
+   * guards・assignmentIds・training は同じ並び。assignmentIds は週表から外すときに使う。
+   * 🔴 training は研修の行だけが持つ（2026-11-10）。現場が未入力なら null
+   */
+  cells: {
+    date: string;
+    guards: Guard[];
+    assignmentIds: string[];
+    training: (TrainingDetail | null)[];
+  }[];
+};
+
+/** 研修をした現場と時刻（2026-11-10）。18列CSV の勤務名・時刻になる */
+export type TrainingDetail = {
+  siteId: string;
+  siteName: string;
+  siteShortName: string;
+  startH: number;
+  startM: number;
+  endH: number;
+  endM: number;
+  breakMin: number;
 };
 
 /** プールの隊員。🔴 週の稼働日数を持つのが日別との違い（設計 §7-2-4） */
@@ -160,6 +180,18 @@ export type WeekBoardParams = {
 type AssignmentWithSpan = Assignment & {
   planned_start_at: string | null;
   planned_end_at: string | null;
+  /** 🔴 研修の現場と時刻（2026-11-10）。研修の行だけが持つ */
+  duty_site_id: string | null;
+  duty_start_h: number | null;
+  duty_start_m: number | null;
+  duty_end_h: number | null;
+  duty_end_m: number | null;
+  duty_break_min: number | null;
+  /**
+   * 研修をした現場（多対一の埋め込み＝実際は1件のオブジェクト）。
+   * 🔴 生成型が無いため supabase-js は配列と推論する。ここで嘘の型を付けず、trainingOf で読む
+   */
+  duty_site: unknown;
 };
 
 /** supabase-js の埋め込み select が返す形 */
@@ -232,7 +264,9 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
           .select(
             `id, guard_id, work_date, kind, shift_id, role, job_type, onsite_cancelled, is_long_distance, position,
            off_kind, off_work_kind, lent_to_company_id, external_site_name, status,
-           planned_start_at, planned_end_at`,
+           planned_start_at, planned_end_at,
+           duty_site_id, duty_start_h, duty_start_m, duty_end_h, duty_end_m, duty_break_min,
+           duty_site:sites ( name, short_name )`,
           )
           // 🔴 前後1日を含める。夜勤は work_date が**開始日**なので、
           //   20:00–06:00 の枠は隣の日の枠と重なりうる（board.ts と同じ理由）。
@@ -410,7 +444,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     offKind: OffKind;
     label: string;
     allDay: boolean;
-    byDate: Map<string, { guard: Guard; assignmentId: string }[]>;
+    byDate: Map<string, { guard: Guard; assignmentId: string; training: TrainingDetail | null }[]>;
   };
   const offMap = new Map<string, OffEntryRow>();
   for (const a of assignments) {
@@ -428,7 +462,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
         byDate: new Map(),
       };
     const list = entry.byDate.get(a.work_date) ?? [];
-    list.push({ guard, assignmentId: a.id });
+    list.push({ guard, assignmentId: a.id, training: trainingOf(a) });
     entry.byDate.set(a.work_date, list);
     offMap.set(key, entry);
   }
@@ -451,7 +485,12 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
       allDay,
       cells: dates.map((d) => {
         const list = byDate.get(d) ?? [];
-        return { date: d, guards: list.map((x) => x.guard), assignmentIds: list.map((x) => x.assignmentId) };
+        return {
+          date: d,
+          guards: list.map((x) => x.guard),
+          assignmentIds: list.map((x) => x.assignmentId),
+          training: list.map((x) => x.training),
+        };
       }),
     }))
     .sort(
@@ -550,5 +589,28 @@ function emptyWeek(
     offRows: [],
     pool: [],
     counts: { draft: 0, confirmed: 0, shortage: 0, overlap: 0 },
+  };
+}
+
+/** 研修の行から現場と時刻を取り出す。未入力（2026-11-10 より前に入れた研修など）は null */
+function trainingOf(a: AssignmentWithSpan): TrainingDetail | null {
+  if (
+    a.off_kind !== "training" ||
+    !a.duty_site_id ||
+    a.duty_start_h === null ||
+    a.duty_end_h === null
+  ) {
+    return null;
+  }
+  const site = a.duty_site as { name: string; short_name: string } | null;
+  return {
+    siteId: a.duty_site_id,
+    siteName: site?.name ?? "",
+    siteShortName: site?.short_name || site?.name || "",
+    startH: a.duty_start_h,
+    startM: a.duty_start_m ?? 0,
+    endH: a.duty_end_h,
+    endM: a.duty_end_m ?? 0,
+    breakMin: a.duty_break_min ?? 0,
   };
 }

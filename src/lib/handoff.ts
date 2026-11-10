@@ -21,7 +21,10 @@
 //      → 2026-10-13：べんり君での入れ方が分かった（hearing-jimu.md 確認・Slack 版の末尾）。
 //        どちらも「得意先 And Security × 勤務（教育／会社欠）」の行を隊員1人1行で作り、備考に「研修」等。
 //        **会社都合欠勤は出す**（下の ABSENT_COMPANY）。確定の概念が無いので、入っていれば出す（柴山）。
-//        研修は、勤務名＝研修をした現場名・時刻を新システムが持っていないため**まだ出さない**
+//        ~~研修は、勤務名＝研修をした現場名・時刻を新システムが持っていないため**まだ出さない**~~
+//      → 2026-11-10：**研修も出す**（下の TRAINING）。週表で研修に現場と時刻を入れるようにした。
+//        時刻は研修をした現場の上下番時刻（確認担当）。勤務名＝現場名・備考＝「研修」（べんり君の今の形のまま）。
+//        🔴 現場が未入力の研修が1件でもあればダウンロードさせない（時刻の無い行を給与側へ渡さない・柴山）
 //   5. 貸出（AS の隊員を協力会社へ出す）は出さない（べんり君での扱いが未確認）
 //   6. 班名は空、サブは role='sub' のときだけ 1
 import "server-only";
@@ -59,10 +62,10 @@ export const HANDOFF_HEADER = [
 
 /** 画面で並べる1行（CSV の1行と一対一）。cells が CSV にそのまま出る */
 export type HandoffRow = {
-  /** 休みの行（会社都合欠勤）は枠が無いので null */
+  /** 休みの行（会社都合欠勤・研修）は枠が無いので null */
   shiftId: string | null;
-  /** 画面で「応援に寄せた」「空き」「会社都合欠勤」を見分けるための印。CSV には出ない */
-  note: "partner" | "vacant" | "absentCompany" | null;
+  /** 画面で「応援に寄せた」「空き」「会社都合欠勤」「研修」を見分けるための印。CSV には出ない */
+  note: "partner" | "vacant" | "absentCompany" | "training" | null;
   /** 🔴 この人だけ現着中止（2026-10-08）。画面で「現中」と見せるための印。CSV には出ない */
   onsiteCancelled: boolean;
   cells: string[];
@@ -85,6 +88,8 @@ export type HandoffData = {
   missing: HandoffMissing[];
   /** 協力会社の隊員がいたのに「応援」の隊員が見つからない（出力を止める） */
   partnerGuardMissing: boolean;
+  /** 🔴 現場・時刻が未入力の研修（隊員名）。1件でもあれば出力を止める（2026-11-10） */
+  trainingMissing: string[];
 };
 
 type ShiftRaw = {
@@ -165,6 +170,19 @@ const ABSENT_COMPANY = {
   label: "会社都合欠勤",
 } as const;
 
+/**
+ * 🔴 研修の行（2026-11-10・確認担当がべんり君で作っている形）。
+ *   得意先は ㈱And Security（担当コード 107）、勤務は区分「教育」。
+ *   勤務名（4列目）＝研修をした現場名、時刻＝その現場の上下番時刻、備考（予定コメント）＝「研修」。
+ *   番号は会社都合欠勤と同じく〈担当コード × 区分〉で duty_codes から引く。
+ */
+const TRAINING = {
+  customerStaffCode: "107",
+  customerName: "㈱And Security",
+  kindLabel: "教育",
+  label: "研修",
+} as const;
+
 const flag = (b: boolean) => (b ? "1" : "0");
 
 /**
@@ -180,7 +198,7 @@ export function toHandoffCsv(rows: readonly HandoffRow[]): string {
 export async function getHandoffData(workDate: string, jurisdictionId: string): Promise<HandoffData> {
   const supabase = await createClient();
 
-  const [shiftRes, supportRes, absentRes] = await Promise.all([
+  const [shiftRes, supportRes, absentRes, trainingRes] = await Promise.all([
     supabase
       .from("shifts")
       .select(
@@ -214,10 +232,24 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
       .eq("off_kind", "absent_company")
       .eq("status", "planned")
       .eq("guard.jurisdiction_id", jurisdictionId),
+    // 研修（週表の業務外）。会社都合欠勤と同じく隊員の管轄で絞る（2026-11-10）
+    supabase
+      .from("assignments")
+      .select(
+        `duty_start_h, duty_start_m, duty_end_h, duty_end_m, duty_break_min,
+         duty_site:sites ( name ),
+         guard:guards!inner ( staff_code, guard_no, name, name_kana, jurisdiction_id )`,
+      )
+      .eq("work_date", workDate)
+      .eq("kind", "off")
+      .eq("off_kind", "training")
+      .eq("status", "planned")
+      .eq("guard.jurisdiction_id", jurisdictionId),
   ]);
   if (shiftRes.error) throw new Error(`枠の取得に失敗しました: ${shiftRes.error.message}`);
   if (supportRes.error) throw new Error(`応援の隊員の取得に失敗しました: ${supportRes.error.message}`);
   if (absentRes.error) throw new Error(`会社都合欠勤の取得に失敗しました: ${absentRes.error.message}`);
+  if (trainingRes.error) throw new Error(`研修の取得に失敗しました: ${trainingRes.error.message}`);
 
   const allShifts = (shiftRes.data ?? []) as unknown as ShiftRaw[];
   // 🔴 中止（前日・当日朝）は出さない。べんり君では消している（決定2・2026-10-08 訂正）。
@@ -248,10 +280,25 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
     // フリガナ順（プールと同じ並び）。同じ人が区分違いで2行あっても、べんり君と同じく行のまま出す
     .sort(compareByKana);
 
+  type TrainingRaw = {
+    duty_start_h: number | null;
+    duty_start_m: number | null;
+    duty_end_h: number | null;
+    duty_end_m: number | null;
+    duty_break_min: number | null;
+    duty_site: { name: string } | null;
+    guard: { staff_code: string | null; guard_no: string | null; name: string; name_kana: string | null };
+  };
+  // フリガナ順（会社都合欠勤と同じ並び）
+  const trainings = ((trainingRes.data ?? []) as unknown as TrainingRaw[]).sort((a, b) =>
+    compareByKana(a.guard, b.guard),
+  );
+
   const customerCodes = [
     ...new Set([
       ...shifts.map((s) => s.site?.customer?.staff_code).filter((c): c is string => !!c),
       ...(absents.length > 0 ? [ABSENT_COMPANY.customerStaffCode] : []),
+      ...(trainings.length > 0 ? [TRAINING.customerStaffCode] : []),
     ]),
   ];
   const dutyRes =
@@ -413,6 +460,52 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
     }
   }
 
+  // ── 研修（2026-11-10）── 会社都合欠勤の後ろに置く ──────────────
+  const trainingMissing: string[] = [];
+  if (trainings.length > 0) {
+    const duty = dutyByKey.get(`${TRAINING.customerStaffCode}:${TRAINING.kindLabel}`);
+    if (!duty) {
+      missing.push({
+        siteName: TRAINING.label,
+        customerName: TRAINING.customerName,
+        kindLabel: TRAINING.kindLabel,
+      });
+    }
+    for (const t of trainings) {
+      const g = t.guard;
+      // 🔴 現場・時刻が無い研修は出さずに名前を集める（出力を止める）
+      if (!t.duty_site || t.duty_start_h === null || t.duty_end_h === null) {
+        trainingMissing.push(g.name);
+        continue;
+      }
+      rows.push({
+        shiftId: null,
+        note: "training",
+        onsiteCancelled: false,
+        cells: [
+          date,
+          duty?.sm_site_code ?? "",
+          duty?.guard_target_no ?? "",
+          t.duty_site.name, // 勤務名＝研修をした現場名（べんり君の今の形）
+          "",
+          String(t.duty_start_h),
+          String(t.duty_start_m ?? 0),
+          String(t.duty_end_h),
+          String(t.duty_end_m ?? 0),
+          String(t.duty_break_min ?? 0),
+          g.staff_code ?? "",
+          g.guard_no ?? "",
+          g.name,
+          TRAINING.label, // べんり君の「備考」＝予定コメント
+          "0",
+          "0",
+          "0",
+          "",
+        ],
+      });
+    }
+  }
+
   return {
     date: workDate,
     rows,
@@ -420,5 +513,6 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
     draftShifts: liveShifts.length - shifts.length,
     missing,
     partnerGuardMissing,
+    trainingMissing,
   };
 }

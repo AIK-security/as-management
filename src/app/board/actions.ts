@@ -313,6 +313,8 @@ export async function placeDuty(input: {
   guardId: string;
   workDate: string;
   offKind: OffKind;
+  /** 🔴 研修のときは必須（2026-11-10）。どの現場で何時から何時まで */
+  training?: TrainingInput;
 }): Promise<ActionResult> {
   const supabase = await editorClient();
 
@@ -321,6 +323,14 @@ export async function placeDuty(input: {
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.workDate)) {
     return { ok: false, message: "日付を選んでください。" };
+  }
+  // 🔴 研修は現場と時刻が無いと18列に出せない（給与が止まる）。入れる時点で揃える
+  let trainingCols: ReturnType<typeof trainingColumns> | null = null;
+  if (input.offKind === "training") {
+    if (!input.training) return { ok: false, message: "研修をした現場と時刻を入れてください。" };
+    const invalid = validateTraining(input.training);
+    if (invalid) return { ok: false, message: invalid };
+    trainingCols = trainingColumns(input.training);
   }
 
   const { data: same, error: sErr } = await supabase
@@ -350,11 +360,186 @@ export async function placeDuty(input: {
     off_kind: input.offKind,
     off_work_kind: null,
     status: "planned",
+    ...(trainingCols ?? {}),
   });
   if (error) return { ok: false, message: toMessage(error) };
 
   refresh();
   return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 研修の現場と時刻（2026-11-10）
+//
+// 🔴 研修は18列CSV に「勤務名＝研修をした現場名・時刻＝その現場の上下番時刻」で出す
+//   （確認担当・美土路さん）。時刻は現場ごとに違う（芦花公園 8:00〜17:00、人形町 8:30〜17:30）。
+// ─────────────────────────────────────────────────────────
+export type TrainingInput = {
+  siteId: string;
+  startH: number;
+  startM: number;
+  endH: number;
+  endM: number;
+  breakMin: number;
+};
+
+function validateTraining(t: TrainingInput): string | null {
+  if (!t.siteId) return "研修をした現場を選んでください。";
+  const ok =
+    Number.isInteger(t.startH) && t.startH >= 0 && t.startH <= 29 &&
+    Number.isInteger(t.startM) && t.startM >= 0 && t.startM <= 59 &&
+    Number.isInteger(t.endH) && t.endH >= 0 && t.endH <= 29 &&
+    Number.isInteger(t.endM) && t.endM >= 0 && t.endM <= 59 &&
+    Number.isInteger(t.breakMin) && t.breakMin >= 0;
+  return ok ? null : "研修の時刻を見直してください。";
+}
+
+function trainingColumns(t: TrainingInput) {
+  return {
+    duty_site_id: t.siteId,
+    duty_start_h: t.startH,
+    duty_start_m: t.startM,
+    duty_end_h: t.endH,
+    duty_end_m: t.endM,
+    duty_break_min: t.breakMin,
+  };
+}
+
+/** 入れてある研修の現場・時刻を直す */
+export async function setTrainingDetail(input: {
+  assignmentId: string;
+  training: TrainingInput;
+}): Promise<ActionResult> {
+  const supabase = await editorClient();
+  const invalid = validateTraining(input.training);
+  if (invalid) return { ok: false, message: invalid };
+
+  const { data, error } = await supabase
+    .from("assignments")
+    .update(trainingColumns(input.training))
+    .eq("id", input.assignmentId)
+    .eq("kind", "off")
+    .eq("off_kind", "training")
+    .select("id");
+  if (error) return { ok: false, message: toMessage(error) };
+  // 🔴 0件更新は黙って成功にしない（別の画面で外された直後など）
+  if (!data || data.length === 0) {
+    return { ok: false, message: "研修が見つかりませんでした。画面を読み込み直してください。" };
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+/** 研修の現場の候補。その日に枠がある現場を先に、時刻はその枠から入れる */
+export type TrainingSiteChoice = {
+  id: string;
+  name: string;
+  short_name: string;
+  customerName: string | null;
+  /** 🔴 その日のその現場の枠の時刻（上下番時刻）。無ければ現場マスタの予定。どちらも無ければ null */
+  time: { startH: number; startM: number; endH: number; endM: number; breakMin: number } | null;
+  /** time がその日の枠から来たか（ダイアログで出どころを言うため） */
+  fromShift: boolean;
+};
+
+export async function getTrainingSiteChoices(input: {
+  workDate: string;
+}): Promise<{ ok: true; choices: TrainingSiteChoice[] } | { ok: false; message: string }> {
+  const supabase = await editorClient();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.workDate)) {
+    return { ok: false, message: "日付が正しくありません。" };
+  }
+
+  const [siteRes, shiftRes] = await Promise.all([
+    // 🔴 現場は 262件（2026-10-05）。1,000行に届かないので fetchAll は要らない
+    supabase
+      .from("sites")
+      .select(
+        `id, name, short_name, plan_start_h, plan_start_m, plan_end_h, plan_end_m, plan_break,
+         customer:customers ( name )`,
+      )
+      .eq("status", "active")
+      .order("name"),
+    // その日の枠（中止を除く）。研修は日中なので日勤を先に見る
+    supabase
+      .from("shifts")
+      .select("site_id, work_kind, start_h, start_m, end_h, end_m, break_min")
+      .eq("work_date", input.workDate)
+      .is("cancelled_at", null)
+      .order("start_h")
+      .order("start_m"),
+  ]);
+  if (siteRes.error) return { ok: false, message: toMessage(siteRes.error) };
+  if (shiftRes.error) return { ok: false, message: toMessage(shiftRes.error) };
+
+  type ShiftTime = {
+    site_id: string;
+    work_kind: WorkKind;
+    start_h: number;
+    start_m: number;
+    end_h: number;
+    end_m: number;
+    break_min: number | null;
+  };
+  const shiftBySite = new Map<string, ShiftTime>();
+  for (const s of (shiftRes.data ?? []) as ShiftTime[]) {
+    const cur = shiftBySite.get(s.site_id);
+    // 日勤を優先。同じ区分なら開始の早いもの（取得順）
+    if (!cur || (cur.work_kind !== "day" && s.work_kind === "day")) shiftBySite.set(s.site_id, s);
+  }
+
+  type SiteRow = {
+    id: string;
+    name: string;
+    short_name: string;
+    plan_start_h: number | null;
+    plan_start_m: number | null;
+    plan_end_h: number | null;
+    plan_end_m: number | null;
+    plan_break: number | null;
+    customer: { name: string } | null;
+  };
+  const choices: TrainingSiteChoice[] = ((siteRes.data ?? []) as unknown as SiteRow[]).map((s) => {
+    const sh = shiftBySite.get(s.id);
+    if (sh) {
+      return {
+        id: s.id,
+        name: s.name,
+        short_name: s.short_name,
+        customerName: s.customer?.name ?? null,
+        time: {
+          startH: sh.start_h,
+          startM: sh.start_m,
+          endH: sh.end_h,
+          endM: sh.end_m,
+          breakMin: sh.break_min ?? 0,
+        },
+        fromShift: true,
+      };
+    }
+    const hasPlan = s.plan_start_h !== null && s.plan_end_h !== null;
+    return {
+      id: s.id,
+      name: s.name,
+      short_name: s.short_name,
+      customerName: s.customer?.name ?? null,
+      time: hasPlan
+        ? {
+            startH: s.plan_start_h!,
+            startM: s.plan_start_m ?? 0,
+            endH: s.plan_end_h!,
+            endM: s.plan_end_m ?? 0,
+            breakMin: s.plan_break ?? 0,
+          }
+        : null,
+      fromShift: false,
+    };
+  });
+  // 🔴 その日に枠がある現場を先に（研修は現場で行う＝その日に枠があることが多い）
+  choices.sort((a, b) => Number(b.fromShift) - Number(a.fromShift));
+
+  return { ok: true, choices };
 }
 
 export async function removeDuty(input: { assignmentId: string }): Promise<ActionResult> {

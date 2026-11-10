@@ -4,7 +4,8 @@
 // 確定した枠を 18列CSV にして、中身を見せてからダウンロードさせる。
 //
 // 🔴 この工程は要る（2026-10-09 決着・requirements.md §8-1）。ShiftMax が勤怠・給与を計算しているため。
-//   会社都合欠勤は出す（2026-10-13）。研修はまだ出していない（研修をした現場名・時刻を持っていない）ので、画面にもそう書いておく。
+//   会社都合欠勤は出す（2026-10-13）。研修も出す（2026-11-10・週表で研修に現場と時刻を入れる）。
+//   🔴 現場・時刻が未入力の研修があればダウンロードさせない（時刻の無い行を給与側へ渡さない）
 // 🔴 事務（office）も開ける。出力のダウンロードは事務の権限に入っている（requirements.md §3）。
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
@@ -61,6 +62,8 @@ export default async function HandoffPage({
       ? `警備先番号が見つからない枠が ${data.missing.length} 件あります`
       : data.partnerGuardMissing
         ? "協力会社の隊員を寄せる「応援」の隊員が、隊員マスタに見つかりません"
+        : data.trainingMissing.length > 0
+          ? `現場・時刻が入っていない研修が ${data.trainingMissing.length} 名あります`
         : data.rows.length === 0
           ? "確定した枠がありません"
           : null;
@@ -74,6 +77,7 @@ export default async function HandoffPage({
   const vacantCount = data.rows.filter((r) => r.note === "vacant").length;
   const onsiteCancelCount = data.rows.filter((r) => r.onsiteCancelled).length;
   const absentCompanyCount = data.rows.filter((r) => r.note === "absentCompany").length;
+  const trainingCount = data.rows.filter((r) => r.note === "training").length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -136,7 +140,7 @@ export default async function HandoffPage({
 
       <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
         <p className="t-meta text-slate-500">
-          確定した枠を、べんり君と同じ18列の CSV にします。1行が隊員1人です。ShiftMax の勤怠・給与の計算に使われます。休みの画面で入れた会社都合欠勤も、べんり君と同じ形の行で最後に入ります。研修はまだ入りません。
+          確定した枠を、べんり君と同じ18列の CSV にします。1行が隊員1人です。ShiftMax の勤怠・給与の計算に使われます。休みの画面で入れた会社都合欠勤と、週表で入れた研修も、べんり君と同じ形の行で最後に入ります。
         </p>
 
         {/* 🔴 未確認のまま引き渡そうとしたら知らせる（requirements.md §4-3）。止めはしない ──
@@ -179,12 +183,30 @@ export default async function HandoffPage({
           </p>
         )}
 
-        {(partnerCount > 0 || vacantCount > 0 || onsiteCancelCount > 0 || absentCompanyCount > 0) && (
+        {data.trainingMissing.length > 0 && (
+          <section className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-[13px] leading-snug text-rose-800">
+            <p className="font-semibold">
+              研修をした現場と時刻が入っていない研修が {data.trainingMissing.length} 名あります。時刻が無いと勤怠・給与が計算できないため、ダウンロードできません。
+            </p>
+            <p className="t-meta mt-0.5 text-rose-700">
+              週表（A表）の業務外「研修・講習等」で名前を押すと、現場と時刻を入れられます：{data.trainingMissing.join("、")}
+            </p>
+            <Link
+              href={`/week?${new URLSearchParams({ start: workDate, base: workDate, j: jurisdiction.code }).toString()}`}
+              className="mt-1 inline-block rounded-md border border-rose-300 bg-white px-2 py-0.5 text-[12px] font-medium text-rose-800 transition-all duration-150 ease-in-out hover:bg-rose-100"
+            >
+              この日の週表を開く
+            </Link>
+          </section>
+        )}
+
+        {(partnerCount > 0 || vacantCount > 0 || onsiteCancelCount > 0 || absentCompanyCount > 0 || trainingCount > 0) && (
           <p className="t-meta text-slate-600">
             {partnerCount > 0 && <>協力会社の隊員 {partnerCount} 名は「応援」の行にまとめ、会社名を予定コメントに足しています。</>}
             {vacantCount > 0 && <>　人が入っていない {vacantCount} 名ぶんは、個人コード 0 の行で出しています。</>}
             {onsiteCancelCount > 0 && <>　現着中止の {onsiteCancelCount} 名は、区分「現中」の警備先番号で出しています。</>}
             {absentCompanyCount > 0 && <>　会社都合欠勤の {absentCompanyCount} 名は、最後に「会社欠」の行で出しています。</>}
+            {trainingCount > 0 && <>　研修の {trainingCount} 名は、最後に「教育」の行で出しています（勤務名は研修をした現場名）。</>}
           </p>
         )}
 

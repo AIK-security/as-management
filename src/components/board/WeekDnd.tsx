@@ -3,6 +3,7 @@
 // 🔴 現場の配置は Server Action を書き足していない。
 //   placeGuard / moveAssignment / unplaceAssignment をそのまま使う。
 //   （業務外の研修・健康診断・管制だけは placeDuty / removeDuty ─ 2026-10-08）
+//   （研修は落としたらダイアログで現場と時刻を聞いてから入れる ─ 2026-11-10）
 //   **日をまたぐ移動も既存のままで成立する** ─ assignments_fill_planned_times
 //   （20260903000000）が `before update of shift_id` で発火し、
 //   `new.work_date := s.work_date` で日付を枠に合わせるため。
@@ -38,15 +39,18 @@ import {
   placeDuty,
   placeGuard,
   removeDuty,
+  setTrainingDetail,
   unplaceAssignment,
   type ActionResult,
+  type TrainingInput,
 } from "@/app/board/actions";
+import { TrainingDialog, type TrainingDialogTarget } from "@/components/board/TrainingDialog";
 import type { Guard, OffKind } from "@/lib/types";
 import { callAction } from "@/lib/action-call";
 import { formatWeekDay, plateName } from "@/lib/board-format";
 import { PoolPane } from "@/components/board/BoardPanes";
 import { WeekGrid } from "@/components/board/WeekGrid";
-import type { WeekBoardData, WeekPlate, WeekPoolGuard } from "@/lib/week-board";
+import type { TrainingDetail, WeekBoardData, WeekPlate, WeekPoolGuard } from "@/lib/week-board";
 
 // ─────────────────────────────────────────────────────────
 // プールの隊員1名
@@ -107,6 +111,8 @@ export function WeekDnd({
   const [pending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<{ label: string } | null>(null);
   const [error, setError] = useState<{ message: string; details: string[] } | null>(null);
+  // 🔴 研修の現場と時刻を聞くダイアログ（2026-11-10）。研修は現場・時刻が無いと18列に出せない
+  const [training, setTraining] = useState<TrainingDialogTarget | null>(null);
 
   // 🔴 マウスを少し動かすまでドラッグを始めない。
   //   0 にすると、セルの時刻リンク（日別へ飛ぶ）のクリックがドラッグに食われる。
@@ -176,8 +182,20 @@ export function WeekDnd({
     // 🔴 業務外（研修・健康診断・管制）。2026-10-08
     // プール → 業務外の欄
     if (active.type === "pool" && over.type === "duty") {
-      const guardId = (active.pool as WeekPoolGuard).guard.id;
-      run(() => placeDuty({ guardId, workDate: over.date as string, offKind: over.offKind as OffKind }));
+      const guard = (active.pool as WeekPoolGuard).guard;
+      const workDate = over.date as string;
+      const offKind = over.offKind as OffKind;
+      // 🔴 研修はすぐ入れず、現場と時刻を聞いてから入れる（2026-11-10）
+      if (offKind === "training") {
+        setTraining({
+          guardName: guard.name,
+          workDate,
+          initial: null,
+          save: (t) => placeDuty({ guardId: guard.id, workDate, offKind, training: t }),
+        });
+        return;
+      }
+      run(() => placeDuty({ guardId: guard.id, workDate, offKind }));
       return;
     }
     // 業務外の欄 → プール（外す）
@@ -187,12 +205,29 @@ export function WeekDnd({
     }
     // 業務外の欄 → 別の業務外の欄（日や種類を変える）。外してから入れ直す
     if (active.type === "dutyPlate" && over.type === "duty") {
-      const guardId = (active.guard as Guard).id;
-      run(async () => {
-        const r = await removeDuty({ assignmentId: active.assignmentId as string });
+      const guard = active.guard as Guard;
+      const assignmentId = active.assignmentId as string;
+      const workDate = over.date as string;
+      const offKind = over.offKind as OffKind;
+      const move = (t?: TrainingInput) => async () => {
+        const r = await removeDuty({ assignmentId });
         if (!r.ok) return r;
-        return placeDuty({ guardId, workDate: over.date as string, offKind: over.offKind as OffKind });
-      });
+        return placeDuty({ guardId: guard.id, workDate, offKind, training: t });
+      };
+      // 🔴 研修へ移すときは現場と時刻を聞く。前の研修の現場を初めから選んでおく
+      //   （同じ人が同じ現場で研修を続けることが多い。時刻は日によって違いうるので確かめてもらう）
+      if (offKind === "training") {
+        if (active.offKind === offKind && active.date === workDate) return; // 同じマスへ戻しただけ
+        const initial = (active.training as TrainingDetail | null) ?? null;
+        setTraining({
+          guardName: guard.name,
+          workDate,
+          initial,
+          save: (t) => move(t)(),
+        });
+        return;
+      }
+      run(move());
       return;
     }
 
@@ -215,6 +250,14 @@ export function WeekDnd({
       <div className={`flex min-h-0 min-w-0 flex-1 ${pending ? "opacity-70" : ""}`}>
         <WeekGrid
           data={data}
+          onEditTraining={(t) =>
+            setTraining({
+              guardName: t.guard.name,
+              workDate: t.workDate,
+              initial: t.training,
+              save: (input) => setTrainingDetail({ assignmentId: t.assignmentId, training: input }),
+            })
+          }
           baseHrefs={baseHrefs}
           dayHrefs={dayHrefs}
           editable={editable}
@@ -266,6 +309,8 @@ export function WeekDnd({
         </div>
       )}
 
+      {training && <TrainingDialog target={training} onClose={() => setTraining(null)} />}
+
       <DragOverlay dropAnimation={null}>
         {dragging && (
           <div className="rounded-md border-2 border-indigo-500 bg-white px-2 py-1 text-[13px] font-medium text-slate-900 shadow-lg">
@@ -315,3 +360,4 @@ function findShiftIdOf(data: WeekBoardData, assignmentId: string): string | null
   }
   return null;
 }
+

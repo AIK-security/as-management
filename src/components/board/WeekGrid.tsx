@@ -33,7 +33,14 @@ import {
   jobCountsMark,
   plateName,
 } from "@/lib/board-format";
-import type { WeekBoardData, WeekCell, WeekCellShift, WeekOffRow, WeekPlate } from "@/lib/week-board";
+import type {
+  TrainingDetail,
+  WeekBoardData,
+  WeekCell,
+  WeekCellShift,
+  WeekOffRow,
+  WeekPlate,
+} from "@/lib/week-board";
 import type { Guard, OffKind } from "@/lib/types";
 
 /**
@@ -220,8 +227,11 @@ export function WeekGrid({
   dayHrefs,
   editable,
   printHeading,
+  onEditTraining,
 }: {
   data: WeekBoardData;
+  /** 研修の名前を押したとき（現場・時刻を直す ─ 2026-11-10） */
+  onEditTraining?: (t: EditTrainingTarget) => void;
   /** 紙にだけ出す見出し（画面には出ない） */
   printHeading: { title: string; asOf: string };
   /** 列ヘッダのクリック＝基準日の移動（§7-2-4） */
@@ -384,7 +394,12 @@ export function WeekGrid({
                     // 🔴 研修・健康診断・管制は、ここへプールから引っぱって入れる（2026-10-08）。
                     //   休みではなく業務なので、休みの画面ではなく A表の欄で扱う（柴山）
                     editable && row.allDay && DUTY_OFF_KINDS.includes(row.offKind) ? (
-                      <DutyCell key={c.date} offKind={row.offKind} cell={c} />
+                      <DutyCell
+                        key={c.date}
+                        offKind={row.offKind}
+                        cell={c}
+                        onEditTraining={onEditTraining}
+                      />
                     ) : (
                     <td
                       key={c.date}
@@ -393,13 +408,14 @@ export function WeekGrid({
                       {c.guards.length === 0 ? (
                         <span className="block text-center text-slate-300">—</span>
                       ) : (
-                        c.guards.map((g) => (
+                        c.guards.map((g, i) => (
                           <div
                             key={g.id}
                             className="break-all leading-tight text-slate-700"
                             title={g.name}
                           >
                             {plateName(g)}
+                            {row.offKind === "training" && <TrainingNote training={c.training[i]} />}
                           </div>
                         ))
                       )}
@@ -445,7 +461,23 @@ export function WeekGrid({
 // ─────────────────────────────────────────────────────────
 // 業務外の欄（研修・健康診断・管制）のマス。ここが落とし先（2026-10-08）
 // ─────────────────────────────────────────────────────────
-function DutyCell({ offKind, cell }: { offKind: OffKind; cell: WeekOffRow["cells"][number] }) {
+/** 研修の名前を押したときに渡すもの */
+export type EditTrainingTarget = {
+  assignmentId: string;
+  guard: Guard;
+  workDate: string;
+  training: TrainingDetail | null;
+};
+
+function DutyCell({
+  offKind,
+  cell,
+  onEditTraining,
+}: {
+  offKind: OffKind;
+  cell: WeekOffRow["cells"][number];
+  onEditTraining?: (t: EditTrainingTarget) => void;
+}) {
   const { setNodeRef, isOver } = useDroppable({
     id: `duty-${offKind}-${cell.date}`,
     data: { type: "duty", offKind, date: cell.date },
@@ -464,32 +496,86 @@ function DutyCell({ offKind, cell }: { offKind: OffKind; cell: WeekOffRow["cells
         <span className="block text-center text-slate-300">—</span>
       ) : (
         cell.guards.map((g, i) => (
-          <DutyName key={cell.assignmentIds[i]} guard={g} assignmentId={cell.assignmentIds[i]} />
+          <DutyName
+            key={cell.assignmentIds[i]}
+            guard={g}
+            assignmentId={cell.assignmentIds[i]}
+            offKind={offKind}
+            workDate={cell.date}
+            training={cell.training[i]}
+            onEditTraining={onEditTraining}
+          />
         ))
       )}
     </td>
   );
 }
 
-/** 業務外の欄の名前。プールへ戻すと外れる */
-function DutyName({ guard, assignmentId }: { guard: Guard; assignmentId: string }) {
+/** 業務外の欄の名前。プールへ戻すと外れる。研修は押すと現場・時刻を直せる（2026-11-10） */
+function DutyName({
+  guard,
+  assignmentId,
+  offKind,
+  workDate,
+  training,
+  onEditTraining,
+}: {
+  guard: Guard;
+  assignmentId: string;
+  offKind: OffKind;
+  workDate: string;
+  training: TrainingDetail | null;
+  onEditTraining?: (t: EditTrainingTarget) => void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `duty-plate-${assignmentId}`,
-    data: { type: "dutyPlate", assignmentId, guard },
+    data: { type: "dutyPlate", assignmentId, guard, offKind, date: workDate, training },
   });
+  const isTraining = offKind === "training";
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      title={`${guard.name}（プールへ戻すと外れます）`}
+      // 🔴 押す＝直す。ドラッグは 4px 動かしてから始まる（WeekDnd の PointerSensor）ので、押すのとは混ざらない
+      onClick={
+        isTraining && onEditTraining
+          ? () => onEditTraining({ assignmentId, guard, workDate, training })
+          : undefined
+      }
+      title={
+        isTraining
+          ? `${guard.name}（押すと研修の現場・時刻を直せます。プールへ戻すと外れます）`
+          : `${guard.name}（プールへ戻すと外れます）`
+      }
       className={[
         "cursor-grab break-all rounded px-1 leading-tight text-slate-700 active:cursor-grabbing hover:bg-slate-100",
         isDragging ? "opacity-30" : "",
       ].join(" ")}
     >
       {plateName(guard)}
+      {isTraining && <TrainingNote training={training} />}
     </div>
+  );
+}
+
+/**
+ * 研修をした現場と時刻を名前の下に小さく出す（2026-11-10）。
+ * 🔴 未入力は琥珀で見せる。18列（べんり君への引き渡し）が止まるため、入れ忘れに気づけるように
+ */
+function TrainingNote({ training }: { training: TrainingDetail | null }) {
+  if (!training) {
+    return (
+      <span className="block text-[11px] font-semibold text-amber-600">現場未入力</span>
+    );
+  }
+  return (
+    <span className="block truncate text-[11px] font-medium text-slate-500" title={training.siteName}>
+      {training.siteShortName}
+      <span className="ml-1 font-mono tabular-nums">
+        {formatTime(training.startH, training.startM)}
+      </span>
+    </span>
   );
 }
 
