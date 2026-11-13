@@ -19,8 +19,9 @@
 "use client";
 
 import { useState } from "react";
-import { addShift } from "@/app/board/actions";
-import { addDays, todayInJst } from "@/lib/board-format";
+import { addShift, type SameSiteConflict } from "@/app/board/actions";
+import { addDays, formatTime, todayInJst } from "@/lib/board-format";
+import { SameSiteConfirm } from "@/components/board/SameSiteConfirm";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
 import type { SiteDetail } from "@/lib/masters";
 import type { WorkKind } from "@/lib/types";
@@ -62,6 +63,8 @@ export function AddShiftFromSite({ site, plan }: { site: SiteDetail; plan: PlanD
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // 🔴 時刻の違う同じ区分の枠があるときの確認（2026-11-13・SameSiteConfirm）
+  const [conflicts, setConflicts] = useState<SameSiteConflict[] | null>(null);
 
   const targetDates = (() => {
     if (!range) return [dateFrom];
@@ -81,10 +84,11 @@ export function AddShiftFromSite({ site, plan }: { site: SiteDetail; plan: PlanD
     setEndM(plan.endM);
     setBreakMin(plan.breakMin);
     setError(null);
+    setConflicts(null);
     setOpen(true);
   }
 
-  async function submit() {
+  async function submit(allowSameSite = false) {
     if (startH === null || startM === null || endH === null || endM === null || breakMin === null) {
       setError("開始・終了の時刻と休憩を入れてください。");
       return;
@@ -105,16 +109,23 @@ export function AddShiftFromSite({ site, plan }: { site: SiteDetail; plan: PlanD
       headcount,
       planComment,
       billingNote,
+      allowSameSite,
     }));
     setPending(false);
     if (!r.ok) {
+      if ("conflicts" in r && r.conflicts) {
+        setConflicts(r.conflicts);
+        return;
+      }
+      setConflicts(null);
       setError(r.message);
       return;
     }
+    setConflicts(null);
     if (r.created === 0) {
       setError(
         r.skipped > 0
-          ? `すでに同じ枠があるため、${r.skipped}件とも追加しませんでした。`
+          ? `すでに同じ時刻の枠があるため、${r.skipped}件とも追加しませんでした。`
           : "追加する日がありません。期間と曜日を見直してください。",
       );
       return;
@@ -316,11 +327,21 @@ export function AddShiftFromSite({ site, plan }: { site: SiteDetail; plan: PlanD
         </div>
       )}
 
+      {conflicts && startH !== null && startM !== null && endH !== null && endM !== null ? (
+        <SameSiteConfirm
+          conflicts={conflicts}
+          newStart={formatTime(startH, startM)}
+          newEnd={formatTime(endH, endM)}
+          pending={pending}
+          onConfirm={() => submit(true)}
+          onBack={() => setConflicts(null)}
+        />
+      ) : (
       <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
           disabled={pending || targetDates.length === 0}
-          onClick={submit}
+          onClick={() => submit()}
           className="rounded-md bg-indigo-600 px-4 py-1.5 text-[14px] font-semibold text-white shadow-sm transition-all duration-150 ease-in-out hover:bg-indigo-700 disabled:opacity-50"
         >
           {pending ? "追加中…" : range ? `${targetDates.length}件を追加する` : "追加する"}
@@ -333,6 +354,7 @@ export function AddShiftFromSite({ site, plan }: { site: SiteDetail; plan: PlanD
           やめる
         </button>
       </div>
+      )}
     </Section>
   );
 }

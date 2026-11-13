@@ -709,10 +709,27 @@ export async function setShiftCancelled(input: {
 //   引き渡し（段3）のときに〈現場の得意先 × 枠の区分〉で duty_codes から引く
 //   （2026-10-02。それまでは仮番号 TMP- を振っていた）。
 // ─────────────────────────────────────────────────────────
-/** 枠の追加結果。**何件作って何件飛ばしたか**を画面で言うために持つ */
+/** 同じ現場・同じ日・同じ区分で、時刻が違う既存の枠（確認に出す） */
+export type SameSiteConflict = {
+  workDate: string;
+  startH: number;
+  startM: number;
+  endH: number;
+  endM: number;
+  cancelled: boolean;
+};
+
+/**
+ * 枠の追加結果。**何件作って何件飛ばしたか**を画面で言うために持つ。
+ *
+ * `conflicts` が付いた失敗は「作らずに確認を求めている」。
+ * 画面は一覧を見せ、`allowSameSite: true` で呼び直す。
+ * 失敗の形（ok:false + message）に寄せてあるので、確認に対応していない
+ * 呼び出し側でも message がそのまま出る＝黙って作られることはない。
+ */
 export type AddShiftResult =
   | { ok: true; created: number; skipped: number }
-  | { ok: false; message: string };
+  | { ok: false; message: string; conflicts?: SameSiteConflict[] };
 
 export async function addShift(input: {
   /** 既存現場を選んだ場合 */
@@ -743,6 +760,12 @@ export async function addShift(input: {
   //   🔴 班名（5列目）は 2026-10-02 に削除。実データで1行も使われていなかった（空で出す）。
   planComment?: string;
   billingNote?: string;
+  /**
+   * 🔴 同じ現場・同じ日・同じ区分で**時刻が違う**枠があっても作る（2026-11-13）。
+   *   早出など、同じ現場に枠を2つ立てる運用が実在する（赤尾さん・お試しの報告）。
+   *   false のときは作らずに conflicts を返し、画面で確認を取る。
+   */
+  allowSameSite?: boolean;
 }): Promise<AddShiftResult> {
   await requireRole("control", "admin");
   const supabase = await createClient();
@@ -778,20 +801,54 @@ export async function addShift(input: {
     siteId = created.id;
   }
 
-  // 🔴 同じ現場・同じ日・同じ区分の枠が既にあれば**作らない**。
+  // 🔴 同じ現場・同じ日・同じ区分・**同じ開始時刻**の枠が既にあれば**作らない**。
   //   期間を延ばして作り直すたびに枠が二重に増えると、盤面が壊れる。
   //   DB に一意制約は無いので（board_core.sql）、ここで見る。
+  //
+  // 🔴 開始時刻が違えば別の枠として作れる（2026-11-13）。
+  //   それまでは〈現場 × 日 × 区分〉に1件でもあれば作らなかったため、
+  //   早出（同じ現場に 6:00 と 8:00 の枠）が立てられなかった（赤尾さんの報告。
+  //   一度夜勤で作って日勤に直す回避をしていた）。
+  //   ただし黙っては作らない。allowSameSite が無ければ一覧を返して確認を取る。
+  //   同じ現場に同じ区分の枠が複数ある日は 7月の実データにもあり、
+  //   週表・複写・引き渡し（18列）・重なりの制約はいずれも複数枠を扱える。
   const { data: existing, error: exErr } = await supabase
     .from("shifts")
-    .select("work_date")
+    .select("work_date, start_h, start_m, end_h, end_m, cancelled_at")
     .eq("site_id", siteId)
     .eq("work_kind", input.workKind)
-    .in("work_date", dates);
+    .in("work_date", dates)
+    .order("work_date")
+    .order("start_h")
+    .order("start_m");
   if (exErr) return { ok: false, message: toMessage(exErr) };
-  const already = new Set((existing ?? []).map((r) => r.work_date as string));
+
+  const sameTime = new Set(
+    (existing ?? [])
+      .filter((r) => r.start_h === input.startH && r.start_m === input.startM)
+      .map((r) => r.work_date as string),
+  );
+  // 作る予定の日にある、時刻の違う枠（同じ時刻の枠がある日は飛ばすので出さない）
+  const conflicts: SameSiteConflict[] = (existing ?? [])
+    .filter((r) => !sameTime.has(r.work_date as string))
+    .map((r) => ({
+      workDate: r.work_date as string,
+      startH: r.start_h as number,
+      startM: r.start_m as number,
+      endH: r.end_h as number,
+      endM: r.end_m as number,
+      cancelled: r.cancelled_at !== null,
+    }));
+  if (conflicts.length > 0 && !input.allowSameSite) {
+    return {
+      ok: false,
+      message: "この現場には、同じ日・同じ勤務区分の枠が既にあります。",
+      conflicts,
+    };
+  }
 
   const rows = dates
-    .filter((d) => !already.has(d))
+    .filter((d) => !sameTime.has(d))
     .map((d) => ({
       site_id: siteId,
       work_date: d,

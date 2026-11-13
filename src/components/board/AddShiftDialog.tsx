@@ -15,9 +15,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { addShift } from "@/app/board/actions";
+import { addShift, type SameSiteConflict } from "@/app/board/actions";
 import { TwoDigitInput } from "@/components/TwoDigitInput";
-import { addDays } from "@/lib/board-format";
+import { addDays, formatTime } from "@/lib/board-format";
+import { SameSiteConfirm } from "@/components/board/SameSiteConfirm";
 import type { BoardShiftGroup, SitePick } from "@/lib/board";
 import type { JobCounts, WorkKind } from "@/lib/types";
 import { JobCountsInput } from "@/components/board/JobCountsInput";
@@ -52,6 +53,10 @@ export function AddShiftDialog({
   const [cursor, setCursor] = useState(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 🔴 時刻の違う同じ現場の枠があるときの確認（2026-11-13・SameSiteConfirm）
+  const [conflicts, setConflicts] = useState<SameSiteConflict[] | null>(null);
+  // 閉じたあとに出す一言（一部を飛ばしたとき）。次に開くまで残す
+  const [notice, setNotice] = useState<string | null>(null);
 
   // 勤務区分の既定は**いま見ているペイン**に合わせる。
   // 日勤を見ているのに夜勤の枠ができると、作った直後に画面から消える。
@@ -115,6 +120,7 @@ export function AddShiftDialog({
 
   function choose(site: SitePick) {
     setPicked(site);
+    setConflicts(null); // 別の現場の確認を出したままにしない
     setQuery(site.name);
     // 🔴 ひな形があるものだけ上書きする。無い現場で 0 時に潰さない
     if (site.plan_start_h !== null) setStartH(site.plan_start_h);
@@ -131,11 +137,12 @@ export function AddShiftDialog({
     setCursor(0);
     setCustomerId("");
     setError(null);
+    setConflicts(null);
     setDateFrom(null);
     setDateTo(null);
   }
 
-  async function submit() {
+  async function submit(allowSameSite = false) {
     setPending(true);
     setError(null);
     const result = await callAction(() => addShift({
@@ -154,18 +161,26 @@ export function AddShiftDialog({
       jobCounts,
       planComment,
       billingNote,
+      allowSameSite,
     }));
     setPending(false);
     if (!result.ok) {
+      // 作らずに確認を求めてきた ─ 既にある枠を見せて選んでもらう
+      if ("conflicts" in result && result.conflicts) {
+        setConflicts(result.conflicts);
+        return;
+      }
+      setConflicts(null);
       setError(result.message ?? "追加できませんでした。");
       return;
     }
+    setConflicts(null);
     // 🔴 1件も作られなかったときは画面を動かさずに理由を出す。
     //   黙って閉じると「押したのに増えない」に見える。
     if (result.created === 0) {
       setError(
         result.skipped > 0
-          ? `すでに同じ枠があるため、${result.skipped}件とも追加しませんでした。`
+          ? `すでに同じ時刻の枠があるため、${result.skipped}件とも追加しませんでした。`
           : "追加する日がありません。期間と曜日を見直してください。",
       );
       return;
@@ -181,20 +196,49 @@ export function AddShiftDialog({
     q.delete("c");
     q.set("group", workKind === "day" ? "day" : "night");
     reset();
+    // 🔴 一部を飛ばしたときも言う（2026-11-13）。これまでは1件も作れなかったとき
+    //   だけ理由を出し、「4件作って3件飛ばした」は黙って閉じていた。
+    //   ダイアログは閉じるので、盤面の上に短く出す。
+    if (result.skipped > 0) {
+      setNotice(
+        `${result.created}件を追加しました（${result.skipped}件は同じ時刻の枠が既にあったので飛ばしました）。`,
+      );
+    }
     router.push(pathname + "?" + q.toString());
   }
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={
-          HEADER_BTN + " cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-        }
-      >
-        ＋ 現場を追加
-      </button>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => {
+            setNotice(null);
+            setOpen(true);
+          }}
+          className={
+            HEADER_BTN + " cursor-pointer border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+          }
+        >
+          ＋ 現場を追加
+        </button>
+        {notice && (
+          <div
+            role="status"
+            className="absolute right-0 top-full z-30 mt-1 flex w-[360px] items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-left text-[13px] text-emerald-800 shadow-sm"
+          >
+            <span className="flex-1">{notice}</span>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="閉じる"
+              className="cursor-pointer text-emerald-700 transition-all duration-150 ease-in-out hover:text-emerald-900"
+            >
+              ×
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -232,6 +276,7 @@ export function AddShiftDialog({
             setQuery(e.target.value);
             setPicked(null);
             setCursor(0);
+            setConflicts(null);
           }}
           onKeyDown={(e) => {
             // 🔴 IME の変換中はキーを拾わない（2026-09-04 決定）。
@@ -497,11 +542,22 @@ export function AddShiftDialog({
           </p>
         )}
 
+        {/* 🔴 確認中は下の［追加する］を出さない。押せる場所を1つにする */}
+        {conflicts ? (
+          <SameSiteConfirm
+            conflicts={conflicts}
+            newStart={formatTime(startH, startM)}
+            newEnd={formatTime(endH, endM)}
+            pending={pending}
+            onConfirm={() => submit(true)}
+            onBack={() => setConflicts(null)}
+          />
+        ) : (
         <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
             disabled={!canSubmit}
-            onClick={submit}
+            onClick={() => submit()}
             className={[
               BTN,
               canSubmit
@@ -524,6 +580,7 @@ export function AddShiftDialog({
           </button>
           <span className="ml-auto text-[11px] text-slate-500">仮組みとして追加されます</span>
         </div>
+        )}
       </div>
     </div>
   );
