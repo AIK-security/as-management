@@ -333,7 +333,7 @@ function PoolBody({ data, editable }: { data: WeekBoardData; editable: boolean }
   return (
     <div
       ref={setNodeRef}
-      className={`min-h-full p-2 ${isOver ? "bg-indigo-50" : ""}`}
+      className={`min-h-full shrink-0 p-2 ${isOver ? "bg-indigo-50" : ""}`}
     >
       <p className="t-meta mb-1.5 text-slate-400">
         日付の見出しで基準日を変えられます。ここへ戻すと配置から外れます

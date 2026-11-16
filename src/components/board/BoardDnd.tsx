@@ -244,6 +244,10 @@ function reduce(state: BoardState, move: Move): BoardState {
 //
 // 🔴 「外す」は D&D で1操作（§2-7）。プールのどこへ落としても外れる。
 //   ゴミ箱アイコンのような小さな的にしない
+// 🔴 shrink-0 を外さない（2026-11-16・赤尾さんの指摘）。
+//   親（PoolPane）は縦の flex で、min-h-full だけだと欄の高さまで縮む。
+//   中身ははみ出して見えるが、落とし先の枠は欄1つ分しかなく、
+//   プールを下へスクロールした位置で離すと「戻せない」。週表の PoolBody も同じ
 // ─────────────────────────────────────────────────────────
 function PoolDropArea({ children }: { children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id: "pool", data: { type: "pool" } });
@@ -251,7 +255,7 @@ function PoolDropArea({ children }: { children: React.ReactNode }) {
     <div
       ref={setNodeRef}
       className={[
-        "min-h-full transition-all duration-150 ease-in-out",
+        "min-h-full shrink-0 transition-all duration-150 ease-in-out",
         isOver ? "bg-indigo-50 ring-2 ring-indigo-500 ring-inset" : "",
       ].join(" ")}
     >
