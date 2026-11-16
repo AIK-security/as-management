@@ -16,6 +16,7 @@ import { AddShiftFromSite } from "@/components/masters/AddShiftFromSite";
 import type { SiteDetail, SiteRefs } from "@/lib/masters";
 import { FIELD, Field, Section } from "@/components/masters/FormBits";
 import { callAction } from "@/lib/action-call";
+import { CustomerPicker, type CustomerPick } from "@/components/CustomerPicker";
 
 export function SiteEditForm({
   site,
@@ -24,7 +25,7 @@ export function SiteEditForm({
 }: {
   site: SiteDetail;
   options: {
-    customers: { id: string; name: string }[];
+    customers: CustomerPick[];
     jurisdictions: { id: string; name: string }[];
     departments: { id: string; name: string; jurisdiction_id: string }[];
   };
@@ -282,18 +283,11 @@ export function SiteEditForm({
           <Section title="所属">
             <div className="grid grid-cols-2 gap-2">
               <Field label="得意先" hint="必須">
-                <select
+                <CustomerPicker
+                  customers={options.customers}
                   value={customerId}
-                  onChange={(e) => edit(setCustomerId)(e.target.value)}
-                  className={FIELD}
-                >
-                  <option value="">（選ぶ）</option>
-                  {options.customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={edit(setCustomerId)}
+                />
               </Field>
               <Field label="管轄">
                 <select

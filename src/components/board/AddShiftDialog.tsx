@@ -24,6 +24,7 @@ import type { JobCounts, WorkKind } from "@/lib/types";
 import { JobCountsInput } from "@/components/board/JobCountsInput";
 import { callAction } from "@/lib/action-call";
 import { HEADER_BTN } from "@/components/board/header-ui";
+import { CustomerPicker, type CustomerPick } from "@/components/CustomerPicker";
 
 const BTN =
   "rounded-md border-2 px-3 py-1.5 text-[14px] font-semibold transition-all duration-150 ease-in-out";
@@ -45,7 +46,7 @@ export function AddShiftDialog({
   jurisdictionId: string;
   group: BoardShiftGroup;
   sitePicks: SitePick[];
-  customerPicks: { id: string; name: string }[];
+  customerPicks: CustomerPick[];
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -344,18 +345,7 @@ export function AddShiftDialog({
             <span className="text-[11px] font-medium text-slate-500">
               得意先（新しい現場に設定します・必須）
             </span>
-            <select
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              className={FIELD + " w-full"}
-            >
-              <option value="">（選ぶ）</option>
-              {customerPicks.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <CustomerPicker customers={customerPicks} value={customerId} onChange={setCustomerId} />
           </label>
         )}
 

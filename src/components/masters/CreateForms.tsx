@@ -19,6 +19,7 @@ import { createGuard } from "@/app/masters/guards/actions";
 import { createCustomer } from "@/app/masters/customers/actions";
 import { FIELD, Field, Notice, Section } from "@/components/masters/FormBits";
 import { callAction } from "@/lib/action-call";
+import { CustomerPicker, type CustomerPick } from "@/components/CustomerPicker";
 
 type Created = { ok: true; id: string } | { ok: false; message: string };
 
@@ -54,7 +55,7 @@ export function SiteCreateForm({
   options,
 }: {
   options: {
-    customers: { id: string; name: string }[];
+    customers: CustomerPick[];
     jurisdictions: { id: string; name: string }[];
   };
 }) {
@@ -98,18 +99,7 @@ export function SiteCreateForm({
             </select>
           </Field>
           <Field label="得意先" hint="必須">
-            <select
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              className={FIELD}
-            >
-              <option value="">（選ぶ）</option>
-              {options.customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <CustomerPicker customers={options.customers} value={customerId} onChange={setCustomerId} />
           </Field>
         </div>
       </Section>

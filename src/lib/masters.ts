@@ -15,6 +15,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import type { ASheet } from "@/lib/types";
+import { fetchAll } from "@/lib/fetch-all";
 
 /** 1ページの件数。密度優先（共通デザインルール）で多めに出す。 */
 export const PAGE_SIZE = 50;
@@ -549,13 +550,21 @@ export async function getSite(id: string): Promise<SiteDetail | null> {
 export async function getSiteFormOptions() {
   const supabase = await createClient();
   const [cus, jur, dep] = await Promise.all([
-    supabase.from("customers").select("id, name").order("name"),
+    // 🔴 得意先は600件超で育つ。1,000行で黙って切れるので fetchAll を通す（2026-11-16）
+    fetchAll((from, to) =>
+      supabase
+        .from("customers")
+        .select("id, name, name_kana")
+        .order("name")
+        .order("id")
+        .range(from, to),
+    ),
     supabase.from("jurisdictions").select("id, name").order("code"),
     supabase.from("departments").select("id, name, jurisdiction_id").order("code"),
   ]);
   for (const r of [cus, jur, dep]) if (r.error) throw new Error(r.error.message);
   return {
-    customers: (cus.data ?? []) as { id: string; name: string }[],
+    customers: (cus.data ?? []) as { id: string; name: string; name_kana: string | null }[],
     jurisdictions: (jur.data ?? []) as { id: string; name: string }[],
     departments: (dep.data ?? []) as { id: string; name: string; jurisdiction_id: string }[],
   };

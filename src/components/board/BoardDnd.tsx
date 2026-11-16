@@ -240,6 +240,20 @@ function reduce(state: BoardState, move: Move): BoardState {
 }
 
 // ─────────────────────────────────────────────────────────
+// 氏名検索（プールと盤面で同じ判定を使う）
+// ─────────────────────────────────────────────────────────
+function matchesGuardQuery(guard: { name: string; short_name: string }, query: string): boolean {
+  return `${guard.name}${guard.short_name}`.includes(query);
+}
+
+/** 検索で見つけた名札の枠まで動かす。カードの id は ShiftRowCard が振る */
+function scrollToShift(shiftId: string) {
+  document
+    .getElementById(`shift-${shiftId}`)
+    ?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+// ─────────────────────────────────────────────────────────
 // プールのドロップ先
 //
 // 🔴 「外す」は D&D で1操作（§2-7）。プールのどこへ落としても外れる。
@@ -522,13 +536,26 @@ export function BoardDnd({
 
   // ── プールの絞り込み ──────────────────────────────────
   const visiblePool = state.pool.filter((v) => {
-    if (query && !`${v.guard.name}${v.guard.short_name}`.includes(query)) return false;
+    if (query && !matchesGuardQuery(v.guard, query)) return false;
     if (filters.has("自社") && v.isPartner) return false;
     if (filters.has("協力会社") && !v.isPartner) return false;
     if (filters.has("他管轄") && v.guard.jurisdiction_id === jurisdictionId) return false;
     if (filters.has("資格あり") && v.qualLabels.length === 0) return false;
     return true;
   });
+
+  // ── 検索に合う「盤面の」名札（2026-11-16・赤尾さんの要望） ──
+  // 🔴 配置済みの人はプールに居ないので、プールの検索だけでは
+  //   「どこかに置いたはずの人」が見つからなかった。同じ検索語で盤面も光らせる。
+  //   絞り込みのボタン（自社 等）は盤面には効かせない ─ 探しているのは名前だけ
+  const boardHits = query
+    ? state.rows.flatMap((r) =>
+        r.plates
+          .filter((p) => matchesGuardQuery(p.guard, query))
+          .map((p) => ({ plate: p, shiftId: r.shift.id, siteName: r.site.name })),
+      )
+    : [];
+  const boardHitIds = new Set(boardHits.map((h) => h.plate.assignmentId));
 
   function toggleFilter(f: PoolFilter) {
     setFilters((prev) => {
@@ -653,6 +680,7 @@ export function BoardDnd({
                   selectedPlateId={
                     keys.selection.shiftId === row.shift.id ? keys.selection.assignmentId : null
                   }
+                  searchHitIds={boardHitIds}
                   onToggleStatus={handleToggleStatus}
                   onToggleCancel={handleToggleCancel}
                   onDelete={handleDeleteShift}
@@ -706,6 +734,33 @@ export function BoardDnd({
               {visiblePool.length !== state.pool.length && (
                 <div className="t-meta mt-1.5 text-slate-500">
                   {visiblePool.length} 名を表示（未配置 {state.pool.length} 名中）
+                </div>
+              )}
+              {/* 盤面で見つかった人。押すとその現場のカードまで動く
+                  🔴 0件でも出す。「盤面に居ない」と「探していない」を区別するため */}
+              {query && (
+                <div className="t-meta mt-1.5 rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-slate-700">
+                  <span className="font-semibold">盤面に {boardHits.length} 名</span>
+                  {filtered && <span className="text-slate-500">（表示中の得意先の中だけ）</span>}
+                  {boardHits.length > 0 && (
+                    <ul className="mt-0.5 space-y-0.5">
+                      {boardHits.slice(0, 8).map((h) => (
+                        <li key={h.plate.assignmentId}>
+                          <button
+                            type="button"
+                            onClick={() => scrollToShift(h.shiftId)}
+                            className="cursor-pointer text-left text-indigo-700 underline-offset-2 transition-all duration-150 ease-in-out hover:underline"
+                          >
+                            {h.plate.guard.name}
+                            <span className="ml-1 text-slate-500">→ {h.siteName}</span>
+                          </button>
+                        </li>
+                      ))}
+                      {boardHits.length > 8 && (
+                        <li className="text-slate-500">ほか {boardHits.length - 8} 名</li>
+                      )}
+                    </ul>
+                  )}
                 </div>
               )}
 

@@ -71,6 +71,7 @@ export function ShiftRowCard({
   editable = false,
   selected = false,
   selectedPlateId = null,
+  searchHitIds,
   onToggleStatus,
   onToggleCancel,
   onDelete,
@@ -88,6 +89,8 @@ export function ShiftRowCard({
   selected?: boolean;
   /** その枠の中で選ばれているプレート（assignmentId） */
   selectedPlateId?: string | null;
+  /** プールの氏名検索に合った名札（assignmentId）。盤面でも光らせる（2026-11-16） */
+  searchHitIds?: Set<string>;
   onToggleStatus?: (shiftId: string, next: "draft" | "confirmed") => void;
   /** 枠の中止／中止の取り消し（2026-09-07） */
   onToggleCancel?: (shiftId: string, cancelled: boolean) => void;
@@ -135,6 +138,7 @@ export function ShiftRowCard({
 
   return (
     <section
+      id={`shift-${shift.id}`}
       ref={(el) => {
         boxRef.current = el;
         setNodeRef(el);
@@ -412,6 +416,7 @@ export function ShiftRowCard({
       <div className="mt-auto flex flex-wrap content-end gap-1.5 rounded-br-md bg-slate-50/70 px-3 py-2.5">
         {plates.map((plate, index) => {
           const picked = plate.assignmentId === selectedPlateId;
+          const hit = searchHitIds?.has(plate.assignmentId) ?? false;
           return (
             // 🔴 選択の枠線と隊長ボタンは、ドラッグの取っ手の**外側**に置く。
             //   DraggablePlate の中に入れると、ボタンを押した指がドラッグ開始と
@@ -424,7 +429,17 @@ export function ShiftRowCard({
                 onSelect?.(shift.id, plate.assignmentId);
               }}
             >
-              <div className={picked ? "rounded-lg outline-2 outline-offset-1 outline-indigo-600" : ""}>
+              {/* 🔴 検索で見つけた名札は**破線**の藍で囲む。選択（実線の藍）と同じ形にすると
+                  「選んでいる」と「見つかった」が見分けられない。選択のほうを優先する */}
+              <div
+                className={
+                  picked
+                    ? "rounded-lg outline-2 outline-offset-1 outline-indigo-600"
+                    : hit
+                      ? "rounded-lg bg-indigo-100 outline-2 outline-offset-1 outline-dashed outline-indigo-500"
+                      : ""
+                }
+              >
                 <DraggablePlate plate={plate} disabled={!editable} />
               </div>
 

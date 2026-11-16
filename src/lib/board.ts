@@ -101,7 +101,7 @@ export type BoardData = {
    */
   sitePicks: SitePick[];
   /** 新規現場を作るときに選ぶ得意先。ShiftMax 由来のマスタなので**選ぶだけ**（新規作成はしない） */
-  customerPicks: { id: string; name: string }[];
+  customerPicks: { id: string; name: string; name_kana: string | null }[];
   warnings: BoardWarning[];
   counts: { draft: number; confirmed: number; shortage: number };
   /** 🔴 その日に枠が1件も無いとき、データがある直近の日付を出す（空画面で詰まらせない） */
@@ -331,7 +331,16 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
       .eq("status", "active")
       .order("name"),
 
-    supabase.from("customers").select("id, name").order("name"),
+    // 🔴 得意先は600件超で育つ。1,000行で黙って切れるので fetchAll を通す（2026-11-16）。
+    //   ふりがなは「現場を追加」の得意先検索で使う
+    fetchAll((from, to) =>
+      supabase
+        .from("customers")
+        .select("id, name, name_kana")
+        .order("name")
+        .order("id")
+        .range(from, to),
+    ),
   ]);
 
   for (const r of [
@@ -678,7 +687,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
     group,
     rows,
     sitePicks,
-    customerPicks: (customerRows ?? []) as { id: string; name: string }[],
+    customerPicks: (customerRows ?? []) as { id: string; name: string; name_kana: string | null }[],
     groups: groupByCustomer(rows),
     pool,
     offGroups: [...offMap.entries()].map(([label, guards]) => ({ label, guards })),
