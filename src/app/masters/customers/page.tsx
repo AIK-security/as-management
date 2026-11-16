@@ -100,7 +100,9 @@ export default async function CustomersPage({
         ) : (
           list.rows.map((c) => (
             <Row key={c.id} href={`/masters/customers/${c.id}`}>
-              <Td className="font-mono tabular-nums text-slate-500">{c.staff_code}</Td>
+              <Td className="font-mono tabular-nums text-slate-500">
+                {c.staff_code ?? <span className="font-sans text-amber-600">未登録</span>}
+              </Td>
               <Td className="font-semibold text-slate-900">
                 <Ellipsis value={c.name} width="max-w-[220px]" />
               </Td>

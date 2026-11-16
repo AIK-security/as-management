@@ -237,6 +237,12 @@ export function MasterImport() {
               <span className="font-mono">{done.newDepartments.join(", ")}</span>
             </p>
           )}
+          {(done.linkedCustomers?.length ?? 0) > 0 && (
+            <p className="text-[12px] text-slate-600">
+              担当コードが未登録だった得意先にコードを付けました（{done.linkedCustomers?.length} 件）：
+              <span>{done.linkedCustomers?.join("、")}</span>
+            </p>
+          )}
         </Section>
       )}
     </div>

@@ -27,7 +27,7 @@ export function CustomerEditForm({
   };
   refs: CustomerRefs;
 }) {
-  const [staffCode, setStaffCode] = useState(customer.staff_code);
+  const [staffCode, setStaffCode] = useState(customer.staff_code ?? "");
   const [name, setName] = useState(customer.name);
   const [nameKana, setNameKana] = useState(customer.name_kana ?? "");
   const [contactName, setContactName] = useState(customer.contact_name ?? "");
@@ -171,7 +171,7 @@ export function CustomerEditForm({
       <div className="grid grid-cols-2 gap-3">
         <Section title="識別・名称">
           <div className="grid grid-cols-2 gap-2">
-            <Field label="担当コード" hint="ShiftMax の実質キー">
+            <Field label="担当コード" hint="べんり君で登録されたら入れる">
               <input
                 value={staffCode}
                 onChange={(e) => edit(setStaffCode)(e.target.value)}

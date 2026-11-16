@@ -44,7 +44,7 @@ export default async function CustomerDetailPage({
         <h1 className="text-[18px] font-semibold tracking-tight text-slate-900">
           {customer.name}
         </h1>
-        <span className="t-meta font-mono text-slate-500">{customer.staff_code}</span>
+        <span className="t-meta font-mono text-slate-500">{customer.staff_code ?? "担当コード未登録"}</span>
         <span className="t-meta ml-auto text-slate-500">
           {refs.ok ? (
             <>

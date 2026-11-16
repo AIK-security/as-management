@@ -76,6 +76,8 @@ export type HandoffMissing = {
   siteName: string;
   customerName: string | null;
   kindLabel: string;
+  /** 🔴 得意先に担当コードがまだ無い（べんり君で未登録・2026-11-16）。原因が違うので言い分ける */
+  noCustomerCode?: boolean;
 };
 
 export type HandoffData = {
@@ -107,7 +109,7 @@ type ShiftRaw = {
   billing_note: string | null;
   site: {
     name: string;
-    customer: { staff_code: string; name: string } | null;
+    customer: { staff_code: string | null; name: string } | null;
   } | null;
   assignments: {
     kind: string;
@@ -335,11 +337,17 @@ export async function getHandoffData(workDate: string, jurisdictionId: string): 
     // 🔴 警備先番号は〈得意先 × 区分〉で引く。人ごとの現着中止があると、同じ枠の中で区分が変わる
     const dutyFor = (kind: WorkKind) => {
       const kindLabel = kindLabelOf({ work_kind: kind });
-      const duty = customer ? dutyByKey.get(`${customer.staff_code}:${kindLabel}`) : undefined;
+      const duty =
+        customer?.staff_code ? dutyByKey.get(`${customer.staff_code}:${kindLabel}`) : undefined;
       const key = `${s.id}:${kindLabel}`;
       if (!duty && !missingKeys.has(key)) {
         missingKeys.add(key);
-        missing.push({ siteName: s.site?.name ?? "（現場不明）", customerName: customer?.name ?? null, kindLabel });
+        missing.push({
+          siteName: s.site?.name ?? "（現場不明）",
+          customerName: customer?.name ?? null,
+          kindLabel,
+          noCustomerCode: !!customer && !customer.staff_code,
+        });
       }
       return duty;
     };

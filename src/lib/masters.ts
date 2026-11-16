@@ -288,7 +288,7 @@ export async function listGuards(query: MasterQuery): Promise<MasterList<GuardRo
 
 export type CustomerRow = {
   id: string;
-  staff_code: string;
+  staff_code: string | null;
   name: string;
   name_kana: string | null;
   /** 担当名。得意先は「顧客名」より担当で呼ばれることがある */
@@ -772,7 +772,7 @@ export async function countGuardRefs(guardId: string): Promise<GuardRefs> {
 
 export type CustomerDetail = {
   id: string;
-  staff_code: string;
+  staff_code: string | null;
   name: string;
   name_kana: string | null;
   contact_name: string | null;

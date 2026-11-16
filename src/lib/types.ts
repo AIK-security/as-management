@@ -57,8 +57,9 @@ export type Guard = {
 
 export type Customer = {
   id: string;
-  /** 担当コード。ShiftMax では顧客名ではなくこれが実質のキー */
-  staff_code: string;
+  /** 担当コード。ShiftMax では顧客名ではなくこれが実質のキー。
+      🔴 べんり君で登録されるまでは null（2026-11-16）。新しい得意先は稼働が先に始まるため */
+  staff_code: string | null;
   name: string;
   /** 五十音順に並べるためのフリガナ。無ければ name で代用する */
   name_kana: string | null;

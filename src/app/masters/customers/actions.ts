@@ -3,9 +3,11 @@
 // 🔴 認可は3枚重ね。ここは2枚目の関門。**Server Action は URL である。**
 //   RLS 側は customers が can_edit()（20260908000000）。
 //
-// 🔴 担当コード（staff_code）は NOT NULL かつ unique。
-//   ShiftMax の実質キーであり、請求まで通って初めて意味を持つ列なので、
-//   空欄も重複も**アプリ側で止めて日本語で言う**。
+// 🔴 担当コード（staff_code）は**任意**で unique（2026-11-16 に任意へ変更）。
+//   べんり君（ShiftMax）で登録したときに振られるコードなので、新しい得意先は
+//   稼働が始まるまでコードが無い。空欄は null で入れる（'' は DB の check で弾く）。
+//   重複は**アプリ側で止めて日本語で言う**。
+//   コードが無いあいだは引き渡し（18列）で止まる（src/lib/handoff.ts）。
 "use server";
 
 import { refresh } from "next/cache";
@@ -60,15 +62,12 @@ export async function updateCustomer(input: CustomerInput): Promise<ActionResult
   await requireRole("control", "admin");
 
   if (!input.name.trim()) return { ok: false, message: "顧客名を入れてください。" };
-  if (!input.staffCode.trim()) {
-    return { ok: false, message: "担当コードを入れてください（ShiftMax の実質キーです）。" };
-  }
 
   const supabase = await createClient();
   const { error } = await supabase
     .from("customers")
     .update({
-      staff_code: input.staffCode.trim(),
+      staff_code: orNull(input.staffCode),
       name: input.name.trim(),
       name_kana: orNull(input.nameKana),
       contact_name: orNull(input.contactName),
@@ -126,16 +125,13 @@ export async function createCustomer(input: {
 
   const name = input.name.trim();
   if (!name) return { ok: false, message: "顧客名を入れてください。" };
-  if (!input.staffCode.trim()) {
-    return { ok: false, message: "担当コードを入れてください（ShiftMax の実質キーです）。" };
-  }
 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("customers")
     .insert({
       name,
-      staff_code: input.staffCode.trim(),
+      staff_code: orNull(input.staffCode),
       name_kana: orNull(input.nameKana),
       contact_name: orNull(input.contactName),
     })

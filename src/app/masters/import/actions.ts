@@ -34,6 +34,8 @@ export type ImportResult =
       /** 新しく作った管轄・部署 */
       newJurisdictions: string[];
       newDepartments: string[];
+      /** 🔴 コード無しで先に作っていた得意先に、取込でコードを付けた（得意先名。2026-11-16） */
+      linkedCustomers?: string[];
     }
   | { ok: false; message: string };
 
@@ -325,6 +327,25 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
     const existing = await codeToId(supabase, "customers", "staff_code");
     if (!existing.ok) return existing;
 
+    // 🔴 コード無しで先に作った得意先へ、コードを付ける（2026-11-16）。
+    //   新しい得意先は管制がこのシステムで先に作り、べんり君で登録されてからコードが振られる。
+    //   コードで突き合わせるだけだと、取り込んだときに**同じ得意先が2件**になる。
+    //   名前が完全に一致し、コード無しの候補が**1件だけ**のときに限って付ける
+    //   （2件以上は取り違えるので、新しい得意先として入れて人に直してもらう）。
+    const codeless = await supabase.from("customers").select("id, name").is("staff_code", null);
+    if (codeless.error) return { ok: false, message: toMessage(codeless.error) };
+    const codelessByName = new Map<string, string[]>();
+    for (const c of codeless.data ?? []) {
+      const key = c.name.trim();
+      codelessByName.set(key, [...(codelessByName.get(key) ?? []), c.id]);
+    }
+    const linkTo = new Map<string, string>(); // staff_code → 既存の得意先 id
+    for (const r of input.rows) {
+      if (existing.map.has(r.staff_code)) continue;
+      const ids = codelessByName.get(r.name.trim()) ?? [];
+      if (ids.length === 1) linkTo.set(r.staff_code, ids[0]);
+    }
+
     const rows = input.rows.map((r) => ({
       staff_code: r.staff_code,
       name: r.name,
@@ -336,6 +357,14 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
       department_id: did(r.department_code),
     }));
 
+    // 先にコードを付ける（件数は少ない＝1件ずつでよい）。付けたあとは下の upsert が「更新」として扱う
+    const linkedCustomers: string[] = [];
+    for (const [code, id] of linkTo) {
+      const { error } = await supabase.from("customers").update({ staff_code: code }).eq("id", id);
+      if (error) return { ok: false, message: toMessage(error) };
+      linkedCustomers.push(input.rows.find((r) => r.staff_code === code)?.name ?? code);
+    }
+
     for (const part of chunk(rows)) {
       const { error } = await supabase
         .from("customers")
@@ -343,13 +372,16 @@ export async function importMaster(input: ImportInput): Promise<ImportResult> {
       if (error) return { ok: false, message: toMessage(error) };
     }
 
-    const created = input.rows.filter((r) => !existing.map.has(r.staff_code)).length;
+    const created = input.rows.filter(
+      (r) => !existing.map.has(r.staff_code) && !linkTo.has(r.staff_code),
+    ).length;
     refresh();
     return {
       ok: true,
       kind: "customers",
       created,
       updated: input.rows.length - created,
+      linkedCustomers,
       ...base,
     };
   }

@@ -171,6 +171,11 @@ export default async function HandoffPage({
               {data.missing.map((m, i) => (
                 <li key={i}>
                   {m.siteName}（{m.customerName ?? "得意先が未設定"} × {m.kindLabel}）
+                  {m.noCustomerCode && (
+                    <span className="font-semibold">
+                      ─ この得意先は担当コードが未登録です。べんり君で登録されたコードを得意先マスタに入れてください
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

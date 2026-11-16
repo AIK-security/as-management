@@ -287,7 +287,7 @@ export function CustomerCreateForm() {
               autoFocus
             />
           </Field>
-          <Field label="担当コード" hint="必須・重複不可">
+          <Field label="担当コード" hint="任意・べんり君で登録されたら入れる">
             <input
               value={staffCode}
               onChange={(e) => setStaffCode(e.target.value)}
@@ -316,7 +316,7 @@ export function CustomerCreateForm() {
       <div>
         <button
           type="button"
-          disabled={pending || name.trim() === "" || staffCode.trim() === ""}
+          disabled={pending || name.trim() === ""}
           onClick={() => run(() => createCustomer({ name, staffCode, nameKana, contactName }))}
           className={SUBMIT}
         >

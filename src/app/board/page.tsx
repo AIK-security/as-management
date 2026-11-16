@@ -115,7 +115,7 @@ export default async function BoardPage({
   //   日によって位置が変わり、探す場所を覚えられなくなる。
   const selectedCustomer = sp.c ?? "";
   const visibleGroups = selectedCustomer
-    ? board.groups.filter((g) => g.customer?.staff_code === selectedCustomer)
+    ? board.groups.filter((g) => (g.customer?.id ?? "") === selectedCustomer)
     : board.groups;
 
   // 🔴 グループごとにグリッドを分けない（2026-09-02 変更）。
@@ -151,11 +151,11 @@ export default async function BoardPage({
           },
           ...board.groups.map((g) => ({
             id: g.customer?.id ?? "__none__",
-            href: hrefWith({ c: g.customer?.staff_code ?? "" }),
+            href: hrefWith({ c: g.customer?.id ?? "" }),
             label: g.customer?.name ?? "（得意先が未設定）",
             count: g.siteCount,
             shortage: Math.max(0, g.headcount - g.placed),
-            active: selectedCustomer === g.customer?.staff_code,
+            active: selectedCustomer === (g.customer?.id ?? ""),
           })),
         ]
       : [];

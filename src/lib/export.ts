@@ -70,7 +70,7 @@ type Raw = {
     site: {
       site_code: string;
       name: string;
-      customer: { staff_code: string; name: string; billing_no: string | null } | null;
+      customer: { staff_code: string | null; name: string; billing_no: string | null } | null;
     } | null;
   } | null;
 };
