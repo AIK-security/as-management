@@ -26,7 +26,7 @@ import { Fragment, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { setOff } from "@/app/offs/actions";
 import { callAction } from "@/lib/action-call";
-import { dayOfWeek } from "@/lib/board-format";
+import { KANA_OTHER, KANA_ROWS, dayOfWeek, kanaRow } from "@/lib/board-format";
 import type { OffEntry, OffMonthRow } from "@/lib/offs";
 import type { OffKind, OffWorkKind } from "@/lib/types";
 
@@ -57,30 +57,7 @@ const WORK_MARK: Record<OffWorkKind, string> = {
   nightB: "B",
 };
 
-/** あかさたなの見出し。フリガナの頭文字（カタカナ）の範囲で決める */
-const KANA_ROWS: { label: string; to: number }[] = [
-  { label: "あ", to: 0x30aa }, // ァ〜オ
-  { label: "か", to: 0x30b4 }, // カ〜ゴ
-  { label: "さ", to: 0x30be }, // サ〜ゾ
-  { label: "た", to: 0x30c9 }, // タ〜ド
-  { label: "な", to: 0x30ce }, // ナ〜ノ
-  { label: "は", to: 0x30dd }, // ハ〜ポ
-  { label: "ま", to: 0x30e2 }, // マ〜モ
-  { label: "や", to: 0x30e8 }, // ャ〜ヨ
-  { label: "ら", to: 0x30ed }, // ラ〜ロ
-  { label: "わ", to: 0x30f4 }, // ヮ〜ン・ヴ
-];
-const KANA_OTHER = "他";
-
-/** フリガナ → あかさたなの見出し。🔴 半角カナ・ひらがなでも同じ行に入るよう揃えてから見る */
-function kanaRow(kana: string | null): string {
-  const head = kana?.normalize("NFKC").charAt(0);
-  if (!head) return KANA_OTHER;
-  let code = head.charCodeAt(0);
-  if (code >= 0x3041 && code <= 0x3096) code += 0x60; // ひらがな → カタカナ
-  if (code < 0x30a1) return KANA_OTHER;
-  return KANA_ROWS.find((r) => code <= r.to)?.label ?? KANA_OTHER;
-}
+// あかさたなの見出し（KANA_ROWS・kanaRow）は board-format.ts へ移した（2026-11-17・プールと共用）
 
 type Paint = {
   key: string;

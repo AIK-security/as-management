@@ -151,6 +151,49 @@ export function compareByKana(
 }
 
 /**
+ * あかさたなの見出し。フリガナの頭文字（カタカナ）の範囲で決める。
+ * 🔴 休み画面（2026-10-01）で作ったものを、プールの見出し（2026-11-17・赤尾さんの要望）と共用にした
+ */
+export const KANA_ROWS: { label: string; to: number }[] = [
+  { label: "あ", to: 0x30aa }, // ァ〜オ
+  { label: "か", to: 0x30b4 }, // カ〜ゴ
+  { label: "さ", to: 0x30be }, // サ〜ゾ
+  { label: "た", to: 0x30c9 }, // タ〜ド
+  { label: "な", to: 0x30ce }, // ナ〜ノ
+  { label: "は", to: 0x30dd }, // ハ〜ポ
+  { label: "ま", to: 0x30e2 }, // マ〜モ
+  { label: "や", to: 0x30e8 }, // ャ〜ヨ
+  { label: "ら", to: 0x30ed }, // ラ〜ロ
+  { label: "わ", to: 0x30f4 }, // ヮ〜ン・ヴ
+];
+export const KANA_OTHER = "他";
+
+/** フリガナ → あかさたなの見出し。🔴 半角カナ・ひらがなでも同じ行に入るよう揃えてから見る */
+export function kanaRow(kana: string | null | undefined): string {
+  const head = kana?.normalize("NFKC").charAt(0);
+  if (!head) return KANA_OTHER;
+  let code = head.charCodeAt(0);
+  if (code >= 0x3041 && code <= 0x3096) code += 0x60; // ひらがな → カタカナ
+  if (code < 0x30a1) return KANA_OTHER;
+  return KANA_ROWS.find((r) => code <= r.to)?.label ?? KANA_OTHER;
+}
+
+/**
+ * 並んだ配列を、連続する同じキーごとに束ねる（見出しを挟んで描くため）。
+ * 🔴 並べ替えはしない。並びは呼ぶ側（フリガナ順・得意先順）で決まっている前提
+ */
+export function groupConsecutive<T>(items: T[], keyOf: (x: T) => string): { key: string; items: T[] }[] {
+  const out: { key: string; items: T[] }[] = [];
+  for (const x of items) {
+    const k = keyOf(x);
+    const last = out[out.length - 1];
+    if (last && last.key === k) last.items.push(x);
+    else out.push({ key: k, items: [x] });
+  }
+  return out;
+}
+
+/**
  * 名札に出す名前（2026-10-05）。
  *
  * 🔴 略称の空白（全角を含む）を詰める。べんり君の略称は「●安藤　翔一」のように

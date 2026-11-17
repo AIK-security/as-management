@@ -20,7 +20,7 @@
 "use client";
 
 import Link from "next/link";
-import { useOptimistic, useRef, useState, useTransition } from "react";
+import { Fragment, useOptimistic, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -52,6 +52,7 @@ import {
   type ActionResult,
 } from "@/app/board/actions";
 import type { AssignmentRole, GuardView, JobType, PlateView, ShiftRow } from "@/lib/types";
+import { compareByKana, groupConsecutive, kanaRow } from "@/lib/board-format";
 import { callAction } from "@/lib/action-call";
 
 // ─────────────────────────────────────────────────────────
@@ -80,20 +81,13 @@ type Move =
   | { type: "deleteShift"; shiftId: string };
 
 /**
- * 🔴 プールの並びはサーバと同じ規則で戻す（staff_code 順・空は最後）。
- *   board.ts のクエリが `.order("staff_code", { nullsFirst: false })`。
+ * 🔴 プールの並びはサーバと同じ規則で戻す（フリガナ順・board.ts の compareByKana）。
  *   ここを合わせておかないと、外した瞬間に別の位置へ現れて目で追えなくなる。
- *   （協力会社の隊員は staff_code を持たないので必ず最後に来る）
+ *   🔴 2026-11-17 に直した。サーバは 10/5 からフリガナ順なのに、ここが個人コード順のまま残っていて、
+ *   外した直後だけプール全体が個人コード順に並び替わっていた
  */
 function sortPool(pool: GuardView[]): GuardView[] {
-  return [...pool].sort((a, b) => {
-    const x = a.guard.staff_code;
-    const y = b.guard.staff_code;
-    if (x === y) return 0;
-    if (!x) return 1;
-    if (!y) return -1;
-    return x < y ? -1 : 1;
-  });
+  return [...pool].sort((a, b) => compareByKana(a.guard, b.guard));
 }
 
 function reduce(state: BoardState, move: Move): BoardState {
@@ -388,7 +382,8 @@ export type BoardDndProps = {
   rows: ShiftRow[];
   pool: GuardView[];
   editable: boolean;
-  showCustomerOnCard: boolean;
+  /** 🔴 得意先の見出しで区切るか（「すべて」のとき）。1社に絞っているときは見出しが1本並ぶだけなので出さない */
+  showCustomerHeadings: boolean;
   /** 現在の管轄。プールの「他管轄」絞り込みに使う */
   jurisdictionId: string;
   /** 得意先タブ。1つ以下なら出さない（page.tsx が空配列で渡す） */
@@ -415,7 +410,7 @@ export function BoardDnd({
   rows,
   pool,
   editable,
-  showCustomerOnCard,
+  showCustomerHeadings,
   jurisdictionId,
   customerTabs,
   totalSiteCount,
@@ -669,27 +664,53 @@ export function BoardDnd({
           {state.rows.length === 0 ? (
             <EmptyBoard empty={empty} />
           ) : (
+            // 🔴 「すべて」でも得意先の見出しで区切る（2026-11-17・赤尾さんの要望）。
+            //   9/2 は「1件しか無い会社でも1行を占有し右が空く」ため見出しを置かず、カードに得意先名を出していた。
+            //   管制は会社のまとまりで探しているので、右が空くことより見出しで探せることを取る。
+            //   見出しは同じグリッドの中に全幅で挟む（グリッドを会社ごとに分けない＝列の幅は揃ったまま）。
+            //   見出しを出すときはカードの得意先名は外す（同じ名前が2回並ぶ）。マスタへのリンクは見出しへ移した
             <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-stretch gap-3">
-              {state.rows.map((row) => (
-                <ShiftRowCard
-                  key={row.shift.id}
-                  row={row}
-                  showCustomer={showCustomerOnCard}
-                  editable={editable}
-                  selected={keys.selection.shiftId === row.shift.id}
-                  selectedPlateId={
-                    keys.selection.shiftId === row.shift.id ? keys.selection.assignmentId : null
-                  }
-                  searchHitIds={boardHitIds}
-                  onToggleStatus={handleToggleStatus}
-                  onToggleCancel={handleToggleCancel}
-                  onDelete={handleDeleteShift}
-                  onEdit={setEditingShiftId}
-                  onSelect={handleSelect}
-                  onSetRole={handleSetRole}
-                  onSetJobType={handleSetJobType}
-                  onSetOnsiteCancelled={handleSetOnsiteCancelled}
-                />
+              {(showCustomerHeadings
+                ? groupConsecutive(state.rows, (r) => r.customer?.id ?? "__none__")
+                : [{ key: "__flat__", items: state.rows }]
+              ).map((g) => (
+                <Fragment key={g.key}>
+                  {showCustomerHeadings && (
+                    <div className="col-span-full -mb-1 flex items-baseline gap-2 border-b border-slate-300 px-0.5 pt-1 pb-1 first:pt-0">
+                      {g.items[0].customer ? (
+                        <Link
+                          href={`/masters/customers/${g.items[0].customer.id}`}
+                          className="text-[14px] font-semibold tracking-tight text-slate-800 transition-all duration-150 ease-in-out hover:text-indigo-700 hover:underline"
+                        >
+                          {g.items[0].customer.name}
+                        </Link>
+                      ) : (
+                        <span className="text-[14px] font-semibold text-slate-500">（得意先が未設定）</span>
+                      )}
+                      <span className="t-meta text-slate-500">{g.items.length} 件</span>
+                    </div>
+                  )}
+                  {g.items.map((row) => (
+                    <ShiftRowCard
+                      key={row.shift.id}
+                      row={row}
+                      editable={editable}
+                      selected={keys.selection.shiftId === row.shift.id}
+                      selectedPlateId={
+                        keys.selection.shiftId === row.shift.id ? keys.selection.assignmentId : null
+                      }
+                      searchHitIds={boardHitIds}
+                      onToggleStatus={handleToggleStatus}
+                      onToggleCancel={handleToggleCancel}
+                      onDelete={handleDeleteShift}
+                      onEdit={setEditingShiftId}
+                      onSelect={handleSelect}
+                      onSetRole={handleSetRole}
+                      onSetJobType={handleSetJobType}
+                      onSetOnsiteCancelled={handleSetOnsiteCancelled}
+                    />
+                  ))}
+                </Fragment>
               ))}
             </div>
           )}
@@ -790,20 +811,32 @@ export function BoardDnd({
             </div>
 
             {/* 🔴 3列（2026-10-05）。4列だと名札が狭く、名前やバッジが入りきらなかった */}
+            {/* 🔴 あかさたなの見出しを挟む（2026-11-17・赤尾さんの要望）。並びはフリガナ順のまま。
+                見出しは同じグリッドに全幅で挟む。光らせる位置（keys.cursor）は visiblePool の通し番号で数える */}
             <div className="grid grid-cols-3 gap-2 px-3 pb-3">
-              {visiblePool.map((view, i) => (
-                // 🔴 Enter で置かれる1名を光らせる。「どれが置かれるのか」が
-                //   見えないまま Enter を押させると、外れたときに原因が分からない
-                <div
-                  key={view.guard.id}
-                  className={
-                    searchFocused && i === keys.cursor
-                      ? "rounded-lg outline-2 outline-offset-1 outline-indigo-600"
-                      : ""
-                  }
-                >
-                  <DraggablePoolPlate view={view} disabled={!editable} />
-                </div>
+              {groupConsecutive(
+                visiblePool.map((view, i) => ({ view, i })),
+                (x) => kanaRow(x.view.guard.name_kana),
+              ).map((g) => (
+                <Fragment key={g.key}>
+                  <div className="col-span-full -mb-1 border-b border-slate-200 px-0.5 text-[12px] font-semibold text-slate-500">
+                    {g.key}
+                  </div>
+                  {g.items.map(({ view, i }) => (
+                    // 🔴 Enter で置かれる1名を光らせる。「どれが置かれるのか」が
+                    //   見えないまま Enter を押させると、外れたときに原因が分からない
+                    <div
+                      key={view.guard.id}
+                      className={
+                        searchFocused && i === keys.cursor
+                          ? "rounded-lg outline-2 outline-offset-1 outline-indigo-600"
+                          : ""
+                      }
+                    >
+                      <DraggablePoolPlate view={view} disabled={!editable} />
+                    </div>
+                  ))}
+                </Fragment>
               ))}
             </div>
 

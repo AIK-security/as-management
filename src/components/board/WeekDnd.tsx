@@ -20,7 +20,7 @@
 //   → まずサーバの値だけを信じる。遅ければ後で足す（そのとき初めて必要が分かる）。
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -47,7 +47,7 @@ import {
 import { TrainingDialog, type TrainingDialogTarget } from "@/components/board/TrainingDialog";
 import type { Guard, OffKind } from "@/lib/types";
 import { callAction } from "@/lib/action-call";
-import { formatWeekDay, plateName } from "@/lib/board-format";
+import { formatWeekDay, groupConsecutive, kanaRow, plateName } from "@/lib/board-format";
 import { PoolPane } from "@/components/board/BoardPanes";
 import { WeekGrid } from "@/components/board/WeekGrid";
 import type { TrainingDetail, WeekBoardData, WeekPlate, WeekPoolGuard } from "@/lib/week-board";
@@ -338,9 +338,17 @@ function PoolBody({ data, editable }: { data: WeekBoardData; editable: boolean }
       <p className="t-meta mb-1.5 text-slate-400">
         日付の見出しで基準日を変えられます。ここへ戻すと配置から外れます
       </p>
+      {/* 🔴 あかさたなの見出しを挟む（2026-11-17・赤尾さんの要望・配置ボードと同じ） */}
       <div className="grid grid-cols-2 gap-1.5">
-        {data.pool.map((p) => (
-          <PoolCard key={p.guard.id} p={p} editable={editable} />
+        {groupConsecutive(data.pool, (p) => kanaRow(p.guard.name_kana)).map((g) => (
+          <Fragment key={g.key}>
+            <div className="col-span-full -mb-0.5 border-b border-slate-200 px-0.5 text-[12px] font-semibold text-slate-500">
+              {g.key}
+            </div>
+            {g.items.map((p) => (
+              <PoolCard key={p.guard.id} p={p} editable={editable} />
+            ))}
+          </Fragment>
         ))}
       </div>
     </div>
