@@ -77,6 +77,8 @@ export type Site = {
   short_name: string;
   customer_id: string;
   jurisdiction_id: string;
+  /** 🔴 得意先の中での並び順（2026-11-17）。null=未設定。配置ボードと週表だけで引く */
+  board_order?: number | null;
 };
 
 /** 勤務区分。5つで全部（as-genjo-kansei.md §4-4）。

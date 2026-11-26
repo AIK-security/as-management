@@ -36,6 +36,7 @@ import {
 import { Plate, PoolPlate, DraggablePoolPlate } from "@/components/board/Plate";
 import { ShiftRowCard } from "@/components/board/ShiftRowCard";
 import { ShiftEditDialog } from "@/components/board/ShiftEditDialog";
+import { ReorderSitesDialog } from "@/components/board/ReorderSitesDialog";
 import { PoolPane } from "@/components/board/BoardPanes";
 import { PaneHeading } from "@/components/board/PaneHeading";
 import { useBoardKeys } from "@/components/board/useBoardKeys";
@@ -382,8 +383,6 @@ export type BoardDndProps = {
   rows: ShiftRow[];
   pool: GuardView[];
   editable: boolean;
-  /** 🔴 得意先の見出しで区切るか（「すべて」のとき）。1社に絞っているときは見出しが1本並ぶだけなので出さない */
-  showCustomerHeadings: boolean;
   /** 現在の管轄。プールの「他管轄」絞り込みに使う */
   jurisdictionId: string;
   /** 得意先タブ。1つ以下なら出さない（page.tsx が空配列で渡す） */
@@ -410,7 +409,6 @@ export function BoardDnd({
   rows,
   pool,
   editable,
-  showCustomerHeadings,
   jurisdictionId,
   customerTabs,
   totalSiteCount,
@@ -664,54 +662,69 @@ export function BoardDnd({
           {state.rows.length === 0 ? (
             <EmptyBoard empty={empty} />
           ) : (
-            // 🔴 「すべて」でも得意先の見出しで区切る（2026-11-17・赤尾さんの要望）。
+            // 🔴 得意先の見出しで区切る（2026-11-17・赤尾さんの要望）。
             //   9/2 は「1件しか無い会社でも1行を占有し右が空く」ため見出しを置かず、カードに得意先名を出していた。
             //   管制は会社のまとまりで探しているので、右が空くことより見出しで探せることを取る。
             //   見出しは同じグリッドの中に全幅で挟む（グリッドを会社ごとに分けない＝列の幅は揃ったまま）。
-            //   見出しを出すときはカードの得意先名は外す（同じ名前が2回並ぶ）。マスタへのリンクは見出しへ移した
+            //   カードの得意先名は外した（同じ名前が2回並ぶ）。マスタへのリンクは見出しへ移した。
+            //   🔴 1社に絞ったタブでも出す ── 並べ替え（要望②）の入口がここにあり、
+            //   並べ替えたいのは件数の多い会社＝絞って見ている会社だから
             <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-stretch gap-3">
-              {(showCustomerHeadings
-                ? groupConsecutive(state.rows, (r) => r.customer?.id ?? "__none__")
-                : [{ key: "__flat__", items: state.rows }]
-              ).map((g) => (
-                <Fragment key={g.key}>
-                  {showCustomerHeadings && (
-                    <div className="col-span-full -mb-1 flex items-baseline gap-2 border-b border-slate-300 px-0.5 pt-1 pb-1 first:pt-0">
-                      {g.items[0].customer ? (
+              {groupConsecutive(state.rows, (r) => r.customer?.id ?? "__none__").map((g) => {
+                const customer = g.items[0].customer;
+                // 同じ現場の2枠（日勤と早出など）は1件にまとめて並べ替える ── 順は現場に持たせている
+                const sites = [
+                  ...new Map(
+                    g.items.map((r) => [r.site.id, { id: r.site.id, name: r.site.name }]),
+                  ).values(),
+                ];
+                return (
+                  <Fragment key={g.key}>
+                    <div className="col-span-full -mb-1 flex items-center gap-2 border-b border-slate-300 px-0.5 pt-1 pb-1 first:pt-0">
+                      {customer ? (
                         <Link
-                          href={`/masters/customers/${g.items[0].customer.id}`}
+                          href={`/masters/customers/${customer.id}`}
                           className="text-[14px] font-semibold tracking-tight text-slate-800 transition-all duration-150 ease-in-out hover:text-indigo-700 hover:underline"
                         >
-                          {g.items[0].customer.name}
+                          {customer.name}
                         </Link>
                       ) : (
                         <span className="text-[14px] font-semibold text-slate-500">（得意先が未設定）</span>
                       )}
                       <span className="t-meta text-slate-500">{g.items.length} 件</span>
+                      {editable && customer && sites.length > 1 && (
+                        // 🔴 key に並びを含める：保存して盤面が読み直されたら、小窓の初期値も新しい順にする
+                        <ReorderSitesDialog
+                          key={sites.map((x) => x.id).join(",")}
+                          customerId={customer.id}
+                          customerName={customer.name}
+                          sites={sites}
+                        />
+                      )}
                     </div>
-                  )}
-                  {g.items.map((row) => (
-                    <ShiftRowCard
-                      key={row.shift.id}
-                      row={row}
-                      editable={editable}
-                      selected={keys.selection.shiftId === row.shift.id}
-                      selectedPlateId={
-                        keys.selection.shiftId === row.shift.id ? keys.selection.assignmentId : null
-                      }
-                      searchHitIds={boardHitIds}
-                      onToggleStatus={handleToggleStatus}
-                      onToggleCancel={handleToggleCancel}
-                      onDelete={handleDeleteShift}
-                      onEdit={setEditingShiftId}
-                      onSelect={handleSelect}
-                      onSetRole={handleSetRole}
-                      onSetJobType={handleSetJobType}
-                      onSetOnsiteCancelled={handleSetOnsiteCancelled}
-                    />
-                  ))}
-                </Fragment>
-              ))}
+                    {g.items.map((row) => (
+                      <ShiftRowCard
+                        key={row.shift.id}
+                        row={row}
+                        editable={editable}
+                        selected={keys.selection.shiftId === row.shift.id}
+                        selectedPlateId={
+                          keys.selection.shiftId === row.shift.id ? keys.selection.assignmentId : null
+                        }
+                        searchHitIds={boardHitIds}
+                        onToggleStatus={handleToggleStatus}
+                        onToggleCancel={handleToggleCancel}
+                        onDelete={handleDeleteShift}
+                        onEdit={setEditingShiftId}
+                        onSelect={handleSelect}
+                        onSetRole={handleSetRole}
+                        onSetJobType={handleSetJobType}
+                        onSetOnsiteCancelled={handleSetOnsiteCancelled}
+                      />
+                    ))}
+                  </Fragment>
+                );
+              })}
             </div>
           )}
         </main>

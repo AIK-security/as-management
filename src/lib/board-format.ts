@@ -179,6 +179,22 @@ export function kanaRow(kana: string | null | undefined): string {
 }
 
 /**
+ * 現場の並び順（sites.board_order・2026-11-17）の比較。
+ * 🔴 null（未設定）は後ろ。同じなら 0 ＝ 安定ソートで呼ぶ側の元の順（時刻順・名前順）を保つ
+ */
+export function compareBoardOrder(
+  a: { board_order?: number | null },
+  b: { board_order?: number | null },
+): number {
+  const x = a.board_order ?? null;
+  const y = b.board_order ?? null;
+  if (x === y) return 0;
+  if (x === null) return 1;
+  if (y === null) return -1;
+  return x - y;
+}
+
+/**
  * 並んだ配列を、連続する同じキーごとに束ねる（見出しを挟んで描くため）。
  * 🔴 並べ替えはしない。並びは呼ぶ側（フリガナ順・得意先順）で決まっている前提
  */

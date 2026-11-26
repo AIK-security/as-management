@@ -18,6 +18,7 @@ import {
   OFF_KIND_LABEL,
   WORK_KIND_LABEL,
   addDays,
+  compareBoardOrder,
   compareByKana,
   daysBetween,
   formatSpanPlace,
@@ -204,7 +205,7 @@ export async function getBoardData(params: BoardParams = {}): Promise<BoardData>
        start_h, start_m, end_h, end_m, break_min,
        plan_comment, billing_note, status, cancelled_at,
        site:sites!inner (
-         id, site_code, name, short_name, customer_id, jurisdiction_id,
+         id, site_code, name, short_name, customer_id, jurisdiction_id, board_order,
          customer:customers ( id, staff_code, name, name_kana ),
          site_required_qualifications ( qualification_id )
        )`,
@@ -740,6 +741,10 @@ function groupByCustomer(rows: ShiftRow[]): BoardGroup[] {
   // 日本語の並びはコードポイント順では合わない（ひらがな・カタカナ・漢字）。
   const collator = new Intl.Collator("ja");
   const sortKey = (g: BoardGroup) => g.customer?.name_kana || g.customer?.name || "";
+
+  // 🔴 得意先の中は、管制が決めた順（sites.board_order・2026-11-17）を先に効かせる。
+  //   番号の無い現場はその後ろ。sort は安定なので、番号の無いもの・同じ現場の2枠は開始時刻順のまま
+  for (const g of map.values()) g.rows.sort((a, b) => compareBoardOrder(a.site, b.site));
 
   return [...map.values()].sort((a, b) => {
     // 得意先が紐づいていない現場は最後にまとめる（データ不備が埋もれないように）

@@ -28,6 +28,7 @@ import {
   A_SHEET_OFF_KINDS,
   WORK_KIND_LABEL,
   addDays,
+  compareBoardOrder,
   compareByKana,
   startOfWeek,
   todayInJst,
@@ -244,7 +245,7 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
          start_h, start_m, end_h, end_m, break_min,
          plan_comment, billing_note, status, cancelled_at,
          site:sites!inner (
-           id, site_code, name, short_name, customer_id, jurisdiction_id,
+           id, site_code, name, short_name, customer_id, jurisdiction_id, board_order,
            customer:customers ( id, staff_code, name, name_kana, a_sheet )
          )`,
         )
@@ -428,7 +429,10 @@ export async function getWeekBoardData(params: WeekBoardParams = {}): Promise<We
     )
     .map((g) => ({
       ...g,
-      rows: g.rows.sort((a, b) => a.site.name.localeCompare(b.site.name, "ja")),
+      // 🔴 管制が決めた順（board_order・2026-11-17）を先に。番号の無い現場は後ろで現場名順
+      rows: g.rows.sort(
+        (a, b) => compareBoardOrder(a.site, b.site) || a.site.name.localeCompare(b.site.name, "ja"),
+      ),
     }));
   const hasKanagawa = allGroups.some((g) => g.sheet === "kanagawa");
   // 🔴 日勤は紙を分ける（A表の実物：日勤は東京本部と神奈川支部で別の紙）。夜勤は分けない

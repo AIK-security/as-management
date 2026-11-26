@@ -123,9 +123,7 @@ export default async function BoardPage({
   //   得意先の順（groups の並び）を保ったまま**1本のグリッドに流し込んで上から詰める**。
   //   まとまりは「カード内の得意先名」と「並び順」で示す。
   const visibleRows = visibleGroups.flatMap((g) => g.rows);
-  // 🔴 2026-11-17：カードの得意先名をやめ、「すべて」では得意先の見出しで区切る（BoardDnd）。
-  //   1社に絞っているときは見出しが1本並ぶだけなので出さない
-  const showCustomerHeadings = !selectedCustomer;
+  // 🔴 2026-11-17：カードの得意先名をやめ、得意先の見出しで区切る（BoardDnd）
 
   // 🔴 一括確定の対象は**いま表示している**仮組みの枠だけ。
   //   得意先タブで絞っているときに画面外の枠まで確定すると、
@@ -291,7 +289,6 @@ export default async function BoardPage({
         rows={visibleRows}
         pool={board.pool}
         editable={editable}
-        showCustomerHeadings={showCustomerHeadings}
         jurisdictionId={board.jurisdiction.id}
         totalSiteCount={board.rows.length}
         totalPlaced={placed}

@@ -20,6 +20,7 @@ import { refresh } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import {
   addDays,
+  compareBoardOrder,
   DUTY_OFF_KINDS,
   formatSpanPlace,
   OFF_KIND_LABEL,
@@ -1345,6 +1346,68 @@ export async function reviewBoard(input: {
     { onConflict: "work_date,jurisdiction_id" },
   );
   if (error) return { ok: false, message: toMessage(error) };
+
+  refresh();
+  return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────
+// 得意先の中の現場の並び順（2026-11-17・赤尾さんの要望②）
+//
+// 🔴 渡されるのは「その日の盤面に出ている現場」だけ。並べ替えるのもその現場どうしの間だけで、
+//   出ていない現場の位置は動かさない（その日に居ない現場の順まで決めさせない）。
+//   やり方：得意先の全現場をいまの順（番号順 → 番号無しは現場名順）に並べ、
+//   渡された現場が占めている「席」に、渡された順で座らせ直す。そのうえで全体に 1,2,3… を振る。
+// 🔴 番号が変わる行だけ更新する。RLS（can_edit）に弾かれても update はエラーにならず
+//   0行で終わるため、返ってきた行数で確かめる
+// ─────────────────────────────────────────────────────────
+export async function reorderSites(input: {
+  customerId: string;
+  siteIds: string[];
+}): Promise<ActionResult> {
+  const supabase = await editorClient();
+
+  const wanted = [...new Set(input.siteIds)];
+  if (wanted.length < 2) return { ok: true }; // 1件以下は並べ替えるものが無い
+
+  const { data, error } = await supabase
+    .from("sites")
+    .select("id, name, board_order")
+    .eq("customer_id", input.customerId);
+  if (error) return { ok: false, message: toMessage(error) };
+
+  const all = (data ?? []) as { id: string; name: string; board_order: number | null }[];
+  const ids = new Set(all.map((s) => s.id));
+  if (wanted.some((id) => !ids.has(id))) {
+    return { ok: false, message: "別の得意先の現場が混じっています。画面を読み込み直してください。" };
+  }
+
+  // いまの順
+  const current = all
+    .slice()
+    .sort(
+      (a, b) => compareBoardOrder(a, b) || a.name.localeCompare(b.name, "ja") || (a.id < b.id ? -1 : 1),
+    );
+  // 渡された現場が占めている席に、渡された順で座らせ直す
+  const wantedSet = new Set(wanted);
+  let k = 0;
+  const next = current.map((s) => (wantedSet.has(s.id) ? wanted[k++] : s.id));
+
+  const changes = next
+    .map((id, i) => ({ id, order: i + 1 }))
+    .filter(({ id, order }) => all.find((s) => s.id === id)?.board_order !== order);
+  if (changes.length === 0) return { ok: true };
+
+  const results = await Promise.all(
+    changes.map(({ id, order }) =>
+      supabase.from("sites").update({ board_order: order }).eq("id", id).select("id"),
+    ),
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) return { ok: false, message: toMessage(failed.error) };
+  if (results.some((r) => (r.data ?? []).length === 0)) {
+    return { ok: false, message: "この操作の権限がありません。" };
+  }
 
   refresh();
   return { ok: true };
